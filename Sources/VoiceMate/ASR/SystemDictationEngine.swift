@@ -139,6 +139,7 @@ enum ASRError: LocalizedError {
     case noAudioFormat
     case converterInit
     case noSpeechAsset(original: String)
+    case speechNotAvailable(locale: String)
 
     var errorDescription: String? {
         switch self {
@@ -147,6 +148,7 @@ enum ASRError: LocalizedError {
         case .noAudioFormat: return "无可用的音频格式"
         case .converterInit: return "音频转换器初始化失败"
         case .noSpeechAsset(let original): return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
+        case .speechNotAvailable(let locale): return "当前设备不支持语言（\(locale)）的语音识别"
         }
     }
 }

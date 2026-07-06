@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import Speech
 
 /// 应用中枢：持有各服务，驱动会话状态机（idle→recording→transcribing→polishing→ready）。
 @MainActor
@@ -51,11 +52,12 @@ final class AppCoordinator {
         statusText = "聆听中…"
         panel.show()
 
-        let engine = resolveASR()
-        asrEngine = engine
+        let languageID = configStore.config.asr.system.language
         Task {
+            let engine = await resolveASR()
+            await MainActor.run { self.asrEngine = engine }
             do {
-                try await engine.start(locale: Locale(identifier: configStore.config.asr.system.language)) { [weak self] partial in
+                try await engine.start(locale: Locale(identifier: languageID)) { [weak self] partial in
                     Task { @MainActor in self?.asrText = partial }
                 }
             } catch {
@@ -144,8 +146,24 @@ final class AppCoordinator {
 
     // MARK: - 引擎解析（可插拔）
 
-    func resolveASR() -> any ASREngine {
-        SystemDictationEngine()
+    /// 选择 ASR 引擎：优先 on-device 的 SpeechAnalyzer，仅当 SpeechTranscriber 支持该语言时；
+    /// 否则回退到 SFSpeechRecognizer（服务器识别，中文可用）。
+    func resolveASR() async -> any ASREngine {
+        let raw = configStore.config.asr.system.language
+        let lower = raw.lowercased()
+        // 中文（含 cmn）本机几乎都缺 on-device 资产，直接走服务器引擎，避免无谓的模型探测噪声
+        let isChinese = lower.hasPrefix("zh") || lower == "cmn"
+        if !isChinese, await SpeechTranscriber.isAvailable {
+            if let list = try? await SpeechTranscriber.supportedLocales {
+                let loc = Locale(identifier: raw)
+                let supported = list.contains { supported in
+                    supported.languageCode == loc.languageCode
+                        || supported.identifier.lowercased() == loc.identifier.lowercased()
+                }
+                if supported { return SystemDictationEngine() }
+            }
+        }
+        return LegacyDictationEngine()
     }
 
     func resolveLLM() -> (any LLMEngine)? {
