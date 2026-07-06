@@ -2,6 +2,7 @@ import Foundation
 import SwiftUI
 import Speech
 import AppKit
+import ApplicationServices
 
 /// 应用中枢：持有各服务，驱动会话状态机（idle→recording→transcribing→polishing→ready）。
 @MainActor
@@ -26,6 +27,12 @@ final class AppCoordinator {
     private var llmEngine: (any LLMEngine)?
     /// 识别开始时前台的目标 app（文字应插入它的输入框）；停止时把焦点还给它。
     private var targetApp: NSRunningApplication?
+    /// 收尾标记：自动粘贴流程进行中。此时面板关闭触发的 cancel 应被忽略，避免双重复位。
+    private var finalizing = false
+    /// 听写期间是否把 app 从 agent(.accessory) 临时切成了前台(.regular)。
+    /// LSUIElement(agent) 应用调用 NSApp.activate 往往无法真正置前，on-device 听写 daemon
+    /// 只在 app 真正处于前台激活态时才回传结果（否则必须手动点面板才开始识别）。
+    private var foregroundedForDictation = false
 
     static let shared = AppCoordinator()
 
@@ -59,7 +66,8 @@ final class AppCoordinator {
         llmText = ""
         sessionState = .recording
         statusText = "聆听中…"
-        // 激活本 app 以驱动 on-device 听写（菜单栏 agent 默认不激活，会导致识别不开始）。
+        // 临时把 agent app 切到前台激活态：否则 system 听写 daemon 不回传结果，必须手动点面板。
+        enterForeground()
         NSApp.activate(ignoringOtherApps: true)
         panel.show()
 
@@ -73,6 +81,7 @@ final class AppCoordinator {
                 }
             } catch {
                 await MainActor.run {
+                    self.exitForeground()
                     self.sessionState = .idle
                     self.statusText = "听写启动失败：\(error.localizedDescription)"
                     self.panel.close()
@@ -122,39 +131,50 @@ final class AppCoordinator {
 
     func confirmPaste() {
         guard sessionState == .ready else { return }
+        finalizing = true
         let useLLM = configStore.config.llm.enabled && !llmText.isEmpty
         let text = useLLM ? llmText : asrText
-        // 识别期间本 app 被激活以驱动 on-device 听写；停止时先把焦点还给目标 app，
-        // 再在其光标处插入文本（否则会粘到我们自己的面板、且清空目标原文）。
-        if let target = targetApp {
-            target.activate(options: .activateIgnoringOtherApps)
-        }
+        // 收尾：先关面板，再把焦点交还目标 app。
+        let target = targetApp
         targetApp = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self else { return }
-            let ok = self.pasteService.paste(text)
-            if !ok {
-                // 粘贴失败：未授权辅助功能时引导开启；文本已在剪贴板，可手动 ⌘V。
-                if !self.pasteService.isTrusted {
-                    self.pasteService.openAccessibilitySettings()
-                    self.statusText = "请到 系统设置→隐私与安全性→辅助功能 允许 VoiceMate（已复制，可手动 ⌘V）"
+        panel.close()
+        // 把焦点还给目标 app；等其真正回到前台、输入框重新获得焦点后再插入。
+        // 激活是异步的，所以在真正插入前再激活一次，确保 ⌘V / 辅助功能插入不会打回本 app。
+        target?.activate(options: .activateIgnoringOtherApps)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            target?.activate(options: .activateIgnoringOtherApps)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+                guard let self else { return }
+                let ok = self.pasteService.paste(text)
+                var failureMessage: String? = nil
+                if ok {
+                    self.historyStore.append(HistoryItem(
+                        asrResult: self.asrText,
+                        llmResult: useLLM ? self.llmText : nil,
+                        engine: self.asrEngine?.id ?? "system",
+                        llmEngine: useLLM ? self.configStore.config.llm.engine : nil
+                    ))
                 } else {
-                    self.statusText = "已复制到剪贴板，请手动 ⌘V"
+                    // 粘贴失败：未授权辅助功能时引导开启；文本已在剪贴板，可手动 ⌘V。
+                    if !self.pasteService.isTrusted {
+                        self.pasteService.openAccessibilitySettings()
+                        failureMessage = "请到 系统设置→隐私与安全性→辅助功能 允许 VoiceMate（已复制，可手动 ⌘V）"
+                    } else {
+                        failureMessage = "已复制到剪贴板，请手动 ⌘V"
+                    }
                 }
-                return
+                // 无论如何都要复位：否则状态卡在 .ready，热键被忽略，app 无法再次呼出。
+                self.reset()
+                self.finalizing = false
+                if let msg = failureMessage { self.statusText = msg }
             }
-            self.historyStore.append(HistoryItem(
-                asrResult: self.asrText,
-                llmResult: useLLM ? self.llmText : nil,
-                engine: self.asrEngine?.id ?? "system",
-                llmEngine: useLLM ? self.configStore.config.llm.engine : nil
-            ))
-            self.reset()
         }
     }
 
     func cancel() {
         if sessionState == .idle { return }
+        // 正在自动粘贴收尾：忽略面板关闭触发的 cancel，避免复位打断粘贴流程。
+        if finalizing { return }
         if let engine = asrEngine {
             Task { try? await engine.stop() }
         }
@@ -169,6 +189,25 @@ final class AppCoordinator {
         sessionState = .idle
         statusText = "按 ⌘⇧V 开始"
         panel.close()
+        exitForeground()
+    }
+
+    /// 临时把 agent 后台进程提升为前台应用，使 on-device 听写 daemon 能回传结果。
+    /// 注意：setActivationPolicy 在 app 已运行后对 agent 往往不生效，必须用 TransformProcessType
+    /// （运行时把当前进程从 UIElement 变 Foreground），否则仍需手动点面板才开始识别。
+    private func enterForeground() {
+        guard !foregroundedForDictation else { return }
+        var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
+        if TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication)) == noErr {
+            foregroundedForDictation = true
+        }
+    }
+
+    private func exitForeground() {
+        guard foregroundedForDictation else { return }
+        var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
+        TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToUIElementApplication))
+        foregroundedForDictation = false
     }
 
     // MARK: - 引擎解析（可插拔）

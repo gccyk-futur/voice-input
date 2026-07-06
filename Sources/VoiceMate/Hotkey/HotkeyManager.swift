@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import ApplicationServices
 
 /// 全局热键管理：使用 Carbon 的 RegisterEventHotKey（无需辅助功能权限）。
 /// 热键字符串形如 "Cmd+Shift+V"，可自定义并在设置中热切换。
@@ -113,6 +114,16 @@ private func hotkeyEventHandler(
         &hkID
     )
     if status == noErr, hkID.id == manager.hotKeyIDValue {
+        // 趁热键事件刚送达、仍处于「用户事件」上下文：先把 agent 进程切为前台
+        // （agent 应用无法被 NSApp.activate 激活），再立即激活到前台。延后(async)的
+        // 激活会被系统以「非用户事件」忽略，导致面板不在最上层、听写 daemon 不回传结果。
+        var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
+        _ = TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication))
+        if Thread.isMainThread {
+            MainActor.assumeIsolated {
+                NSApp.activate(ignoringOtherApps: true)
+            }
+        }
         DispatchQueue.main.async { manager.onActivate?() }
     }
     return noErr

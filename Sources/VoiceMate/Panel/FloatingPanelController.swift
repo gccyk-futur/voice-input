@@ -16,10 +16,11 @@ final class FloatingPanelController {
     func show() {
         if panel == nil { buildPanel() }
         panel?.center()
-        // orderFrontRegardless 让面板始终可见（置于最前），但 .nonactivatingPanel 风格下
-        // 不会激活本 app，前台的目标 app 仍保持焦点与光标——这对「插入到焦点输入框」至关重要。
-        // 注意：不要调用 makeKey()，否则会抢走焦点导致粘贴落点错误。
+        // 必须让面板成为 key window，本 app 才会真正激活——on-device 听写 daemon 只在
+        // 本 app 为激活态时才回传结果（否则必须手动点面板才开始识别）。停止时会把焦点
+        // 还给目标 app，因此此处抢焦点是安全的。
         panel?.orderFrontRegardless()
+        panel?.makeKey()
         installKeyMonitor()
     }
 

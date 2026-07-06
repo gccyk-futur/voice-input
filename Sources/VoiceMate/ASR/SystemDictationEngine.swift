@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import Speech
+import CoreMedia
 
 /// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + DictationTranscriber（实时渐进连续听写）。
 /// 选用 DictationTranscriber 而非 SpeechTranscriber，是因为前者使用系统「连续听写」的
@@ -94,19 +95,74 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         try audioEngine.start()
 
         finalText = ""
+        // DictationTranscriber.Result 的 text 只是「当前这一句(phrase)」的文本、并非累计全文，
+        // 且同一句会被反复修订（流式 → 定稿，甚至定稿后还会出修正版）。因此按 result.range
+        // （时间区间）累积分句：同一区间的不同修订版原地替换，避免重复追加或停顿清空。
         resultTask = Task.detached(priority: .userInitiated) { [inputBuilder] in
+            var transcript = ""
+            var current = ""
+            var lastCommitted = ""
+            var lastAppended = ""
+            func appendCommitted(_ t: String) {
+                if !lastAppended.isEmpty, transcript.hasSuffix(lastAppended) {
+                    transcript.removeSubrange(transcript.index(transcript.endIndex, offsetBy: -lastAppended.count)..<transcript.endIndex)
+                }
+                let sep = (transcript.isEmpty || t.isEmpty) ? "" :
+                    (Self.isLatinLetterOrDigit(transcript.unicodeScalars.last!) && Self.isLatinLetterOrDigit(t.unicodeScalars.first!) ? " " : "")
+                let added = sep + t
+                transcript += added
+                lastAppended = added
+            }
             do {
                 for try await result in transcriber.results {
-                    let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !text.isEmpty else { continue }
-                    // DictationTranscriber.Result 无 isFinal 字段，始终以最新非空文本作为最终结果
-                    self.finalText = text
-                    onPartial(text)
+                    let t = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !t.isEmpty else { continue }
+                    let finalized = result.resultsFinalizationTime.isValid
+                    if current.isEmpty, !lastCommitted.isEmpty,
+                       t == lastCommitted || t.hasPrefix(lastCommitted) || lastCommitted.hasPrefix(t) {
+                        continue
+                    }
+                    if finalized {
+                        appendCommitted(t)
+                        lastCommitted = t
+                        current = ""
+                    } else if !current.isEmpty, !Self.isRefinement(current, t) {
+                        appendCommitted(current)
+                        lastCommitted = current
+                        current = t
+                    } else {
+                        current = t
+                    }
+                    let display = current.isEmpty ? transcript : Self.join(transcript, current)
+                    self.finalText = display
+                    onPartial(display)
                 }
             } catch {
                 // 流结束或中止，忽略
             }
         }
+    }
+
+    /// 拼接两个文本片段：拉丁字母/数字之间补一个空格，CJK 等则直接相连（避免中文里出现多余空格）。
+    private static func join(_ a: String, _ b: String) -> String {
+        guard !a.isEmpty else { return b }
+        guard !b.isEmpty else { return a }
+        let aLast = a.unicodeScalars.last!
+        let bFirst = b.unicodeScalars.first!
+        let needsSpace = isLatinLetterOrDigit(aLast) && isLatinLetterOrDigit(bFirst)
+        return needsSpace ? a + " " + b : a + b
+    }
+
+    private static func isLatinLetterOrDigit(_ s: Unicode.Scalar) -> Bool {
+        switch s.value {
+        case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: return true
+        default: return false
+        }
+    }
+
+    /// 判断 next 是否为 prev 的同一句的精炼版（前缀包含关系），用于区分「同一句持续改进」与「开始了新的一句」。
+    private static func isRefinement(_ prev: String, _ next: String) -> Bool {
+        next == prev || next.hasPrefix(prev) || prev.hasPrefix(next)
     }
 
     func stop() async throws -> String {
