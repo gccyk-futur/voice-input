@@ -81,6 +81,8 @@ final class ConfigStore {
     func update(_ new: AppConfig) {
         config = new
         save()
+        // 登录时启动开关变化时同步登录项
+        LoginItemManager.set(enabled: new.general.launchAtStartup)
     }
 
     func resetToDefaults() {

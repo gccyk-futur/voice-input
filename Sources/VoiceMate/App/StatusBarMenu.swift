@@ -14,6 +14,9 @@ struct StatusBarMenu: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Divider()
+            Button("历史记录…") {
+                HistoryWindowController.shared.show()
+            }
             Button("设置…") {
                 SettingsWindowController.shared.show()
             }
