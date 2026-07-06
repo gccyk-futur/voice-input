@@ -39,8 +39,11 @@ final class AppCoordinator {
     func toggleRecording() {
         switch sessionState {
         case .idle: startRecording()
-        case .recording, .transcribing, .polishing: stopAndProcess()
-        case .ready: confirmPaste()
+        case .recording: stopAndProcess()
+        default:
+            // 转写/润色中：等待流水线自动粘贴，忽略重复热键，避免重复提交；
+            // 就绪态已由 handleFinal 自动粘贴并复位。
+            break
         }
     }
 
@@ -96,17 +99,17 @@ final class AppCoordinator {
                     acc += chunk
                     llmText = acc
                 }
-                sessionState = .ready
-                statusText = "完成 · ⌘↵ 粘贴"
             } catch {
-                llmText = "（润色失败，使用原文）"
-                sessionState = .ready
-                statusText = "完成 · ⌘↵ 粘贴"
+                // 润色失败回退原文（不要把错误提示粘出去）
+                llmText = final
             }
+            sessionState = .ready
         } else {
             sessionState = .ready
-            statusText = "完成 · ⌘↵ 粘贴"
         }
+        // 到达就绪态：自动粘贴到当前光标并关闭面板（系统听写式体验）。
+        // raw/润色文本在此前始终留在 app 内，只有这一步才离开。
+        await MainActor.run { self.confirmPaste() }
     }
 
     func confirmPaste() {
