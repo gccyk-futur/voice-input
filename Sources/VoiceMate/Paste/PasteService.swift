@@ -12,18 +12,31 @@ final class PasteService {
     static let shared = PasteService()
     private let vKeyCode: CGKeyCode = 9 // kVK_ANSI_V
 
-    /// 将文本插入到当前光标位置。
+    /// 仅写剪贴板，不尝试粘贴。用于无目标 app 的场景。
+    func writeClipboardOnly(_ text: String) {
+        writeClipboard(text)
+    }
+
+    /// 将文本插入到当前光标位置（HID 级别事件）。
     /// - Returns: true 表示已成功插入；false 表示未授权辅助功能，仅写入剪贴板（需手动 Cmd+V）。
     @discardableResult
     func paste(_ text: String) -> Bool {
-        // 优先：辅助功能直接插入（光标处，不替换已有文本）。需授权且当前目标 app 支持。
         if isTrusted, insertViaAccessibility(text) {
             return true
         }
-        // 回退：写入剪贴板 + 模拟 ⌘V。⌘V 是普通按键，**不需要**辅助功能授权，
-        // 因此无论 isTrusted 与否都执行——否则剪贴板有字却粘不出来。
         writeClipboard(text)
         return simulateCmdV()
+    }
+
+    /// 将文本插入到指定进程的光标位置。优先 AX，回退写剪贴板 + ⌘V 直送目标 PID。
+    /// 直送 PID 比 HID 投递更可靠——无需目标 app 在前台。
+    @discardableResult
+    func paste(_ text: String, to pid: pid_t) -> Bool {
+        if isTrusted, insertViaAccessibility(text) {
+            return true
+        }
+        writeClipboard(text)
+        return simulateCmdV(to: pid)
     }
 
     /// 通过系统辅助功能，把文本插入到当前激活 app 的焦点文本元素的光标处。
@@ -53,6 +66,25 @@ final class PasteService {
         up.flags = .maskCommand
         down.post(tap: .cghidEventTap)
         up.post(tap: .cghidEventTap)
+        return true
+    }
+
+    /// 通过 HID 事件 + postToPid 双通道模拟 ⌘V，最大化粘贴成功率。
+    private func simulateCmdV(to pid: pid_t) -> Bool {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let up   = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        // 主通道：HID 级别投递，走完整系统事件链（WindowServer → target run loop → 响应链）
+        down.post(tap: .cghidEventTap)
+        usleep(15_000)
+        up.post(tap: .cghidEventTap)
+        // 辅通道：PID 直送，以防 HID 投递在 agent app 上下文中被限制
+        usleep(5_000)
+        down.postToPid(pid)
+        usleep(10_000)
+        up.postToPid(pid)
         return true
     }
 

@@ -15,6 +15,8 @@ final class HotkeyManager {
 
     /// 热键触发回调（已调度到主线程）。
     var onActivate: (() -> Void)?
+    /// 热键触发瞬间的前台 app（回调里捕获，传给 AppCoordinator 作为粘贴目标）。
+    nonisolated(unsafe) var capturedTargetApp: NSRunningApplication?
 
     // MARK: - 注册 / 注销
 
@@ -26,7 +28,7 @@ final class HotkeyManager {
             return
         }
         installEventHandler()
-        var hotKeyID = EventHotKeyID(signature: signature, id: hotKeyIDValue)
+        let hotKeyID = EventHotKeyID(signature: signature, id: hotKeyIDValue)
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
         if status != noErr {
             print("[HotkeyManager] RegisterEventHotKey 失败，状态码：\(status)")
@@ -114,17 +116,18 @@ private func hotkeyEventHandler(
         &hkID
     )
     if status == noErr, hkID.id == manager.hotKeyIDValue {
-        // 趁热键事件刚送达、仍处于「用户事件」上下文：先把 agent 进程切为前台
-        // （agent 应用无法被 NSApp.activate 激活），再立即激活到前台。延后(async)的
-        // 激活会被系统以「非用户事件」忽略，导致面板不在最上层、听写 daemon 不回传结果。
+        manager.capturedTargetApp = NSWorkspace.shared.frontmostApplication
+        print("[Hotkey] captured targetApp=\(manager.capturedTargetApp?.localizedName ?? "nil")")
+
         var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
-        _ = TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication))
-        if Thread.isMainThread {
-            MainActor.assumeIsolated {
-                NSApp.activate(ignoringOtherApps: true)
-            }
+        let tptResult = TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication))
+        print("[Hotkey] TransformProcessType=\(tptResult)")
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.regular)
+            NSApp.activate(ignoringOtherApps: true)
+            print("[Hotkey] activate called, isActive=\(NSApp.isActive)")
+            manager.onActivate?()
         }
-        DispatchQueue.main.async { manager.onActivate?() }
     }
     return noErr
 }

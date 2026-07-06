@@ -5,7 +5,6 @@ import AppKit
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
-        // 启动协调器：注册热键、串联引擎/粘贴/历史
         _ = AppCoordinator.shared
     }
 }

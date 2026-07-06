@@ -95,62 +95,81 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         try audioEngine.start()
 
         finalText = ""
-        // DictationTranscriber.Result 的 text 只是「当前这一句(phrase)」的文本、并非累计全文，
-        // 且同一句会被反复修订（流式 → 定稿，甚至定稿后还会出修正版）。因此按 result.range
-        // （时间区间）累积分句：同一区间的不同修订版原地替换，避免重复追加或停顿清空。
-        resultTask = Task.detached(priority: .userInitiated) { [inputBuilder] in
-            var transcript = ""
-            var current = ""
-            var lastCommitted = ""
-            var lastAppended = ""
-            func appendCommitted(_ t: String) {
-                if !lastAppended.isEmpty, transcript.hasSuffix(lastAppended) {
-                    transcript.removeSubrange(transcript.index(transcript.endIndex, offsetBy: -lastAppended.count)..<transcript.endIndex)
-                }
-                let sep = (transcript.isEmpty || t.isEmpty) ? "" :
-                    (Self.isLatinLetterOrDigit(transcript.unicodeScalars.last!) && Self.isLatinLetterOrDigit(t.unicodeScalars.first!) ? " " : "")
-                let added = sep + t
-                transcript += added
-                lastAppended = added
-            }
+        // 基于时间轴的分段数组：每个 DictationTranscriber.Result 带 range: CMTimeRange，
+        // 按 range.start 排序后维护有序分段。同一时间段内的修订版原地替换，避免停顿清空和重复追加。
+        resultTask = Task.detached(priority: .userInitiated) {
+            var segments: [Segment] = []
+            var finalizedCount = 0
             do {
                 for try await result in transcriber.results {
                     let t = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !t.isEmpty else { continue }
                     let finalized = result.resultsFinalizationTime.isValid
-                    if current.isEmpty, !lastCommitted.isEmpty,
-                       t == lastCommitted || t.hasPrefix(lastCommitted) || lastCommitted.hasPrefix(t) {
-                        continue
-                    }
-                    if finalized {
-                        appendCommitted(t)
-                        lastCommitted = t
-                        current = ""
-                    } else if !current.isEmpty, !Self.isRefinement(current, t) {
-                        appendCommitted(current)
-                        lastCommitted = current
-                        current = t
+                    let range = result.range
+
+                    // 查找是否有与当前 range 重叠的已有分段
+                    if let idx = segments.firstIndex(where: { Self.rangesOverlap($0.range, range) }) {
+                        // 已有分段且已定稿、新结果未定稿 → 忽略（不降级）
+                        if segments[idx].isFinalized && !finalized { continue }
+                        let wasFinalized = segments[idx].isFinalized
+                        segments[idx].text = t
+                        segments[idx].range = range
+                        segments[idx].isFinalized = finalized
+                        if !wasFinalized && finalized {
+                            finalizedCount += 1
+                        }
                     } else {
-                        current = t
+                        // 新分段：找到正确的时间顺序插入位置
+                        let insertAt = segments.firstIndex(where: {
+                            CMTimeCompare(range.start, $0.range.start) < 0
+                        }) ?? segments.count
+                        segments.insert(Segment(range: range, text: t, isFinalized: finalized), at: insertAt)
+                        if finalized { finalizedCount += 1 }
                     }
-                    let display = current.isEmpty ? transcript : Self.join(transcript, current)
+
+                    // 构建显示文本：已定稿分段 + 当前流式分段（自然顺序拼接）
+                    let committed = segments.prefix(while: { $0.isFinalized }).map(\.text)
+                    let pending = segments.drop(while: { $0.isFinalized }).map(\.text)
+                    let display = Self.buildDisplayText(committed: committed, pending: pending)
                     self.finalText = display
                     onPartial(display)
                 }
             } catch {
                 // 流结束或中止，忽略
             }
+            print("[SystemDictation] result stream ended, segments=\(segments.count), finalized=\(finalizedCount)")
         }
     }
 
-    /// 拼接两个文本片段：拉丁字母/数字之间补一个空格，CJK 等则直接相连（避免中文里出现多余空格）。
-    private static func join(_ a: String, _ b: String) -> String {
-        guard !a.isEmpty else { return b }
-        guard !b.isEmpty else { return a }
-        let aLast = a.unicodeScalars.last!
-        let bFirst = b.unicodeScalars.first!
-        let needsSpace = isLatinLetterOrDigit(aLast) && isLatinLetterOrDigit(bFirst)
-        return needsSpace ? a + " " + b : a + b
+    /// 时间轴分段：每个分段对应 DictationTranscriber.Result 的一个时间区间。
+    private struct Segment {
+        var range: CMTimeRange
+        var text: String
+        var isFinalized: Bool
+    }
+
+    /// 判断两个 CMTimeRange 是否有重叠（含包含关系）。
+    private static func rangesOverlap(_ a: CMTimeRange, _ b: CMTimeRange) -> Bool {
+        let aEnd = CMTimeRangeGetEnd(a)
+        let bEnd = CMTimeRangeGetEnd(b)
+        return CMTimeCompare(a.start, bEnd) < 0 && CMTimeCompare(b.start, aEnd) < 0
+    }
+
+    /// 将已定稿和流式分段的文本拼接为显示文本。
+    /// 拉丁字母/数字之间补空格，CJK 等直接相连。
+    private static func buildDisplayText(committed: [String], pending: [String]) -> String {
+        let all = committed + pending
+        return all.reduce(into: "") { acc, next in
+            if acc.isEmpty || next.isEmpty {
+                acc += next
+                return
+            }
+            let last = acc.unicodeScalars.last!
+            let first = next.unicodeScalars.first!
+            let needsSpace = isLatinLetterOrDigit(last) && isLatinLetterOrDigit(first)
+            if needsSpace { acc += " " }
+            acc += next
+        }
     }
 
     private static func isLatinLetterOrDigit(_ s: Unicode.Scalar) -> Bool {
@@ -158,11 +177,6 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         case 0x30...0x39, 0x41...0x5A, 0x61...0x7A: return true
         default: return false
         }
-    }
-
-    /// 判断 next 是否为 prev 的同一句的精炼版（前缀包含关系），用于区分「同一句持续改进」与「开始了新的一句」。
-    private static func isRefinement(_ prev: String, _ next: String) -> Bool {
-        next == prev || next.hasPrefix(prev) || prev.hasPrefix(next)
     }
 
     func stop() async throws -> String {
