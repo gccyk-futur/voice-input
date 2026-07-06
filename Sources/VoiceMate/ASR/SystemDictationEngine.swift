@@ -4,8 +4,11 @@ import Speech
 
 /// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + SpeechTranscriber（实时渐进转写）。
 /// 部署目标即 macOS 26，故默认走 SpeechAnalyzer；如后续需支持更低版本可在此追加 SFSpeechRecognizer 降级分支。
-@MainActor
-final class SystemDictationEngine: ASREngine {
+///
+/// 注意：本类**不隔离到主线程**。音频采集、语音模型加载与转写分析都在调用方提供的
+/// 后台 Task 中执行，避免阻塞 UI 主线程（否则表现为菜单栏转圈、整 app 卡死）。
+/// 仅通过 onPartial 把识别结果抛回上层，由上层负责切回 MainActor 刷新界面。
+final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system"
     let displayName = "系统听写"
 
@@ -16,7 +19,7 @@ final class SystemDictationEngine: ASREngine {
     private var resultTask: Task<Void, Never>?
     private var finalText: String = ""
 
-    func start(locale: Locale, onPartial: @escaping (String) -> Void) async throws {
+    func start(locale: Locale, onPartial: @escaping @Sendable (String) -> Void) async throws {
         // 语音识别授权
         let speechOK: Bool
         switch SFSpeechRecognizer.authorizationStatus() {
@@ -84,7 +87,7 @@ final class SystemDictationEngine: ASREngine {
         try audioEngine.start()
 
         finalText = ""
-        resultTask = Task { @MainActor in
+        resultTask = Task.detached(priority: .userInitiated) { [inputBuilder] in
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
