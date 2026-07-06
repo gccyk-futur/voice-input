@@ -1,0 +1,25 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode / xcodegen 生成产物（通过 `xcodegen generate` 重新生成，不入库）
+*.xcodeproj
+*.xcworkspace
+xcuserdata/
+DerivedData/
+build/
+.swiftpm/
+
+# 编辑器
+*.swp
+*~
+.vscode/
+
+# 日志
+*.log
+
+# Agent 运行时数据（非项目源码）
+.codebuddy/
+
+# 说明：API Key 等敏感信息仅存于本地 Keychain，绝不入库
