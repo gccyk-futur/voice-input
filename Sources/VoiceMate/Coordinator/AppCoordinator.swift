@@ -117,15 +117,23 @@ final class AppCoordinator {
         let useLLM = configStore.config.llm.enabled && !llmText.isEmpty
         let text = useLLM ? llmText : asrText
         let ok = pasteService.paste(text)
+        if !ok {
+            // 粘贴失败：未授权辅助功能时引导开启；文本已在剪贴板，可手动 ⌘V。
+            // 不立即关闭面板，保留提示便于用户操作。
+            if !pasteService.isTrusted {
+                pasteService.openAccessibilitySettings()
+                statusText = "请到 系统设置→隐私与安全性→辅助功能 允许 VoiceMate，以自动插入文本（已复制，可手动 ⌘V）"
+            } else {
+                statusText = "已复制到剪贴板，请手动 ⌘V"
+            }
+            return
+        }
         historyStore.append(HistoryItem(
             asrResult: asrText,
             llmResult: useLLM ? llmText : nil,
             engine: asrEngine?.id ?? "system",
             llmEngine: useLLM ? configStore.config.llm.engine : nil
         ))
-        if !ok {
-            statusText = "已复制到剪贴板，请手动 ⌘V"
-        }
         reset()
     }
 

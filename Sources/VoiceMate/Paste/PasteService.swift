@@ -1,38 +1,60 @@
 import AppKit
 import Carbon.HIToolbox
+import ApplicationServices
 
-/// 粘贴服务：通过 CGEvent 模拟 Cmd+V 将文本填入当前光标位置。
-/// 需要辅助功能权限；缺失时回退为写入剪贴板并由用户手动粘贴。
+/// 粘贴服务：将文本写入当前光标所在的输入框。
+///
+/// 优先用辅助功能 API（AX）直接往「系统当前焦点元素」插入文本——这种方式不依赖本 app
+/// 是否抢到焦点、也不依赖剪贴板，且是光标处插入（不会替换已有内容）。
+/// 仅当未授权辅助功能时才回退为：写入剪贴板 + 模拟 Cmd+V（此时需目标 app 在前台）。
 @MainActor
 final class PasteService {
     static let shared = PasteService()
-
     private let vKeyCode: CGKeyCode = 9 // kVK_ANSI_V
 
-    /// 将文本写入剪贴板并模拟 Cmd+V。
-    /// - Returns: true 表示已成功模拟粘贴；false 表示缺少辅助功能权限，仅写入剪贴板。
+    /// 将文本插入到当前光标位置。
+    /// - Returns: true 表示已成功插入；false 表示未授权辅助功能，仅写入剪贴板（需手动 Cmd+V）。
     @discardableResult
     func paste(_ text: String) -> Bool {
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
+        // 优先：辅助功能直接插入（光标处，不替换已有文本）
+        if isTrusted, insertViaAccessibility(text) {
+            return true
+        }
+        // 回退：写入剪贴板 + 模拟 Cmd+V
+        writeClipboard(text)
+        if isTrusted {
+            return simulateCmdV()
+        }
+        return false
+    }
 
-        guard isTrusted else {
-            // 无辅助功能权限：已写入剪贴板，待用户手动 Cmd+V
-            return false
-        }
+    /// 通过系统辅助功能，把文本插入到当前激活 app 的焦点文本元素的光标处。
+    private func insertViaAccessibility(_ text: String) -> Bool {
+        let systemWide = AXUIElementCreateSystemWide()
+        var focused: CFTypeRef?
+        let attrFocused = kAXFocusedUIElementAttribute as CFString
+        guard AXUIElementCopyAttributeValue(systemWide, attrFocused, &focused) == .success,
+              let elemRef = focused else { return false }
+        let elem = elemRef as! AXUIElement
+        let cf = text as CFString
+        // 设置选区文本 = 在光标处插入（若有选区则替换选区，符合预期）；不会清空整篇内容。
+        return AXUIElementSetAttributeValue(elem, kAXSelectedTextAttribute as CFString, cf) == .success
+    }
 
-        guard let source = CGEventSource(stateID: .combinedSessionState) else {
-            return false
-        }
-        guard let keyDown = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let keyUp = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            return false
-        }
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.post(tap: .cghidEventTap)
-        keyUp.post(tap: .cghidEventTap)
+    private func writeClipboard(_ text: String) {
+        let pb = NSPasteboard.general
+        pb.clearContents()
+        pb.setString(text, forType: .string)
+    }
+
+    private func simulateCmdV() -> Bool {
+        guard let source = CGEventSource(stateID: .combinedSessionState),
+              let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
+              let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return false }
+        down.flags = .maskCommand
+        up.flags = .maskCommand
+        down.post(tap: .cghidEventTap)
+        up.post(tap: .cghidEventTap)
         return true
     }
 
