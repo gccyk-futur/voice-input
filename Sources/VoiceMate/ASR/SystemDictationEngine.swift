@@ -2,8 +2,9 @@ import Foundation
 import AVFoundation
 import Speech
 
-/// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + SpeechTranscriber（实时渐进转写）。
-/// 部署目标即 macOS 26，故默认走 SpeechAnalyzer；如后续需支持更低版本可在此追加 SFSpeechRecognizer 降级分支。
+/// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + DictationTranscriber（实时渐进连续听写）。
+/// 选用 DictationTranscriber 而非 SpeechTranscriber，是因为前者使用系统「连续听写」的
+/// 本地模型（用户已确认本机可用），而 SpeechTranscriber 的中文短句资产经常缺失。
 ///
 /// 注意：本类**不隔离到主线程**。音频采集、语音模型加载与转写分析都在调用方提供的
 /// 后台 Task 中执行，避免阻塞 UI 主线程（否则表现为菜单栏转圈、整 app 卡死）。
@@ -14,7 +15,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
 
     private let audioEngine = AVAudioEngine()
     private var analyzer: SpeechAnalyzer?
-    private var transcriber: SpeechTranscriber?
+    private var transcriber: DictationTranscriber?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
     private var resultTask: Task<Void, Never>?
     private var finalText: String = ""
@@ -48,26 +49,18 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         }
         guard micOK else { throw ASRError.microphoneNotAuthorized }
 
-        // 选择可用语音模型的语言。
-        // 注意：SpeechTranscriber 会把 "zh-CN" 解析为宏语言 "cmn"，而 GeneralASR 资产按
-        // "zh-Hans"/"zh-Hant" 存放，直接传 zh-CN/cmn 会找不到资产并导致框架抛异常闪退。
-        // 因此做一组候选回退，挑第一个能拿到音频格式的语言再继续。
-        let candidateIDs = Self.candidateLocaleIdentifiers(for: locale.identifier)
-        var chosenTranscriber: SpeechTranscriber?
-        var chosenFormat: AVAudioFormat?
-        for id in candidateIDs {
-            let loc = Locale(identifier: id)
-            let t = SpeechTranscriber(locale: loc, preset: .progressiveTranscription)
-            if let f = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [t]) {
-                chosenTranscriber = t
-                chosenFormat = f
-                break
-            }
-        }
-        guard let transcriber = chosenTranscriber, let analyzerFormat = chosenFormat else {
+        // 解析为本机实际支持的听写语言。DictationTranscriber 使用系统连续听写的本地模型，
+        // supportedLocale(equivalentTo:) 会把 "zh-CN" 解析成机器上真实存在的模型语言；
+        // 直接传 zh-CN 可能被解析成 cmn 而无资产。解析不到则回退到其他引擎。
+        guard let resolved = await DictationTranscriber.supportedLocale(equivalentTo: locale) else {
             throw ASRError.noSpeechAsset(original: locale.identifier)
         }
+        let transcriber = DictationTranscriber(locale: resolved, preset: .progressiveLongDictation)
         self.transcriber = transcriber
+
+        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            throw ASRError.noSpeechAsset(original: locale.identifier)
+        }
 
         let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputBuilder = inputBuilder
@@ -105,10 +98,9 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
             do {
                 for try await result in transcriber.results {
                     let text = String(result.text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
-                    if result.isFinal {
-                        self.finalText = text
-                    }
                     guard !text.isEmpty else { continue }
+                    // DictationTranscriber.Result 无 isFinal 字段，始终以最新非空文本作为最终结果
+                    self.finalText = text
                     onPartial(text)
                 }
             } catch {
@@ -150,28 +142,5 @@ enum ASRError: LocalizedError {
         case .noSpeechAsset(let original): return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
         case .speechNotAvailable(let locale): return "当前设备不支持语言（\(locale)）的语音识别"
         }
-    }
-}
-
-extension SystemDictationEngine {
-    /// 把可能解析成宏语言（cmn）的标识符映射到框架实际可用的区域码。
-    /// 例如 zh-CN / cmn → 依次尝试 zh-Hans-CN、zh-Hans、zh-CN（及原始值）。
-    private static func candidateLocaleIdentifiers(for raw: String) -> [String] {
-        let lower = raw.lowercased()
-        let base: [String]
-        if lower == "cmn" {
-            base = ["zh-Hans-CN", "zh-Hans", "zh-CN", raw]
-        } else if lower.hasPrefix("zh") {
-            if lower.contains("hant") || lower.contains("tw") || lower.contains("hk") {
-                base = ["zh-Hant-CN", "zh-Hant", "zh-TW", raw]
-            } else {
-                base = ["zh-Hans-CN", "zh-Hans", "zh-CN", raw]
-            }
-        } else {
-            return [raw]
-        }
-        // 去重保序
-        var seen = Set<String>()
-        return base.filter { seen.insert($0).inserted }
     }
 }

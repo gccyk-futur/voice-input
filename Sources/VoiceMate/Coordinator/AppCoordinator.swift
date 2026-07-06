@@ -146,22 +146,13 @@ final class AppCoordinator {
 
     // MARK: - 引擎解析（可插拔）
 
-    /// 选择 ASR 引擎：优先 on-device 的 SpeechAnalyzer，仅当 SpeechTranscriber 支持该语言时；
-    /// 否则回退到 SFSpeechRecognizer（服务器识别，中文可用）。
+    /// 选择 ASR 引擎：优先使用本地连续听写（DictationTranscriber，复用系统已下载模型，
+    /// 与系统「听写」同源），仅当本机不支持该语言时才回退到 SFSpeechRecognizer（服务器）。
     func resolveASR() async -> any ASREngine {
         let raw = configStore.config.asr.system.language
-        let lower = raw.lowercased()
-        // 中文（含 cmn）本机几乎都缺 on-device 资产，直接走服务器引擎，避免无谓的模型探测噪声
-        let isChinese = lower.hasPrefix("zh") || lower == "cmn"
-        if !isChinese, await SpeechTranscriber.isAvailable {
-            if let list = try? await SpeechTranscriber.supportedLocales {
-                let loc = Locale(identifier: raw)
-                let supported = list.contains { supported in
-                    supported.languageCode == loc.languageCode
-                        || supported.identifier.lowercased() == loc.identifier.lowercased()
-                }
-                if supported { return SystemDictationEngine() }
-            }
+        let loc = Locale(identifier: raw)
+        if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+            return SystemDictationEngine()
         }
         return LegacyDictationEngine()
     }
