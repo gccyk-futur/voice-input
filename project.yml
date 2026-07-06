@@ -1,0 +1,38 @@
+name: VoiceMate
+options:
+  bundleIdPrefix: com.voicemate
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ARCHS: "arm64 x86_64"
+    ENABLE_HARDENED_RUNTIME: true
+    CODE_SIGN_STYLE: Automatic
+    PRODUCT_BUNDLE_IDENTIFIER: com.voicemate.VoiceMate
+    INFOPLIST_FILE: Sources/VoiceMate/Resources/Info.plist
+    LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+    ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+targets:
+  VoiceMate:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/VoiceMate
+    info:
+      path: Sources/VoiceMate/Resources/Info.plist
+      properties:
+        CFBundleName: VoiceMate
+        CFBundleDisplayName: VoiceMate
+        CFBundleIdentifier: com.voicemate.VoiceMate
+        CFBundleVersion: "1"
+        CFBundleShortVersionString: "1.0.0"
+        CFBundlePackageType: APPL
+        CFBundleExecutable: VoiceMate
+        NSPrincipalClass: NSApplication
+        LSUIElement: true
+        NSMicrophoneUsageDescription: "VoiceMate 需要使用麦克风进行语音输入。"
+        NSSpeechRecognitionUsageDescription: "VoiceMate 需要使用语音识别将语音实时转为文字。"
+        NSHumanReadableCopyright: "Copyright © 2026 VoiceMate. MIT License."

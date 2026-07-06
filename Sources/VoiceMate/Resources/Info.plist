@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>VoiceMate</string>
+    <key>CFBundleDisplayName</key>
+    <string>VoiceMate</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.voicemate.VoiceMate</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0.0</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleExecutable</key>
+    <string>VoiceMate</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>VoiceMate 需要使用麦克风进行语音输入。</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>VoiceMate 需要使用语音识别将语音实时转为文字。</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 VoiceMate. MIT License.</string>
+</dict>
+</plist>
