@@ -337,6 +337,7 @@ final class AppCoordinator {
         case "openai": return OpenAICompatibleEngine(baseUrl: cfg.openai.baseUrl, apiKey: cfg.openai.apiKey, model: cfg.openai.model, temperature: cfg.openai.temperature, kind: .openai)
         case "deepseek": return OpenAICompatibleEngine(baseUrl: cfg.deepseek.baseUrl, apiKey: cfg.deepseek.apiKey, model: cfg.deepseek.model, temperature: cfg.deepseek.temperature, kind: .deepseek)
         case "custom": return OpenAICompatibleEngine(baseUrl: cfg.custom.baseUrl, apiKey: cfg.custom.apiKey, model: cfg.custom.model, temperature: cfg.custom.temperature, kind: .custom)
+        case "claude": return ClaudeEngine(baseUrl: cfg.claude.baseUrl, apiKey: cfg.claude.apiKey, model: cfg.claude.model, temperature: cfg.claude.temperature)
         default: return nil
         }
     }

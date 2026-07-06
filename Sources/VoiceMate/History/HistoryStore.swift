@@ -24,11 +24,15 @@ final class HistoryStore {
         items = decoded
     }
 
+    /// 历史变更通知（HistoryView 据此刷新）。
+    static let didChange = Notification.Name("VoiceMateHistoryDidChange")
+
     func save() {
         guard !historyDisabled else { return }
         if let data = try? JSONEncoder().encode(items) {
             try? data.write(to: fileURL, options: .atomic)
         }
+        NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
     func append(_ item: HistoryItem) {

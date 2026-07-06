@@ -71,10 +71,11 @@ struct SettingsView: View {
                 if draft.llm.enabled {
                     labeled("引擎") {
                         Picker("", selection: $draft.llm.engine) {
-                            Text("Ollama（本地）").tag("ollama")
-                            Text("OpenAI").tag("openai")
-                            Text("DeepSeek").tag("deepseek")
-                            Text("自定义").tag("custom")
+                        Text("Ollama（本地）").tag("ollama")
+                        Text("OpenAI").tag("openai")
+                        Text("DeepSeek").tag("deepseek")
+                        Text("Claude").tag("claude")
+                        Text("自定义").tag("custom")
                         }
                         .labelsHidden()
                         .frame(width: 240)
