@@ -48,12 +48,26 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         }
         guard micOK else { throw ASRError.microphoneNotAuthorized }
 
-        let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
-        self.transcriber = transcriber
-
-        guard let analyzerFormat = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
-            throw ASRError.noAudioFormat
+        // 选择可用语音模型的语言。
+        // 注意：SpeechTranscriber 会把 "zh-CN" 解析为宏语言 "cmn"，而 GeneralASR 资产按
+        // "zh-Hans"/"zh-Hant" 存放，直接传 zh-CN/cmn 会找不到资产并导致框架抛异常闪退。
+        // 因此做一组候选回退，挑第一个能拿到音频格式的语言再继续。
+        let candidateIDs = Self.candidateLocaleIdentifiers(for: locale.identifier)
+        var chosenTranscriber: SpeechTranscriber?
+        var chosenFormat: AVAudioFormat?
+        for id in candidateIDs {
+            let loc = Locale(identifier: id)
+            let t = SpeechTranscriber(locale: loc, preset: .progressiveTranscription)
+            if let f = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [t]) {
+                chosenTranscriber = t
+                chosenFormat = f
+                break
+            }
         }
+        guard let transcriber = chosenTranscriber, let analyzerFormat = chosenFormat else {
+            throw ASRError.noSpeechAsset(original: locale.identifier)
+        }
+        self.transcriber = transcriber
 
         let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputBuilder = inputBuilder
@@ -124,6 +138,7 @@ enum ASRError: LocalizedError {
     case microphoneNotAuthorized
     case noAudioFormat
     case converterInit
+    case noSpeechAsset(original: String)
 
     var errorDescription: String? {
         switch self {
@@ -131,6 +146,30 @@ enum ASRError: LocalizedError {
         case .microphoneNotAuthorized: return "未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许"
         case .noAudioFormat: return "无可用的音频格式"
         case .converterInit: return "音频转换器初始化失败"
+        case .noSpeechAsset(let original): return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
         }
+    }
+}
+
+extension SystemDictationEngine {
+    /// 把可能解析成宏语言（cmn）的标识符映射到框架实际可用的区域码。
+    /// 例如 zh-CN / cmn → 依次尝试 zh-Hans-CN、zh-Hans、zh-CN（及原始值）。
+    private static func candidateLocaleIdentifiers(for raw: String) -> [String] {
+        let lower = raw.lowercased()
+        let base: [String]
+        if lower == "cmn" {
+            base = ["zh-Hans-CN", "zh-Hans", "zh-CN", raw]
+        } else if lower.hasPrefix("zh") {
+            if lower.contains("hant") || lower.contains("tw") || lower.contains("hk") {
+                base = ["zh-Hant-CN", "zh-Hant", "zh-TW", raw]
+            } else {
+                base = ["zh-Hans-CN", "zh-Hans", "zh-CN", raw]
+            }
+        } else {
+            return [raw]
+        }
+        // 去重保序
+        var seen = Set<String>()
+        return base.filter { seen.insert($0).inserted }
     }
 }
