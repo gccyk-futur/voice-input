@@ -127,9 +127,11 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
                         if finalized { finalizedCount += 1 }
                     }
 
-                    // 构建显示文本：已定稿分段 + 当前流式分段（自然顺序拼接）
-                    let committed = segments.prefix(while: { $0.isFinalized }).map(\.text)
-                    let pending = segments.drop(while: { $0.isFinalized }).map(\.text)
+                    // 构建显示文本：已定稿分段（按时间序）+ 未定稿流式分段（按时间序）。
+                    // 用 filter 而非 prefix(while:)，确保「较早段未定稿 + 较晚段已定稿」的中间态下，
+                    // 已定稿分段仍被归入 committed（贴合 handoff §5 的语义）。
+                    let committed = segments.filter { $0.isFinalized }.map(\.text)
+                    let pending = segments.filter { !$0.isFinalized }.map(\.text)
                     let display = Self.buildDisplayText(committed: committed, pending: pending)
                     self.finalText = display
                     onPartial(display)
