@@ -10,7 +10,7 @@ final class HotkeyManager {
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private let signature: OSType = 0x564D5445 // 'VMTE'
-    private let hotKeyIDValue: UInt32 = 1
+    fileprivate let hotKeyIDValue: UInt32 = 1
 
     /// 热键触发回调（已调度到主线程）。
     var onActivate: (() -> Void)?
@@ -26,7 +26,7 @@ final class HotkeyManager {
         }
         installEventHandler()
         var hotKeyID = EventHotKeyID(signature: signature, id: hotKeyIDValue)
-        let status = RegisterEventHotKey(keyCode, modifiers, &hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
         if status != noErr {
             print("[HotkeyManager] RegisterEventHotKey 失败，状态码：\(status)")
         }
@@ -50,7 +50,7 @@ final class HotkeyManager {
         let selfPtr = Unmanaged.passUnretained(self).toOpaque()
         InstallEventHandler(
             GetApplicationEventTarget(),
-            EventHandlerUPP(hotkeyEventHandler),
+            hotkeyEventHandler,
             1,
             &types,
             selfPtr,

@@ -9,7 +9,7 @@ struct StreamingClient {
         self.session = session
     }
 
-    func stream(request: URLRequest, extract: @escaping (Data) -> String?) -> AsyncThrowingStream<String, Error> {
+    func stream(request: URLRequest, extract: @escaping @Sendable (Data) -> String?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {

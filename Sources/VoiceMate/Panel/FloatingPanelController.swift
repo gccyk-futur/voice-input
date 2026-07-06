@@ -2,14 +2,12 @@ import AppKit
 import SwiftUI
 
 /// 悬浮面板控制器：NSPanel（nonactivating）+ NSVisualEffectView 毛玻璃背景。
-/// 遵循 HIG：不抢焦点、可被 Esc/取消关闭、降低透明度时回退为实色。
+/// 遵循 HIG：不抢焦点、可被 Esc/取消关闭；毛玻璃材质本身由系统适配「降低透明度」。
 @MainActor
 final class FloatingPanelController {
     private var panel: NSPanel?
     private weak var coordinator: AppCoordinator?
-    private var effectView: NSVisualEffectView?
     private var keyMonitor: Any?
-    private var reduceObserver: NSObjectProtocol?
 
     func setCoordinator(_ coordinator: AppCoordinator) {
         self.coordinator = coordinator
@@ -17,7 +15,6 @@ final class FloatingPanelController {
 
     func show() {
         if panel == nil { buildPanel() }
-        applyTransparencyMode()
         panel?.center()
         panel?.orderFrontRegardless()
         panel?.makeKey()
@@ -69,17 +66,6 @@ final class FloatingPanelController {
         ])
 
         self.panel = panel
-        self.effectView = effect
-
-        reduceObserver = NotificationCenter.default.addObserver(
-            forName: NSWorkspace.accessibilityReduceTransparencyDidChangeNotification,
-            object: nil, queue: .main
-        ) { [weak self] _ in self?.applyTransparencyMode() }
-    }
-
-    private func applyTransparencyMode() {
-        let reduce = NSWorkspace.shared.accessibilityReduceTransparency
-        effectView?.state = reduce ? .inactive : .active
     }
 
     // MARK: - 键盘（Cmd+Return 粘贴 / Esc 取消）
@@ -103,12 +89,6 @@ final class FloatingPanelController {
         if let m = keyMonitor {
             NSEvent.removeMonitor(m)
             keyMonitor = nil
-        }
-    }
-
-    deinit {
-        if let obs = reduceObserver {
-            NotificationCenter.default.removeObserver(obs)
         }
     }
 }

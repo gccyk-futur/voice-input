@@ -152,9 +152,9 @@ final class AppCoordinator {
         let cfg = configStore.config.llm
         switch cfg.engine {
         case "ollama": return OllamaEngine(config: cfg.ollama)
-        case "openai": return OpenAICompatibleEngine(config: cfg.openai, kind: .openai)
-        case "deepseek": return OpenAICompatibleEngine(config: cfg.deepseek, kind: .deepseek)
-        case "custom": return OpenAICompatibleEngine(config: cfg.custom, kind: .custom)
+        case "openai": return OpenAICompatibleEngine(baseUrl: cfg.openai.baseUrl, apiKey: cfg.openai.apiKey, model: cfg.openai.model, temperature: cfg.openai.temperature, kind: .openai)
+        case "deepseek": return OpenAICompatibleEngine(baseUrl: cfg.deepseek.baseUrl, apiKey: cfg.deepseek.apiKey, model: cfg.deepseek.model, temperature: cfg.deepseek.temperature, kind: .deepseek)
+        case "custom": return OpenAICompatibleEngine(baseUrl: cfg.custom.baseUrl, apiKey: cfg.custom.apiKey, model: cfg.custom.model, temperature: cfg.custom.temperature, kind: .custom)
         default: return nil
         }
     }

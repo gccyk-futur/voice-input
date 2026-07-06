@@ -19,7 +19,7 @@ final class ConfigStore {
         "asr.openaiWhisper.apiKey"
     ]
     private(set) var config: AppConfig
-    private var source: DispatchSourceFileSystemEvent?
+    private var source: DispatchSourceFileSystemObject?
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -94,7 +94,7 @@ final class ConfigStore {
     private func startWatching() {
         let fd = open(fileURL.path, O_EVTONLY)
         guard fd != -1 else { return }
-        let src = DispatchSource.makeFileSystemSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
+        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
         src.setEventHandler { [weak self] in
             guard let self else { return }
             self.config = ConfigStore.read(fileURL: self.fileURL, keychain: self.keychain)
