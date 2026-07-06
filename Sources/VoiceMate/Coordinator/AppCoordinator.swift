@@ -130,7 +130,7 @@ final class AppCoordinator {
             target.activate(options: .activateIgnoringOtherApps)
         }
         targetApp = nil
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self else { return }
             let ok = self.pasteService.paste(text)
             if !ok {
