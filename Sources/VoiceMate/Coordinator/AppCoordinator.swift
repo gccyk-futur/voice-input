@@ -61,7 +61,7 @@ final class AppCoordinator {
             } catch {
                 await MainActor.run {
                     self.sessionState = .idle
-                    self.statusText = "听写启动失败"
+                    self.statusText = "听写启动失败：\(error.localizedDescription)"
                     self.panel.close()
                 }
             }

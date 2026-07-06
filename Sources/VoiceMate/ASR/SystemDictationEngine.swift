@@ -18,10 +18,32 @@ final class SystemDictationEngine: ASREngine {
 
     func start(locale: Locale, onPartial: @escaping (String) -> Void) async throws {
         // 语音识别授权
-        let auth = await withCheckedContinuation { (cont: CheckedContinuation<SFSpeechRecognizerAuthorizationStatus, Never>) in
-            SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0) }
+        let speechOK: Bool
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .authorized:
+            speechOK = true
+        case .notDetermined:
+            speechOK = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
+            }
+        default:
+            speechOK = false
         }
-        guard auth == .authorized else { throw ASRError.speechNotAuthorized }
+        guard speechOK else { throw ASRError.speechNotAuthorized }
+
+        // 麦克风授权（macOS TCC：AVAudioEngine 输入依赖麦克风权限，不显式请求可能收到静音且不报错）
+        let micOK: Bool
+        switch AVCaptureDevice.authorizationStatus(for: .audio) {
+        case .authorized:
+            micOK = true
+        case .notDetermined:
+            micOK = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+            }
+        default:
+            micOK = false
+        }
+        guard micOK else { throw ASRError.microphoneNotAuthorized }
 
         let transcriber = SpeechTranscriber(locale: locale, preset: .progressiveTranscription)
         self.transcriber = transcriber
@@ -94,8 +116,18 @@ final class SystemDictationEngine: ASREngine {
     }
 }
 
-enum ASRError: Error {
+enum ASRError: LocalizedError {
     case speechNotAuthorized
+    case microphoneNotAuthorized
     case noAudioFormat
     case converterInit
+
+    var errorDescription: String? {
+        switch self {
+        case .speechNotAuthorized: return "未授权语音识别，请在系统设置→隐私与安全性→语音识别 中允许"
+        case .microphoneNotAuthorized: return "未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许"
+        case .noAudioFormat: return "无可用的音频格式"
+        case .converterInit: return "音频转换器初始化失败"
+        }
+    }
 }
