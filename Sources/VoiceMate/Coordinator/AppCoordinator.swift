@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Speech
+import AppKit
 
 /// 应用中枢：持有各服务，驱动会话状态机（idle→recording→transcribing→polishing→ready）。
 @MainActor
@@ -23,6 +24,8 @@ final class AppCoordinator {
 
     private var asrEngine: (any ASREngine)?
     private var llmEngine: (any LLMEngine)?
+    /// 识别开始时前台的目标 app（文字应插入它的输入框）；停止时把焦点还给它。
+    private var targetApp: NSRunningApplication?
 
     static let shared = AppCoordinator()
 
@@ -49,10 +52,15 @@ final class AppCoordinator {
 
     func startRecording() {
         guard sessionState == .idle else { return }
+        // 记下当前前台的目标 app（文字应插入它的输入框）。on-device 听写需要本 app 处于
+        // 激活状态才能出结果，因此下面会激活本 app；停止时再把焦点还给 targetApp。
+        targetApp = NSWorkspace.shared.frontmostApplication
         asrText = ""
         llmText = ""
         sessionState = .recording
         statusText = "聆听中…"
+        // 激活本 app 以驱动 on-device 听写（菜单栏 agent 默认不激活，会导致识别不开始）。
+        NSApp.activate(ignoringOtherApps: true)
         panel.show()
 
         let languageID = configStore.config.asr.system.language
@@ -116,25 +124,33 @@ final class AppCoordinator {
         guard sessionState == .ready else { return }
         let useLLM = configStore.config.llm.enabled && !llmText.isEmpty
         let text = useLLM ? llmText : asrText
-        let ok = pasteService.paste(text)
-        if !ok {
-            // 粘贴失败：未授权辅助功能时引导开启；文本已在剪贴板，可手动 ⌘V。
-            // 不立即关闭面板，保留提示便于用户操作。
-            if !pasteService.isTrusted {
-                pasteService.openAccessibilitySettings()
-                statusText = "请到 系统设置→隐私与安全性→辅助功能 允许 VoiceMate，以自动插入文本（已复制，可手动 ⌘V）"
-            } else {
-                statusText = "已复制到剪贴板，请手动 ⌘V"
-            }
-            return
+        // 识别期间本 app 被激活以驱动 on-device 听写；停止时先把焦点还给目标 app，
+        // 再在其光标处插入文本（否则会粘到我们自己的面板、且清空目标原文）。
+        if let target = targetApp {
+            target.activate(options: .activateIgnoringOtherApps)
         }
-        historyStore.append(HistoryItem(
-            asrResult: asrText,
-            llmResult: useLLM ? llmText : nil,
-            engine: asrEngine?.id ?? "system",
-            llmEngine: useLLM ? configStore.config.llm.engine : nil
-        ))
-        reset()
+        targetApp = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self else { return }
+            let ok = self.pasteService.paste(text)
+            if !ok {
+                // 粘贴失败：未授权辅助功能时引导开启；文本已在剪贴板，可手动 ⌘V。
+                if !self.pasteService.isTrusted {
+                    self.pasteService.openAccessibilitySettings()
+                    self.statusText = "请到 系统设置→隐私与安全性→辅助功能 允许 VoiceMate（已复制，可手动 ⌘V）"
+                } else {
+                    self.statusText = "已复制到剪贴板，请手动 ⌘V"
+                }
+                return
+            }
+            self.historyStore.append(HistoryItem(
+                asrResult: self.asrText,
+                llmResult: useLLM ? self.llmText : nil,
+                engine: self.asrEngine?.id ?? "system",
+                llmEngine: useLLM ? self.configStore.config.llm.engine : nil
+            ))
+            self.reset()
+        }
     }
 
     func cancel() {
