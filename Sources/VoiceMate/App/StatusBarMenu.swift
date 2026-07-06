@@ -15,6 +15,10 @@ struct StatusBarMenu: View {
             Text("历史记录：\(history.items.count) 条")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Divider()
+            Button("设置…") {
+                SettingsWindowController.shared.show()
+            }
             Button("退出 VoiceMate") {
                 NSApp.terminate(nil)
             }

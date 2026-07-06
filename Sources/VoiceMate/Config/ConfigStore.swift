@@ -77,6 +77,12 @@ final class ConfigStore {
         }
     }
 
+    /// 用新配置覆盖并持久化（敏感字段写入 Keychain，文件脱敏）。
+    func update(_ new: AppConfig) {
+        config = new
+        save()
+    }
+
     func resetToDefaults() {
         config = AppConfig()
         for key in secretKeys { keychain.delete(key) }
