@@ -123,6 +123,7 @@ final class AppCoordinator {
         Task { @MainActor in
             let engine = await self.resolveASR()
             self.asrEngine = engine
+            NSApp.activate(ignoringOtherApps: true)
             panel.show()
             panel.makeKey()
             print("[Coordinator] starting \(engine.displayName)")
@@ -307,6 +308,9 @@ final class AppCoordinator {
             Task { try? await engine.stop() }
         }
         reset()
+        // 归还焦点给之前的应用
+        if let t = targetApp { t.activate() }
+        targetApp = nil
     }
 
     private func reset() {
