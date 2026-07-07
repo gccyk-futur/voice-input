@@ -67,8 +67,13 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
 
         let (inputSequence, inputBuilder) = AsyncStream<AnalyzerInput>.makeStream()
         self.inputBuilder = inputBuilder
-        let analyzer = SpeechAnalyzer(inputSequence: inputSequence, modules: [transcriber])
+        // ① 先只挂模块，不传输入流（避免 actor 提前消费数据）
+        let analyzer = SpeechAnalyzer(modules: [transcriber])
         self.analyzer = analyzer
+        // ② 准备 Analyzer：加载模型、配置音频格式
+        try await analyzer.prepareToAnalyze(in: analyzerFormat)
+        // ③ 准备完毕后再启动输入流消费
+        try await analyzer.start(inputSequence: inputSequence)
 
         let inputNode = audioEngine.inputNode
         let hardwareFormat = inputNode.outputFormat(forBus: 0)
@@ -194,13 +199,14 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     func stop() async throws -> String {
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
+        // 先 finalize Analyzer 让 transcriber 产出最终结果，再结束输入流。
+        if let analyzer {
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+        }
         inputBuilder?.finish()
         inputBuilder = nil
         resultTask?.cancel()
         resultTask = nil
-        if let analyzer {
-            try? await analyzer.finalizeAndFinishThroughEndOfInput()
-        }
         analyzer = nil
         transcriber = nil
         return finalText

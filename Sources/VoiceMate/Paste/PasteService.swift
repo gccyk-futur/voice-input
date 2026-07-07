@@ -28,15 +28,14 @@ final class PasteService {
         return simulateCmdV()
     }
 
-    /// 将文本插入到指定进程的光标位置。优先 AX，回退写剪贴板 + ⌘V 直送目标 PID。
-    /// 直送 PID 比 HID 投递更可靠——无需目标 app 在前台。
+    /// 将文本插入到指定进程的光标位置。优先 postToPid 发 ⌘V（最兼容终端等非标准 app），
+    /// AX 直插作为 fallback（对备忘录/文本框类 app 更自然）。
     @discardableResult
     func paste(_ text: String, to pid: pid_t) -> Bool {
-        if isTrusted, insertViaAccessibility(text) {
-            return true
-        }
         writeClipboard(text)
-        return simulateCmdV(to: pid)
+        if simulateCmdV(to: pid) { return true }
+        if isTrusted, insertViaAccessibility(text) { return true }
+        return false
     }
 
     /// 通过系统辅助功能，把文本插入到当前激活 app 的焦点文本元素的光标处。
@@ -59,6 +58,7 @@ final class PasteService {
     }
 
     private func simulateCmdV() -> Bool {
+        guard isTrusted else { return false }
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return false }
@@ -69,19 +69,13 @@ final class PasteService {
         return true
     }
 
-    /// 通过 HID 事件 + postToPid 双通道模拟 ⌘V，最大化粘贴成功率。
+    /// 通过 postToPid 模拟 ⌘V。不需要辅助功能，不需要目标在前台。
     private func simulateCmdV(to pid: pid_t) -> Bool {
         guard let source = CGEventSource(stateID: .combinedSessionState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let up   = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else { return false }
         down.flags = .maskCommand
         up.flags = .maskCommand
-        // 主通道：HID 级别投递，走完整系统事件链（WindowServer → target run loop → 响应链）
-        down.post(tap: .cghidEventTap)
-        usleep(15_000)
-        up.post(tap: .cghidEventTap)
-        // 辅通道：PID 直送，以防 HID 投递在 agent app 上下文中被限制
-        usleep(5_000)
         down.postToPid(pid)
         usleep(10_000)
         up.postToPid(pid)

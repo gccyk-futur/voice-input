@@ -15,6 +15,7 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     let displayName = "系统听写（服务器）"
     let requiresForeground = false
     private let audioEngine = AVAudioEngine()
+    private let appendQueue = DispatchQueue(label: "com.voicemate.speech.append")
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
@@ -56,10 +57,27 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
 
         let inputNode = audioEngine.inputNode
         let hardwareFormat = inputNode.outputFormat(forBus: 0)
-        // 原生格式直喂 SFSpeechRecognizer，不重采样（macOS 26 on-device 直接处理）
-        // bufferSize 1024 ≈ 23ms @ 44.1kHz，保证实时性
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
-            self?.request?.append(buffer)
+        // SFSpeechRecognizer 要求 16kHz 单声道（Code=203 "Corrupt" 否则）
+        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
+        guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else {
+            throw ASRError.converterInit
+        }
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self, converter, targetFormat, hardwareFormat] buffer, _ in
+            guard let self, let request = self.request else { return }
+            let ratio = targetFormat.sampleRate / hardwareFormat.sampleRate
+            let frameCount = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
+            guard frameCount > 0,
+                  let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else { return }
+            var didProvide = false
+            var convError: NSError?
+            converter.convert(to: outBuffer, error: &convError) { _, status in
+                guard !didProvide else { status.pointee = .noDataNow; return nil }
+                didProvide = true
+                status.pointee = .haveData
+                return buffer
+            }
+            guard convError == nil, outBuffer.frameLength > 0 else { return }
+            self.appendQueue.async { request.append(outBuffer) }
         }
         audioEngine.prepare()
         try audioEngine.start()
