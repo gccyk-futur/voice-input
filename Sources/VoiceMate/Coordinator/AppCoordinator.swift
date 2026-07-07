@@ -159,10 +159,10 @@ final class AppCoordinator {
                     self.startEngine(engine, languageID: languageID)
                 }
             } else {
-                // SFSpeechRecognizer：无需前台，面板浮在最上、不抢焦点
+                // 不需要前台的引擎（SFSpeechRecognizer / Alibaba Fun-ASR）：面板浮在最上、不抢焦点
                 panel.show()
                 panel.makeKey()
-                print("[Coordinator] starting SFSpeechRecognizer engine, no activation needed")
+                print("[Coordinator] starting \(engine.displayName) engine, no activation needed")
                 startEngine(engine, languageID: languageID)
             }
         }
@@ -368,18 +368,23 @@ final class AppCoordinator {
     }
 
     func cancel() {
-        print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
+        print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing), foregrounded=\(foregroundedForDictation)")
         if sessionState == .idle { return }
-        // 正在自动粘贴收尾：忽略面板关闭触发的 cancel，避免复位打断粘贴流程。
         if finalizing { return }
-        if let engine = asrEngine {
+        // 已在 stopAndProcess 中：不重复 stop，直接 reset
+        let alreadyStopping = (sessionState == .transcribing || sessionState == .polishing)
+        if let engine = asrEngine, !alreadyStopping {
             Task { try? await engine.stop() }
         }
         reset()
+        exitForeground()
     }
 
     private func reset() {
-        asrEngine = nil
+        // 阿里云引擎保持常驻连接，不销毁
+        if asrEngine?.id != "aliyun" {
+            asrEngine = nil
+        }
         llmEngine = nil
         asrText = ""
         llmText = ""
@@ -430,22 +435,35 @@ final class AppCoordinator {
     /// 选择 ASR 引擎：遵从用户设置。
     /// - "system"：SFSpeechRecognizer（稳定，无需前台，自动本地/云端路由）
     /// - "dictation"：DictationTranscriber（原生连续听写，需前台）
+    /// - "aliyun"：阿里云 Fun-ASR WebSocket（在线，高精度带标点）
     func resolveASR() async -> any ASREngine {
-        let raw = configStore.config.asr.system.language
-        let loc = Locale(identifier: raw)
+        print("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
         switch configStore.config.asr.engine {
         case "dictation":
+            let raw = configStore.config.asr.system.language
+            let loc = Locale(identifier: raw)
             if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
                 return SystemDictationEngine()
             }
-            // 回退到 SFSpeechRecognizer
+            fallthrough // 回退到 system
+        case "aliyun":
+            // 复用常驻连接
+            if let existing = asrEngine, existing.id == "aliyun" {
+                return existing
+            }
+            let cfg = configStore.config.asr.aliyun
+            if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
+                return AlibabaASREngine(apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, model: cfg.model)
+            }
+            print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，回退到 system")
             fallthrough
         default:
+            let raw = configStore.config.asr.system.language
+            let loc = Locale(identifier: raw)
             let recognizer = SFSpeechRecognizer(locale: loc)
             if let recognizer, recognizer.isAvailable {
                 return LegacyDictationEngine()
             }
-            // 最后的回退
             if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
                 return SystemDictationEngine()
             }
