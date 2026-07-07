@@ -15,6 +15,7 @@ struct GeneralConfig: Codable {
     var hotkey: String = "Cmd+Shift+V"
     var launchAtStartup: Bool = false
     var windowStyle: String = "vibrancy"
+    var maxHistoryCount: Int = 50
 }
 
 struct ASRConfig: Codable {

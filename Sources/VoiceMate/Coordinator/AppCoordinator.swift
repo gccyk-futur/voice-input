@@ -66,21 +66,19 @@ final class AppCoordinator {
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
         print("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
 
-        // 拒绝态：直接显示提示并打开系统设置，不进前台
         if micStatus == .denied || speechStatus == .denied {
             presentPermissionError(micDenied: micStatus == .denied, speechDenied: speechStatus == .denied)
             return
         }
 
-        // 未决定态：必须在 MainActor 上显式请求授权，系统对话框才能可靠弹出。
-        // 引擎的 start() 在后台 Task 里调用 requestAccess，macOS 可能静默拒绝（agent app 尤其如此）。
         if micStatus == .notDetermined || speechStatus == .notDetermined {
             requestPendingPermissions(micNeeded: micStatus == .notDetermined,
                                        speechNeeded: speechStatus == .notDetermined)
             return
         }
 
-        // 已授权：直接进入听写流程
+        // 播放开始提示音
+        NSSound(named: .init("Tink"))?.play()
         beginRecordingFlow()
     }
 
@@ -283,9 +281,11 @@ final class AppCoordinator {
         } else {
             sessionState = .ready
         }
-        // 到达就绪态：自动粘贴到当前光标并关闭面板（系统听写式体验）。
-        // raw/润色文本在此前始终留在 app 内，只有这一步才离开。
-        await MainActor.run { self.confirmPaste() }
+        // 到达就绪态：自动粘贴
+        await MainActor.run {
+            NSSound(named: .init("Purr"))?.play()
+            self.confirmPaste()
+        }
     }
 
     func confirmPaste() {

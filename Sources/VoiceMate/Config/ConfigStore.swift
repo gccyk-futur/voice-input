@@ -17,6 +17,7 @@ final class ConfigStore {
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         self.fileURL = support.appendingPathComponent("config.json")
         self.config = ConfigStore.read(fileURL: fileURL)
+        HistoryStore.shared.maxCount = config.general.maxHistoryCount
         startWatching()
     }
 
@@ -43,6 +44,7 @@ final class ConfigStore {
         config = new
         save()
         LoginItemManager.set(enabled: new.general.launchAtStartup)
+        HistoryStore.shared.maxCount = new.general.maxHistoryCount
     }
 
     func resetToDefaults() {

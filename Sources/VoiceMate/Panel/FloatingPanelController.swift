@@ -71,7 +71,7 @@ final class FloatingPanelController {
         guard let coordinator else { return }
 
         let panel = NSPanel(
-            contentRect: NSRect(x: 0, y: 0, width: 480, height: 230),
+            contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
             styleMask: [.titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false

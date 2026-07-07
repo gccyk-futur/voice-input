@@ -15,14 +15,10 @@ struct PanelView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Circle()
-                    .fill(statusColor)
-                    .frame(width: 8, height: 8)
-                Text(coordinator.statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Circle().fill(statusColor).frame(width: 8, height: 8)
+                Text(coordinator.statusText).font(.caption).foregroundStyle(.secondary)
                 Spacer()
                 Button(action: { coordinator.cancel() }) {
                     Image(systemName: "xmark.circle.fill")
@@ -31,41 +27,50 @@ struct PanelView: View {
                 .help("取消 (Esc)")
             }
 
-            // ASR 区（灰）
-            ScrollView {
-                Text(coordinator.asrText.isEmpty ? "正在聆听…" : coordinator.asrText)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
-            }
-            .frame(maxHeight: 80)
-
-            // LLM 区（黑）
-            if coordinator.sessionState == .ready || !coordinator.llmText.isEmpty {
-                Divider()
+            // ASR 区
+            ScrollViewReader { proxy in
                 ScrollView {
-                    let display = coordinator.llmText.isEmpty
-                        ? (coordinator.sessionState == .polishing ? "润色中…" : "")
-                        : coordinator.llmText
-                    Text(display)
-                        .foregroundStyle(.primary)
+                    Text(coordinator.asrText.isEmpty ? "正在聆听…" : coordinator.asrText)
+                        .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
+                        .id("asrBottom")
                 }
-                .frame(maxHeight: 80)
+                .frame(maxHeight: .infinity)
+                .onChange(of: coordinator.asrText) { _, _ in
+                    withAnimation { proxy.scrollTo("asrBottom", anchor: .bottom) }
+                }
+            }
+
+            // LLM 区
+            if coordinator.sessionState == .ready || !coordinator.llmText.isEmpty {
+                Divider()
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        Text(coordinator.llmText.isEmpty
+                             ? (coordinator.sessionState == .polishing ? "润色中…" : "")
+                             : coordinator.llmText)
+                            .foregroundStyle(.primary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                            .id("llmBottom")
+                    }
+                    .frame(maxHeight: .infinity)
+                    .onChange(of: coordinator.llmText) { _, _ in
+                        withAnimation { proxy.scrollTo("llmBottom", anchor: .bottom) }
+                    }
+                }
             }
 
             HStack {
                 Spacer()
-                Button("粘贴", action: { coordinator.confirmPaste() })
+                Button("粘贴") { coordinator.confirmPaste() }
                     .keyboardShortcut(.return, modifiers: .command)
                     .disabled(coordinator.sessionState != .ready)
-                Text("⌘↵ 粘贴")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                Text("⌘↵ 粘贴").font(.caption2).foregroundStyle(.tertiary)
             }
         }
         .padding(14)
-        .frame(width: 480)
+        .frame(minWidth: 480, minHeight: 280, maxHeight: 500)
     }
 }
