@@ -3,6 +3,7 @@ import SwiftUI
 import Speech
 import AppKit
 import ApplicationServices
+import AVFoundation
 
 /// 应用中枢：持有各服务，驱动会话状态机（idle→recording→transcribing→polishing→ready）。
 @MainActor
@@ -61,6 +62,14 @@ final class AppCoordinator {
 
     func startRecording() {
         guard sessionState == .idle else { return }
+        // 先预检隐私授权：被拒绝则直接在面板显示提示并打开系统设置，
+        // 不进入前台（避免 Dock 图标 enter/exit 反复闪烁）。
+        let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
+        let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        if micStatus == .denied || speechStatus == .denied {
+            presentPermissionError(micDenied: micStatus == .denied, speechDenied: speechStatus == .denied)
+            return
+        }
         // 使用 HotkeyManager 在 Carbon 回调第一时间（任何激活操作之前）捕获的目标 app。
         // 回退到当前 frontmostApplication 以防万一。
         targetApp = hotkey.capturedTargetApp ?? NSWorkspace.shared.frontmostApplication
@@ -97,11 +106,25 @@ final class AppCoordinator {
                         Task { @MainActor in self?.asrText = partial }
                     }
                 } catch {
+                    print("[Coordinator] engine.start failed: \(error)")
                     await MainActor.run {
-                        self.exitForeground()
+                        // 启动失败：保持面板与前台状态，把错误留在面板上可读，
+                        // 不退出前台、不关面板（避免"闪一下"看不清原因）。
                         self.sessionState = .idle
-                        self.statusText = "听写启动失败：\(error.localizedDescription)"
-                        self.panel.close()
+                        if let ae = error as? ASRError {
+                            switch ae {
+                            case .microphoneNotAuthorized:
+                                self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
+                                self.pasteService.openMicrophoneSettings()
+                            case .speechNotAuthorized:
+                                self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
+                                self.pasteService.openSpeechSettings()
+                            default:
+                                self.statusText = "听写启动失败：\(error.localizedDescription)"
+                            }
+                        } else {
+                            self.statusText = "听写启动失败：\(error.localizedDescription)"
+                        }
                     }
                 }
             }
@@ -159,6 +182,7 @@ final class AppCoordinator {
     }
 
     func stopAndProcess() {
+        print("[Coordinator] stopAndProcess() called, sessionState=\(sessionState), engine=\(asrEngine != nil)")
         guard let engine = asrEngine else { return }
         sessionState = .transcribing
         statusText = "转写中…"
@@ -277,6 +301,7 @@ final class AppCoordinator {
     }
 
     func cancel() {
+        print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
         if sessionState == .idle { return }
         // 正在自动粘贴收尾：忽略面板关闭触发的 cancel，避免复位打断粘贴流程。
         if finalizing { return }
@@ -295,6 +320,21 @@ final class AppCoordinator {
         statusText = "按 ⌘⇧V 开始"
         panel.close()
         exitForeground()
+    }
+
+    /// 权限被拒时：在面板显示可读提示并打开对应系统设置页，不进入前台（避免 Dock 闪烁）。
+    private func presentPermissionError(micDenied: Bool, speechDenied: Bool) {
+        asrText = ""
+        llmText = ""
+        sessionState = .idle
+        if micDenied {
+            statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
+            pasteService.openMicrophoneSettings()
+        } else {
+            statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
+            pasteService.openSpeechSettings()
+        }
+        panel.show()
     }
 
     /// 听写期间将 agent 进程提升为前台应用。Dock 图标显示是 TransformProcessType 的必然副作用，

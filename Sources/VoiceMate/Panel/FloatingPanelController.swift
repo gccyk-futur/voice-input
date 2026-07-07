@@ -137,5 +137,8 @@ final class FloatingPanelController {
 private final class PanelDelegate: NSObject, NSWindowDelegate {
     let onClose: () -> Void
     init(onClose: @escaping () -> Void) { self.onClose = onClose }
-    func windowWillClose(_ notification: Notification) { onClose() }
+    func windowWillClose(_ notification: Notification) {
+        print("[Panel] windowWillClose → cancel")
+        onClose()
+    }
 }

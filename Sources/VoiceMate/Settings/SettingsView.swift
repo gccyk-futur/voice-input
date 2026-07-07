@@ -33,9 +33,8 @@ struct SettingsView: View {
         GroupBox("常规") {
             VStack(alignment: .leading, spacing: 10) {
                 labeled("全局热键") {
-                    TextField("如 Cmd+Shift+V", text: $draft.general.hotkey)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 220)
+                    HotkeyRecorder(hotkeyString: $draft.general.hotkey)
+                        .frame(width: 280, height: 24)
                 }
                 Toggle("登录时启动", isOn: $draft.general.launchAtStartup)
             }
@@ -155,6 +154,8 @@ struct SettingsView: View {
 
     private func persist() {
         ConfigStore.shared.update(draft)
+        // 保存后立即重新注册热键，使修改即时生效（无需重启）。
+        HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
         onDone()
     }
 }
