@@ -9,7 +9,7 @@
 	<key>CFBundleExecutable</key>
 	<string>VoiceMate</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.voicemate.VoiceMate</string>
+	<string>me.ckai.VoiceMate</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>

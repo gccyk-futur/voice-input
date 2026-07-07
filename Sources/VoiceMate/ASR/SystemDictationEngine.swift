@@ -92,7 +92,15 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         }
 
         audioEngine.prepare()
-        try audioEngine.start()
+        do {
+            try audioEngine.start()
+        } catch {
+            // 启动失败：移除已安装的 tap、停掉引擎，避免下次 start 时
+            // "input node already has a tap" 再次抛错造成反复崩溃。
+            inputNode.removeTap(onBus: 0)
+            audioEngine.stop()
+            throw error
+        }
 
         finalText = ""
         // 基于时间轴的分段数组：每个 DictationTranscriber.Result 带 range: CMTimeRange，

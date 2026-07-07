@@ -1,93 +1,50 @@
 import Foundation
 
-/// 配置存储：全量写入 ~/Library/Application Support/VoiceMate/config.json，
-/// 敏感字段落盘脱敏为 "****" 并写入 Keychain；支持外部修改文件后热重载。
+/// 配置存储：全量写入 ~/Library/Application Support/VoiceMate/config.json。
+/// 为免去 Keychain 访问在开发/运行时反复弹密码的麻烦，API Key 直接以明文存于 config.json
+/// （本地个人工具，风险可接受）。后续若需更高安全，可改回 Keychain。
 @MainActor
 final class ConfigStore {
     static let shared = ConfigStore()
 
     private let fileURL: URL
-    private let keychain: KeychainStore
-    private let secretKeys: [String] = [
-        "llm.openai.apiKey",
-        "llm.deepseek.apiKey",
-        "llm.claude.apiKey",
-        "llm.custom.apiKey",
-        "asr.iflytek.apiKey",
-        "asr.aliyun.accessKey",
-        "asr.aliyun.accessSecret",
-        "asr.openaiWhisper.apiKey"
-    ]
-    private(set) var config: AppConfig
     private var source: DispatchSourceFileSystemObject?
+    private(set) var config: AppConfig
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("VoiceMate", isDirectory: true)
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         self.fileURL = support.appendingPathComponent("config.json")
-        self.keychain = KeychainStore(service: "com.voicemate.VoiceMate")
-        self.config = ConfigStore.read(fileURL: fileURL, keychain: keychain)
+        self.config = ConfigStore.read(fileURL: fileURL)
         startWatching()
     }
 
-    // MARK: - 读取（从文件 + Keychain 还原敏感字段）
+    // MARK: - 读取 / 写入（直接落盘，不碰 Keychain）
 
-    static func read(fileURL: URL, keychain: KeychainStore) -> AppConfig {
+    static func read(fileURL: URL) -> AppConfig {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
             return AppConfig()
         }
-        var c = decoded
-        if let v = keychain.get("llm.openai.apiKey"), !v.isEmpty { c.llm.openai.apiKey = v }
-        if let v = keychain.get("llm.deepseek.apiKey"), !v.isEmpty { c.llm.deepseek.apiKey = v }
-        if let v = keychain.get("llm.claude.apiKey"), !v.isEmpty { c.llm.claude.apiKey = v }
-        if let v = keychain.get("llm.custom.apiKey"), !v.isEmpty { c.llm.custom.apiKey = v }
-        if let v = keychain.get("asr.iflytek.apiKey"), !v.isEmpty { c.asr.iflytek.apiKey = v }
-        if let v = keychain.get("asr.aliyun.accessKey"), !v.isEmpty { c.asr.aliyun.accessKey = v }
-        if let v = keychain.get("asr.aliyun.accessSecret"), !v.isEmpty { c.asr.aliyun.accessSecret = v }
-        if let v = keychain.get("asr.openaiWhisper.apiKey"), !v.isEmpty { c.asr.openaiWhisper.apiKey = v }
-        return c
+        return decoded
     }
 
-    // MARK: - 写入（敏感字段存 Keychain，文件脱敏）
-
     func save() {
-        var c = config
-        keychain.set(c.llm.openai.apiKey, forKey: "llm.openai.apiKey")
-        keychain.set(c.llm.deepseek.apiKey, forKey: "llm.deepseek.apiKey")
-        keychain.set(c.llm.claude.apiKey, forKey: "llm.claude.apiKey")
-        keychain.set(c.llm.custom.apiKey, forKey: "llm.custom.apiKey")
-        keychain.set(c.asr.iflytek.apiKey, forKey: "asr.iflytek.apiKey")
-        keychain.set(c.asr.aliyun.accessKey, forKey: "asr.aliyun.accessKey")
-        keychain.set(c.asr.aliyun.accessSecret, forKey: "asr.aliyun.accessSecret")
-        keychain.set(c.asr.openaiWhisper.apiKey, forKey: "asr.openaiWhisper.apiKey")
-
-        c.llm.openai.apiKey = "****"
-        c.llm.deepseek.apiKey = "****"
-        c.llm.claude.apiKey = "****"
-        c.llm.custom.apiKey = "****"
-        c.asr.iflytek.apiKey = "****"
-        c.asr.aliyun.accessKey = "****"
-        c.asr.aliyun.accessSecret = "****"
-        c.asr.openaiWhisper.apiKey = "****"
-
-        if let data = try? JSONEncoder().encode(c) {
+        if let data = try? JSONEncoder().encode(config) {
             try? data.write(to: fileURL, options: .atomic)
         }
     }
 
-    /// 用新配置覆盖并持久化（敏感字段写入 Keychain，文件脱敏）。
+    /// 用新配置覆盖并持久化；同时同步登录项开关。
     func update(_ new: AppConfig) {
         config = new
         save()
-        // 登录时启动开关变化时同步登录项
         LoginItemManager.set(enabled: new.general.launchAtStartup)
     }
 
     func resetToDefaults() {
         config = AppConfig()
-        for key in secretKeys { keychain.delete(key) }
         save()
     }
 
@@ -99,7 +56,7 @@ final class ConfigStore {
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
         src.setEventHandler { [weak self] in
             guard let self else { return }
-            self.config = ConfigStore.read(fileURL: self.fileURL, keychain: self.keychain)
+            self.config = ConfigStore.read(fileURL: self.fileURL)
         }
         src.setCancelHandler { close(fd) }
         src.resume()

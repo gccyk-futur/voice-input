@@ -95,7 +95,21 @@ final class PasteService {
 
     /// 引导用户前往系统设置的辅助功能页。
     func openAccessibilitySettings() {
-        let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        openPane("Privacy_Accessibility")
+    }
+
+    /// 引导用户前往系统设置的麦克风授权页。
+    func openMicrophoneSettings() {
+        openPane("Privacy_Microphone")
+    }
+
+    /// 引导用户前往系统设置的语音识别授权页。
+    func openSpeechSettings() {
+        openPane("Privacy_SpeechRecognition")
+    }
+
+    private func openPane(_ anchor: String) {
+        let urlString = "x-apple.systempreferences:com.apple.preference.security?\(anchor)"
         if let url = URL(string: urlString) {
             NSWorkspace.shared.open(url)
         }
