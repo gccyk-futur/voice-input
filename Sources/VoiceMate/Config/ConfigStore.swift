@@ -60,7 +60,15 @@ final class ConfigStore {
         let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
         src.setEventHandler { [weak self] in
             guard let self else { return }
-            self.config = ConfigStore.read(fileURL: self.fileURL)
+            // atomic write 可能触发中间态读取失败，迭代重试等稳定
+            for _ in 0..<3 {
+                if let data = try? Data(contentsOf: self.fileURL),
+                   let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
+                    self.config = decoded
+                    return
+                }
+                Thread.sleep(forTimeInterval: 0.1)
+            }
         }
         src.setCancelHandler { close(fd) }
         src.resume()
