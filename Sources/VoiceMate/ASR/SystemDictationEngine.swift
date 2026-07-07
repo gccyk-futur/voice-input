@@ -13,6 +13,7 @@ import CoreMedia
 final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system"
     let displayName = "系统听写"
+    let requiresForeground = true
 
     private let audioEngine = AVAudioEngine()
     private var analyzer: SpeechAnalyzer?
@@ -22,7 +23,8 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     private var finalText: String = ""
 
     func start(locale: Locale, onPartial: @escaping @Sendable (String) -> Void) async throws {
-        // 语音识别授权
+        // 语音识别授权（.notDetermined 由 AppCoordinator.startRecording() 在 MainActor 上先行处理，
+        // 正常路径下此处已是 .authorized；此处保留作为后台 Task 中直接调 start() 的兜底）
         let speechOK: Bool
         switch SFSpeechRecognizer.authorizationStatus() {
         case .authorized:
@@ -36,7 +38,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         }
         guard speechOK else { throw ASRError.speechNotAuthorized }
 
-        // 麦克风授权（macOS TCC：AVAudioEngine 输入依赖麦克风权限，不显式请求可能收到静音且不报错）
+        // 麦克风授权（同上：.notDetermined 已由 AppCoordinator 先行处理）
         let micOK: Bool
         switch AVCaptureDevice.authorizationStatus(for: .audio) {
         case .authorized:

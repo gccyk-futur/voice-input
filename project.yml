@@ -15,6 +15,7 @@ settings:
     DEVELOPMENT_TEAM: F2J85LVHS4
     PRODUCT_BUNDLE_IDENTIFIER: me.ckai.VoiceMate
     INFOPLIST_FILE: Sources/VoiceMate/Resources/Info.plist
+    CODE_SIGN_ENTITLEMENTS: Sources/VoiceMate/Resources/VoiceMate.entitlements
     LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 targets:

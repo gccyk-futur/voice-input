@@ -18,23 +18,30 @@
 7. **`PasteService`** 新增 `openMicrophoneSettings()` / `openSpeechSettings()`。
 
 ### ⚠️ 未决问题（下班前未解决）
-**症状**：按热键后麦克风授权失败，日志末行 `[Coordinator] engine.start failed: microphoneNotAuthorized`，面板/ Dock "闪一下"后回到 accessory。app 进程没死（菜单栏图标还在），**不是崩溃**，是权限错误导致会话立即结束。
 
-**已定位根因（高概率）**：TCC 隐私授权按**代码签名身份**绑定，不只看 Bundle ID。本会话内发生了：
-- Bundle ID 从 `com.voicemate.VoiceMate` 改成 `me.ckai.VoiceMate`；
-- Xcode 里选了 Team（签名从 ad-hoc 变 Team 签名）；
-- 跑过 `CODE_SIGN_IDENTITY="-"` 的 ad-hoc 构建。
-→ 系统设置里手动勾的授权挂在某**旧签名身份**上，当前 Xcode RUN 的实例签名对不上，永远 `.denied`。手动勾 ON 无效。
+**症状**：按热键后麦克风授权失败，日志 `[Coordinator] engine.start failed: microphoneNotAuthorized`。
 
-**下一步修复（按优先级）**：
-1. 系统设置 → 麦克风 / 语音识别 → 把 `VoiceMate` 条目**关掉（toggle OFF，移除旧授权）**；旧的 `com.voicemate.VoiceMate` 条目一并删。
-2. **彻底退出所有 VoiceMate 进程**（含菜单栏残留）。
-3. **Xcode RUN**（Team 签名，别用 ad-hoc 命令）。
-4. 按热键 → 系统**弹授权框** → 点「允许」。此时授权挂在当前运行签名上，必然生效。
-   - 原理：代码里 `engine.start` 仅在 `.notDetermined` 才弹框；手动勾 ON 但签名不对仍是 `.denied` 不弹框。先 OFF 变回 `.notDetermined` → 弹框 → 授权给当前签名。
-5. 若 OFF 后仍不弹框/仍 `.denied`：终端执行 `tccutil reset Microphone` + `tccutil reset SpeechRecognition`（先退出 app），再 RUN 必弹框。
+**根因（双重问题）**：
+1. TCC 授权按签名身份绑定。Bundle ID / 签名变更后，系统设置里手动勾的授权挂在旧身份上，新实例永远 `.denied`。
+2. **代码层面**：`SystemDictationEngine.start()` 在后台 Task 里调用 `AVCaptureDevice.requestAccess`，macOS 上 agent app（LSUIElement）的系统对话框可能**静默不弹出**，`requestAccess` 返回 `false` 且不显示任何 UI。表现为：`tccutil reset` 后状态回到 `.notDetermined`，但按热键仍报 `microphoneNotAuthorized`，系统设置→麦克风里找不到 VoiceMate 条目。
 
-**验证清单**：重新授权后 RUN，按 `Cmd+Shift+V`（轻点别按住）→ 应稳定显示面板并开始听写；`onPartial` 实时刷新；停止后自动粘贴到前台 app 光标处。
+**代码修复（本次会话）**：
+- `startRecording()` 新增 `.notDetermined` 的显式处理：在 MainActor 上先进入前台 + 显示面板，再从 MainActor 调用 `requestAccess`，确保系统对话框可靠弹出。
+- 新增 `[Coordinator] startRecording: micStatus=... speechStatus=...` 调试日志。
+
+**快速修复步骤（权限卡死后执行）**：
+1. **彻底退出所有 VoiceMate 进程**（含菜单栏图标上的残留进程）。
+2. 确认终端有全磁盘访问权限（系统设置 → 隐私与安全性 → 全磁盘访问 → 勾上终端），否则 `tccutil reset` 无提示地不生效。
+3. 终端执行：
+   ```bash
+   tccutil reset Microphone
+   tccutil reset SpeechRecognition
+   ```
+   若输出 `Successfully reset ...` 即成功；若无输出，检查第 2 步。
+4. **Xcode RUN**（Team 签名，别用 ad-hoc 命令）。
+5. 按热键 → 系统弹出授权框 → 点「允许」。
+
+**验证清单**：重新授权后 RUN，按热键（轻点别按住）→ 应稳定显示面板并开始听写；停止后自动粘贴到前台 app 光标处。
 
 ### 已知待办（历史遗留）
 - OpenAI/DeepSeek 引擎 baseUrl 的 path 被 `/chat/completions` 覆盖丢失 `/v1`（bug 未修，见 commit f0422ae 之外的待办）。
