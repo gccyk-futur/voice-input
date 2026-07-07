@@ -13,6 +13,9 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private let apiKey: String
     private let workspaceId: String
     private let model: String
+    private let semanticPunctuation: Bool
+    private let speechNoiseThreshold: Double
+    private let maxSentenceSilence: Int
 
     private let audioEngine = AVAudioEngine()
     private var webSocketTask: URLSessionWebSocketTask?
@@ -26,10 +29,21 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private var receiveTask: Task<Void, Never>?
     private var isConnected = false
 
-    init(apiKey: String, workspaceId: String, model: String = "fun-asr-realtime") {
+    // 静音检测
+    private var onAudioLevel: (@Sendable (Float) -> Void)?
+    private var onAutoStop: (@Sendable () -> Bool)?
+    private var silenceStart: Date?
+    private let silenceTimeout: TimeInterval = 3.5
+    private let silenceThreshold: Float = 0.01
+
+    init(apiKey: String, workspaceId: String, model: String,
+         semanticPunctuation: Bool = true, speechNoiseThreshold: Double = 0, maxSentenceSilence: Int = 1300) {
         self.apiKey = apiKey
         self.workspaceId = workspaceId
         self.model = model
+        self.semanticPunctuation = semanticPunctuation
+        self.speechNoiseThreshold = speechNoiseThreshold
+        self.maxSentenceSilence = maxSentenceSilence
         connect()
     }
 
@@ -77,7 +91,10 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
 
     // MARK: - ASREngine
 
-    func start(locale: Locale, onPartial: @escaping @Sendable (String) -> Void) async throws {
+    func start(locale: Locale,
+               onPartial: @escaping @Sendable (String) -> Void,
+               onAudioLevel: (@Sendable (Float) -> Void)?,
+               onAutoStop: (@Sendable () -> Bool)?) async throws {
         guard isConnected else { throw AlibabaASRError.notConnected }
         taskId = UUID().uuidString
         finalText = ""
@@ -91,7 +108,9 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
                 "parameters": [
                     "format": "pcm", "sample_rate": 16000,
                     "language_hints": locale.language.languageCode?.identifier == "zh" ? ["zh"] : [],
-                    "semantic_punctuation_enabled": true
+                    "semantic_punctuation_enabled": semanticPunctuation,
+                    "speech_noise_threshold": speechNoiseThreshold,
+                    "max_sentence_silence": maxSentenceSilence
                 ],
                 "input": [:] as [String: Any]
             ]
@@ -110,8 +129,11 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             self.taskStartedCont = nil
         }
 
-        // 存储 onPartial 回调
+        // 存储回调
         self.onPartial = onPartial
+        self.onAudioLevel = onAudioLevel
+        self.onAutoStop = onAutoStop
+        self.silenceStart = nil
         await startAudioCapture()
     }
 
@@ -168,6 +190,27 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             guard convErr == nil, out.frameLength > 0 else { return }
             let len = Int(out.frameLength)
             guard let ch = out.int16ChannelData?.pointee else { return }
+
+            // 计算 RMS 电平（0.0~1.0）
+            var sum: Float = 0
+            for i in 0..<len { let s = Float(ch[i]); sum += s * s }
+            let rms = sqrt(sum / Float(len)) / 32768.0
+            let level = min(rms, 1.0)
+            self.onAudioLevel?(level)
+
+            // 静音检测 → 自动停止
+            if level < self.silenceThreshold {
+                if self.silenceStart == nil { self.silenceStart = Date() }
+                if let start = self.silenceStart,
+                   Date().timeIntervalSince(start) >= self.silenceTimeout {
+                    if self.onAutoStop?() == true {
+                        self.silenceStart = nil
+                    }
+                }
+            } else {
+                self.silenceStart = nil
+            }
+
             let bytes = Data(bytes: ch, count: len * 2)
             self.sendQueue.async { self.webSocketTask?.send(.data(bytes)) { _ in } }
         }

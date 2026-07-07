@@ -9,6 +9,14 @@ protocol ASREngine: AnyObject, Sendable {
     /// DictationTranscriber 需要 app 在前台；SFSpeechRecognizer 不需要。
     var requiresForeground: Bool { get }
 
-    func start(locale: Locale, onPartial: @escaping @Sendable (String) -> Void) async throws
+    /// 开始识别。
+    /// - Parameters:
+    ///   - onPartial: 实时中间结果回调
+    ///   - onAudioLevel: 音频电平回调（0.0~1.0），用于驱动波形；不需要可传 nil
+    ///   - onAutoStop: 静音超时自动结束回调；不需要可传 nil。返回 true 表示已处理
+    func start(locale: Locale,
+               onPartial: @escaping @Sendable (String) -> Void,
+               onAudioLevel: (@Sendable (Float) -> Void)?,
+               onAutoStop: (@Sendable () -> Bool)?) async throws
     func stop() async throws -> String
 }
