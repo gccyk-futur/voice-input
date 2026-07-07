@@ -27,7 +27,7 @@ struct ASRConfig: Codable {
     var openaiWhisper: ASROpenAIWhisperConfig = .init()
 }
 
-struct ASRSystemConfig: Codable { var language: String = "zh-Hans-CN" }
+struct ASRSystemConfig: Codable { var language: String = "zh-Hans-CN"; var targetLanguage: String = "zh-Hans-CN" }
 struct ASRWhisperConfig: Codable {
     var modelPath: String = ""
     var threads: Int = 4
@@ -44,6 +44,9 @@ struct ASRAliyunConfig: Codable {
     var semanticPunctuation: Bool = true
     var speechNoiseThreshold: Double = 0.0
     var maxSentenceSilence: Int = 1300
+    var autoStopEnabled: Bool = true
+    var autoStopTimeout: Double = 3.5
+    var autoStopThreshold: Double = 0.01
 }
 struct ASROpenAIWhisperConfig: Codable {
     var apiKey: String = ""

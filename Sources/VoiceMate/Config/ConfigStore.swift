@@ -45,6 +45,10 @@ final class ConfigStore {
         save()
         LoginItemManager.set(enabled: new.general.launchAtStartup)
         HistoryStore.shared.maxCount = new.general.maxHistoryCount
+        // 阿里云引擎参数变更 → 下次重新创建
+        if new.asr.engine == "aliyun" {
+            AppCoordinator.shared.invalidateASREngine()
+        }
     }
 
     func resetToDefaults() {
