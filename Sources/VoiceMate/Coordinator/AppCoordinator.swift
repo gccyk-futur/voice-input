@@ -17,6 +17,7 @@ final class AppCoordinator {
     var asrText: String = ""
     var llmText: String = ""
     var statusText: String = "按 ⌘⇧V 开始"
+    var audioLevel: Float = 0
 
     private let configStore = ConfigStore.shared
     private let historyStore = HistoryStore.shared
@@ -168,11 +169,27 @@ final class AppCoordinator {
 
     /// 启动 ASR 引擎并处理错误。
     private func startEngine(_ engine: any ASREngine, languageID: String) {
+        // 音波电平通知
+        let onLevel: (@Sendable (Float) -> Void)? = { [weak self] level in
+            Task { @MainActor in self?.audioLevel = level }
+        }
+        // 静音超时自动停止
+        let onSilence: (@Sendable () -> Bool)? = { [weak self] in
+            Task { @MainActor [weak self] in
+                guard let self, self.sessionState == .recording else { return }
+                self.stopAndProcess()
+            }
+            return true
+        }
         Task {
             do {
-                try await engine.start(locale: Locale(identifier: languageID)) { [weak self] partial in
-                    Task { @MainActor in self?.asrText = partial }
-                }
+                try await engine.start(locale: Locale(identifier: languageID),
+                    onPartial: { [weak self] partial in
+                        Task { @MainActor in self?.asrText = partial }
+                    },
+                    onAudioLevel: onLevel,
+                    onAutoStop: onSilence
+                )
             } catch {
                 print("[Coordinator] engine.start failed: \(error)")
                 await MainActor.run {
@@ -453,7 +470,12 @@ final class AppCoordinator {
             }
             let cfg = configStore.config.asr.aliyun
             if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
-                return AlibabaASREngine(apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, model: cfg.model)
+                return AlibabaASREngine(
+                    apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, model: cfg.model,
+                    semanticPunctuation: cfg.semanticPunctuation,
+                    speechNoiseThreshold: cfg.speechNoiseThreshold,
+                    maxSentenceSilence: cfg.maxSentenceSilence
+                )
             }
             print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，回退到 system")
             fallthrough

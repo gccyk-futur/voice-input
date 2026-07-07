@@ -41,6 +41,9 @@ struct ASRAliyunConfig: Codable {
     var apiKey: String = ""
     var workspaceId: String = ""
     var model: String = "fun-asr-realtime"
+    var semanticPunctuation: Bool = true
+    var speechNoiseThreshold: Double = 0.0
+    var maxSentenceSilence: Int = 1300
 }
 struct ASROpenAIWhisperConfig: Codable {
     var apiKey: String = ""

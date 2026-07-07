@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// 悬浮窗内容：上半区 ASR（灰，实时），下半区 LLM（黑，逐字）。
-/// 语义化颜色自动适配深色模式与无障碍对比度（HIG）。
 struct PanelView: View {
     @Environment(AppCoordinator.self) private var coordinator
 
@@ -20,6 +18,9 @@ struct PanelView: View {
                 Circle().fill(statusColor).frame(width: 8, height: 8)
                 Text(coordinator.statusText).font(.caption).foregroundStyle(.secondary)
                 Spacer()
+                if coordinator.sessionState == .recording {
+                    WaveBars(level: coordinator.audioLevel)
+                }
                 Button(action: { coordinator.cancel() }) {
                     Image(systemName: "xmark.circle.fill")
                 }
@@ -27,7 +28,6 @@ struct PanelView: View {
                 .help("取消 (Esc)")
             }
 
-            // ASR 区
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(coordinator.asrText.isEmpty ? "正在聆听…" : coordinator.asrText)
@@ -42,7 +42,6 @@ struct PanelView: View {
                 }
             }
 
-            // LLM 区
             if coordinator.sessionState == .ready || !coordinator.llmText.isEmpty {
                 Divider()
                 ScrollViewReader { proxy in
@@ -63,14 +62,35 @@ struct PanelView: View {
             }
 
             HStack {
+                Text("⌘↵ 粘贴  ·  Esc 退出")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Spacer()
-                Button("粘贴") { coordinator.confirmPaste() }
-                    .keyboardShortcut(.return, modifiers: .command)
-                    .disabled(coordinator.sessionState != .ready)
-                Text("⌘↵ 粘贴").font(.caption2).foregroundStyle(.tertiary)
+                if coordinator.sessionState == .ready {
+                    Button("粘贴") { coordinator.confirmPaste() }
+                        .keyboardShortcut(.return, modifiers: .command)
+                }
             }
         }
         .padding(14)
         .frame(minWidth: 480, minHeight: 280, maxHeight: 500)
+    }
+}
+
+/// 音波条：4 根竖线高度随音频电平实时变化
+private struct WaveBars: View {
+    let level: Float
+    private let barCount = 4
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { i in
+                let h = max(4, CGFloat(level * 16 + Float(i % 2) * 4))
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(Color.secondary.opacity(0.5))
+                    .frame(width: 2, height: h)
+                    .animation(.easeOut(duration: 0.08), value: level)
+            }
+        }
     }
 }

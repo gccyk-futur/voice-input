@@ -22,7 +22,10 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     private var finalText: String = ""
     private var finishContinuation: CheckedContinuation<String, Never>?
 
-    func start(locale: Locale, onPartial: @escaping @Sendable (String) -> Void) async throws {
+    func start(locale: Locale,
+               onPartial: @escaping @Sendable (String) -> Void,
+               onAudioLevel: (@Sendable (Float) -> Void)?,
+               onAutoStop: (@Sendable () -> Bool)?) async throws {
         // 语音识别授权
         guard await ensureSpeechAuth() else { throw ASRError.speechNotAuthorized }
 

@@ -83,6 +83,25 @@ struct SettingsView: View {
             }
             if draft.asr.engine == "aliyun" {
                 Divider()
+                Toggle("语义断句（自动标点）", isOn: $draft.asr.aliyun.semanticPunctuation)
+                if !draft.asr.aliyun.semanticPunctuation {
+                    HStack {
+                        Text("停顿时长").frame(width: 70, alignment: .leading)
+                        Slider(value: Binding(
+                            get: { Double(draft.asr.aliyun.maxSentenceSilence) },
+                            set: { draft.asr.aliyun.maxSentenceSilence = Int($0) }
+                        ), in: 200...6000, step: 100)
+                        Text("\(draft.asr.aliyun.maxSentenceSilence)ms")
+                            .font(.caption).frame(width: 50, alignment: .trailing)
+                    }
+                }
+                HStack {
+                    Text("噪音阈值").frame(width: 70, alignment: .leading)
+                    Slider(value: $draft.asr.aliyun.speechNoiseThreshold, in: -1...1, step: 0.1)
+                    Text(String(format: "%.1f", draft.asr.aliyun.speechNoiseThreshold))
+                        .font(.caption).frame(width: 30, alignment: .trailing)
+                }
+                Divider()
                 labeled("API Key") {
                     SecureField("sk-...", text: $draft.asr.aliyun.apiKey)
                         .textFieldStyle(.roundedBorder).frame(width: 320)
