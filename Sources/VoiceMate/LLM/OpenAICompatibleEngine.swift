@@ -27,9 +27,9 @@ final class OpenAICompatibleEngine: LLMEngine {
     }
 
     func polish(_ text: String, system: String, userTemplate: String) -> AsyncThrowingStream<String, Error> {
-        var comps = URLComponents(string: baseUrl)
-        comps?.path = "/chat/completions"
-        var req = URLRequest(url: comps?.url ?? URL(string: baseUrl)!)
+        // 在 baseUrl 之后追加路径段，避免覆盖 baseUrl 原有的 /v1 前缀。
+        let base = URL(string: baseUrl) ?? URL(string: "https://api.openai.com/v1")!
+        var req = URLRequest(url: base.appendingPathComponent("chat/completions"))
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !apiKey.isEmpty {
