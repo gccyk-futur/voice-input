@@ -16,6 +16,9 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private let semanticPunctuation: Bool
     private let speechNoiseThreshold: Double
     private let maxSentenceSilence: Int
+    private let autoStopEnabled: Bool
+    private let autoStopTimeout: TimeInterval
+    private let autoStopThreshold: Float
 
     private let audioEngine = AVAudioEngine()
     private var webSocketTask: URLSessionWebSocketTask?
@@ -33,17 +36,19 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private var onAudioLevel: (@Sendable (Float) -> Void)?
     private var onAutoStop: (@Sendable () -> Bool)?
     private var silenceStart: Date?
-    private let silenceTimeout: TimeInterval = 3.5
-    private let silenceThreshold: Float = 0.01
 
     init(apiKey: String, workspaceId: String, model: String,
-         semanticPunctuation: Bool = true, speechNoiseThreshold: Double = 0, maxSentenceSilence: Int = 1300) {
+         semanticPunctuation: Bool = true, speechNoiseThreshold: Double = 0, maxSentenceSilence: Int = 1300,
+         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5, autoStopThreshold: Float = 0.01) {
         self.apiKey = apiKey
         self.workspaceId = workspaceId
         self.model = model
         self.semanticPunctuation = semanticPunctuation
         self.speechNoiseThreshold = speechNoiseThreshold
         self.maxSentenceSilence = maxSentenceSilence
+        self.autoStopEnabled = autoStopEnabled
+        self.autoStopTimeout = autoStopTimeout
+        self.autoStopThreshold = autoStopThreshold
         connect()
     }
 
@@ -199,10 +204,10 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             self.onAudioLevel?(level)
 
             // 静音检测 → 自动停止
-            if level < self.silenceThreshold {
+            if self.autoStopEnabled && level < self.autoStopThreshold {
                 if self.silenceStart == nil { self.silenceStart = Date() }
                 if let start = self.silenceStart,
-                   Date().timeIntervalSince(start) >= self.silenceTimeout {
+                   Date().timeIntervalSince(start) >= self.autoStopTimeout {
                     if self.onAutoStop?() == true {
                         self.silenceStart = nil
                     }

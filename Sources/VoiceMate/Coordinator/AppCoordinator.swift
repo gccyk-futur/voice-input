@@ -26,6 +26,7 @@ final class AppCoordinator {
     private let panel = FloatingPanelController()
 
     private var asrEngine: (any ASREngine)?
+    func invalidateASREngine() { asrEngine = nil }
     private var llmEngine: (any LLMEngine)?
     /// 识别开始时前台的目标 app（文字应插入它的输入框）；停止时把焦点还给它。
     private var targetApp: NSRunningApplication?
@@ -400,7 +401,7 @@ final class AppCoordinator {
     private func reset() {
         // 阿里云引擎保持常驻连接，不销毁
         if asrEngine?.id != "aliyun" {
-            asrEngine = nil
+            invalidateASREngine()
         }
         llmEngine = nil
         asrText = ""
@@ -474,7 +475,10 @@ final class AppCoordinator {
                     apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, model: cfg.model,
                     semanticPunctuation: cfg.semanticPunctuation,
                     speechNoiseThreshold: cfg.speechNoiseThreshold,
-                    maxSentenceSilence: cfg.maxSentenceSilence
+                    maxSentenceSilence: cfg.maxSentenceSilence,
+                    autoStopEnabled: cfg.autoStopEnabled,
+                    autoStopTimeout: cfg.autoStopTimeout,
+                    autoStopThreshold: Float(cfg.autoStopThreshold)
                 )
             }
             print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，回退到 system")
