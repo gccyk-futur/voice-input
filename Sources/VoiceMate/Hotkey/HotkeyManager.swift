@@ -140,22 +140,13 @@ private func hotkeyEventHandler(
     if status == noErr, hkID.id == manager.hotKeyIDValue {
         manager.capturedTargetApp = NSWorkspace.shared.frontmostApplication
         print("[Hotkey] captured targetApp=\(manager.capturedTargetApp?.localizedName ?? "nil")")
-
-        var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
-        let tptResult = TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication))
-        print("[Hotkey] TransformProcessType=\(tptResult)")
         DispatchQueue.main.async {
-            // 过滤按键自动重复：按住热键超过一瞬间会触发多次 keyDown，
-            // 否则第二次会立刻 toggle 成 stop，面板"闪一下"就消失。
             let now = Date()
             if now.timeIntervalSince(manager.lastActivation) < 0.4 {
                 print("[Hotkey] 忽略重复触发（auto-repeat 冷却中）")
                 return
             }
             manager.lastActivation = now
-            NSApp.setActivationPolicy(.regular)
-            NSApp.activate(ignoringOtherApps: true)
-            print("[Hotkey] activate called, isActive=\(NSApp.isActive)")
             manager.onActivate?()
         }
     }

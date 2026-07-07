@@ -39,7 +39,7 @@ targets:
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceMate
         NSPrincipalClass: NSApplication
-        LSUIElement: true
+        LSUIElement: false
         NSMicrophoneUsageDescription: "VoiceMate 需要使用麦克风进行语音输入。"
         NSSpeechRecognitionUsageDescription: "VoiceMate 需要使用语音识别将语音实时转为文字。"
         NSHumanReadableCopyright: "Copyright © 2026 VoiceMate. MIT License."
