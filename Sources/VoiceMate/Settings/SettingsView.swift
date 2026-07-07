@@ -66,7 +66,7 @@ struct SettingsView: View {
                 }.labelsHidden().frame(width: 220)
             }
             HStack {
-                Text("源语言").frame(width: 80, alignment: .leading)
+                Text("识别语言").frame(width: 80, alignment: .leading)
                 Picker("", selection: $draft.asr.system.language) {
                     Text("中文").tag("zh-Hans-CN")
                     Text("英文").tag("en-US")
@@ -74,15 +74,7 @@ struct SettingsView: View {
                     Text("自动").tag("auto")
                 }.labelsHidden().frame(width: 140)
             }
-            HStack {
-                Text("目标语言").frame(width: 80, alignment: .leading)
-                Picker("", selection: $draft.asr.system.targetLanguage) {
-                    Text("中文").tag("zh-Hans-CN")
-                    Text("英文").tag("en-US")
-                    Text("日语").tag("ja-JP")
-                }.labelsHidden().frame(width: 140)
-            }
-                Text("（翻译功能待实现）").font(.caption2).foregroundStyle(.tertiary)
+
 
             if draft.asr.engine == "aliyun" {
                 Divider()

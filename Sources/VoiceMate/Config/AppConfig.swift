@@ -27,7 +27,7 @@ struct ASRConfig: Codable {
     var openaiWhisper: ASROpenAIWhisperConfig = .init()
 }
 
-struct ASRSystemConfig: Codable { var language: String = "zh-Hans-CN"; var targetLanguage: String = "zh-Hans-CN" }
+struct ASRSystemConfig: Codable { var language: String = "zh-Hans-CN" }
 struct ASRWhisperConfig: Codable {
     var modelPath: String = ""
     var threads: Int = 4
