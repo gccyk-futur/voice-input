@@ -62,16 +62,72 @@ final class AppCoordinator {
 
     func startRecording() {
         guard sessionState == .idle else { return }
-        // 先预检隐私授权：被拒绝则直接在面板显示提示并打开系统设置，
-        // 不进入前台（避免 Dock 图标 enter/exit 反复闪烁）。
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
+        print("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
+
+        // 拒绝态：直接显示提示并打开系统设置，不进前台
         if micStatus == .denied || speechStatus == .denied {
             presentPermissionError(micDenied: micStatus == .denied, speechDenied: speechStatus == .denied)
             return
         }
-        // 使用 HotkeyManager 在 Carbon 回调第一时间（任何激活操作之前）捕获的目标 app。
-        // 回退到当前 frontmostApplication 以防万一。
+
+        // 未决定态：必须在 MainActor 上显式请求授权，系统对话框才能可靠弹出。
+        // 引擎的 start() 在后台 Task 里调用 requestAccess，macOS 可能静默拒绝（agent app 尤其如此）。
+        if micStatus == .notDetermined || speechStatus == .notDetermined {
+            requestPendingPermissions(micNeeded: micStatus == .notDetermined,
+                                       speechNeeded: speechStatus == .notDetermined)
+            return
+        }
+
+        // 已授权：直接进入听写流程
+        beginRecordingFlow()
+    }
+
+    /// 显式请求未决定的权限（MainActor）。先进入前台 + 显示面板以提供 UI 上下文，
+    /// 等 WindowServer 确认激活后再调 requestAccess——TCC daemon 仅在 app 为
+    /// 前台激活态时才弹出对话框，否则静默返回 false。全部通过后继续听写流程。
+    private func requestPendingPermissions(micNeeded: Bool, speechNeeded: Bool) {
+        enterForeground()
+        panel.show()
+        // 轮询等待 NSApp.isActive，超时 1s。TCC 对话框必须在前台激活态下发起。
+        Task { @MainActor in
+            for _ in 0..<20 {
+                if NSApp.isActive { break }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+            print("[Coordinator] requestPermissions: isActive=\(NSApp.isActive)")
+            if micNeeded {
+                let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                    AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+                }
+                print("[Coordinator] microphone requestAccess result: \(granted)")
+                guard granted else {
+                    exitForeground()
+                    panel.close()
+                    presentPermissionError(micDenied: true, speechDenied: false)
+                    return
+                }
+            }
+            if speechNeeded {
+                let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                    SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
+                }
+                print("[Coordinator] speech requestAuthorization result: \(granted)")
+                guard granted else {
+                    exitForeground()
+                    panel.close()
+                    presentPermissionError(micDenied: false, speechDenied: true)
+                    return
+                }
+            }
+            // 全部通过，继续听写流程
+            beginRecordingFlow()
+        }
+    }
+
+    /// 已授权的正常听写启动流程。先解析引擎，再决定是否需要前台激活。
+    private func beginRecordingFlow() {
         targetApp = hotkey.capturedTargetApp ?? NSWorkspace.shared.frontmostApplication
         hotkey.capturedTargetApp = nil
         print("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil"), isActive=\(NSApp.isActive)")
@@ -79,71 +135,82 @@ final class AppCoordinator {
         llmText = ""
         sessionState = .recording
         statusText = "聆听中…"
-        // HotkeyManager 的 Carbon 回调已在用户事件上下文中同步执行了
-        // TransformProcessType + SetFrontProcess + setActivationPolicy + NSApp.activate。
-        // 此处 enterForeground 做最终兜底：若 app 已在前台则 TransformProcessType 返回 -50（无害）。
-        enterForeground()
-        panel.show()
-        print("[Coordinator] panel shown, isActive=\(NSApp.isActive), isKey=\(panel.isKeyWindow)")
-        panel.clickToActivate()
-        // 某些 app（如 iTerm2）失去焦点后会立即 reclaim 激活。定期重新 click 来维持激活，
-        // 直到 DictationTranscriber 完全启动。
-        scheduleActivationPersistence()
 
         let languageID = configStore.config.asr.system.language
-        activationFired = false
-        waitForActivation { [weak self] in
-            guard let self, self.sessionState == .recording else { return }
-            // 激活后把面板提到最前并设 key（show() 时 isActive=false，orderFrontRegardless 被忽略）
-            self.panel.orderFront()
-            print("[Coordinator] panel ordered front after activation, isActive=\(NSApp.isActive), isKey=\(self.panel.isKeyWindow)")
-            print("[Coordinator] activation confirmed, isActive=\(NSApp.isActive), isKey=\(self.panel.isKeyWindow), starting engine")
-            Task {
-                let engine = await self.resolveASR()
-                await MainActor.run { self.asrEngine = engine }
-                do {
-                    try await engine.start(locale: Locale(identifier: languageID)) { [weak self] partial in
-                        Task { @MainActor in self?.asrText = partial }
-                    }
-                } catch {
-                    print("[Coordinator] engine.start failed: \(error)")
-                    await MainActor.run {
-                        // 启动失败：保持面板与前台状态，把错误留在面板上可读，
-                        // 不退出前台、不关面板（避免"闪一下"看不清原因）。
-                        self.sessionState = .idle
-                        if let ae = error as? ASRError {
-                            switch ae {
-                            case .microphoneNotAuthorized:
-                                self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
-                                self.pasteService.openMicrophoneSettings()
-                            case .speechNotAuthorized:
-                                self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
-                                self.pasteService.openSpeechSettings()
-                            default:
-                                self.statusText = "听写启动失败：\(error.localizedDescription)"
-                            }
-                        } else {
+        Task {
+            let engine = await self.resolveASR()
+            await MainActor.run { self.asrEngine = engine }
+
+            if engine.requiresForeground {
+                // DictationTranscriber：必须前台，走完整激活舞
+                if !foregroundedForDictation {
+                    enterForeground()
+                    panel.show()
+                }
+                panel.clickToActivate()
+                scheduleActivationPersistence()
+                activationFired = false
+                waitForActivation { [weak self] in
+                    guard let self, self.sessionState == .recording else { return }
+                    NSApp.activate(ignoringOtherApps: true)
+                    self.panel.orderFront()
+                    self.panel.makeKey()
+                    print("[Coordinator] activation confirmed, starting DictationTranscriber engine")
+                    self.startEngine(engine, languageID: languageID)
+                }
+            } else {
+                // SFSpeechRecognizer：无需前台，面板浮在最上、不抢焦点
+                panel.show()
+                panel.makeKey()
+                print("[Coordinator] starting SFSpeechRecognizer engine, no activation needed")
+                startEngine(engine, languageID: languageID)
+            }
+        }
+    }
+
+    /// 启动 ASR 引擎并处理错误。
+    private func startEngine(_ engine: any ASREngine, languageID: String) {
+        Task {
+            do {
+                try await engine.start(locale: Locale(identifier: languageID)) { [weak self] partial in
+                    Task { @MainActor in self?.asrText = partial }
+                }
+            } catch {
+                print("[Coordinator] engine.start failed: \(error)")
+                await MainActor.run {
+                    self.sessionState = .idle
+                    if let ae = error as? ASRError {
+                        switch ae {
+                        case .microphoneNotAuthorized:
+                            self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
+                            self.pasteService.openMicrophoneSettings()
+                        case .speechNotAuthorized:
+                            self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
+                            self.pasteService.openSpeechSettings()
+                        default:
                             self.statusText = "听写启动失败：\(error.localizedDescription)"
                         }
+                    } else {
+                        self.statusText = "听写启动失败：\(error.localizedDescription)"
                     }
                 }
             }
         }
     }
 
-    /// 定期重新发送 clickToActivate，持续 0.6s。对抗 iTerm2 等 app 在失去焦点后立即 reclaim 激活的行为。
+    /// 双通道抢占前台：NSApp.activate（AppKit）+ clickToActivate（CGEvent 模拟点击），
+    /// 持续 3s 覆盖 DictationTranscriber 初始化全过程。对抗 iTerm2 等 reclaim 行为。
     private func scheduleActivationPersistence() {
-        func reclick(at delay: Double) {
+        // 前 1s 密集对抗目标 app 的 reclaim（每 80-150ms），后 2s 稀疏保活（每 400ms）
+        let schedule: [Double] = [0.08, 0.20, 0.35, 0.55, 0.75, 1.0, 1.4, 1.8, 2.3, 2.8]
+        for delay in schedule {
             DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
                 guard let self, self.sessionState == .recording else { return }
+                NSApp.activate(ignoringOtherApps: true)
                 self.panel.clickToActivate()
-                print("[Coordinator] re-clickToActivate @ \(delay)s, isActive=\(NSApp.isActive)")
+                print("[Coordinator] re-activate @ \(delay)s, isActive=\(NSApp.isActive)")
             }
         }
-        reclick(at: 0.08)
-        reclick(at: 0.20)
-        reclick(at: 0.35)
-        reclick(at: 0.55)
     }
 
     /// 等待 app 激活（NSApp.isActive == true），超时 0.8s 后强制执行。
@@ -342,9 +409,10 @@ final class AppCoordinator {
     private func enterForeground() {
         guard !foregroundedForDictation else { return }
         var psn = ProcessSerialNumber(highLongOfPSN: 0, lowLongOfPSN: UInt32(kCurrentProcess))
-        let tptOK = TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication)) == noErr
+        TransformProcessType(&psn, ProcessApplicationTransformState(kProcessTransformToForegroundApplication))
         NSApp.setActivationPolicy(.regular)
-        print("[Coordinator] enterForeground: TransformProcessType=\(tptOK), isActive=\(NSApp.isActive)")
+        NSApp.activate(ignoringOtherApps: true)
+        print("[Coordinator] enterForeground: isActive=\(NSApp.isActive)")
         foregroundedForDictation = true
     }
 
@@ -359,15 +427,30 @@ final class AppCoordinator {
 
     // MARK: - 引擎解析（可插拔）
 
-    /// 选择 ASR 引擎：优先使用本地连续听写（DictationTranscriber，复用系统已下载模型，
-    /// 与系统「听写」同源），仅当本机不支持该语言时才回退到 SFSpeechRecognizer（服务器）。
+    /// 选择 ASR 引擎：遵从用户设置。
+    /// - "system"：SFSpeechRecognizer（稳定，无需前台，自动本地/云端路由）
+    /// - "dictation"：DictationTranscriber（原生连续听写，需前台）
     func resolveASR() async -> any ASREngine {
         let raw = configStore.config.asr.system.language
         let loc = Locale(identifier: raw)
-        if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
-            return SystemDictationEngine()
+        switch configStore.config.asr.engine {
+        case "dictation":
+            if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+                return SystemDictationEngine()
+            }
+            // 回退到 SFSpeechRecognizer
+            fallthrough
+        default:
+            let recognizer = SFSpeechRecognizer(locale: loc)
+            if let recognizer, recognizer.isAvailable {
+                return LegacyDictationEngine()
+            }
+            // 最后的回退
+            if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+                return SystemDictationEngine()
+            }
+            return LegacyDictationEngine()
         }
-        return LegacyDictationEngine()
     }
 
     func resolveLLM() -> (any LLMEngine)? {

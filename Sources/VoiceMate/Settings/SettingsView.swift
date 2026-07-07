@@ -47,11 +47,12 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 10) {
                 labeled("引擎") {
                     Picker("", selection: $draft.asr.engine) {
-                        Text("系统听写").tag("system")
+                        Text("系统听写（稳定，不抢焦点）").tag("system")
+                        Text("连续听写（更流畅，需前台）").tag("dictation")
                         Text("Whisper（本地，待实现）").tag("whisper")
                     }
                     .labelsHidden()
-                    .frame(width: 240)
+                    .frame(width: 280)
                 }
                 labeled("语言") {
                     TextField("zh-CN", text: $draft.asr.system.language)

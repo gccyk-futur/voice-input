@@ -13,7 +13,7 @@ import Speech
 final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system-legacy"
     let displayName = "系统听写（服务器）"
-
+    let requiresForeground = false
     private let audioEngine = AVAudioEngine()
     private var recognizer: SFSpeechRecognizer?
     private var request: SFSpeechAudioBufferRecognitionRequest?
@@ -36,7 +36,8 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
-        // 中文等走服务器识别（requiresOnDeviceRecognition 默认 false 即可）
+        request.taskHint = .dictation  // 优化连续听写行为，降低延迟提高灵敏度
+        // macOS 26 已统一本地/云端路由，原生格式直接喂即可，不需要 16kHz 重采样
         self.request = request
 
         finalText = ""
@@ -55,29 +56,10 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
 
         let inputNode = audioEngine.inputNode
         let hardwareFormat = inputNode.outputFormat(forBus: 0)
-        // SFSpeechRecognizer 对 16kHz 单声道最稳；Mac 硬件输入多为 44.1kHz 立体声，
-        // 直接 append 会让服务器收到损坏音频（kAFAssistantErrorDomain Code=203 "Corrupt"）。
-        // 因此在 tap 内先转成 16kHz 单声道再喂入。
-        let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
-        guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else {
-            throw ASRError.converterInit
-        }
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: hardwareFormat) { [weak self, converter, targetFormat, hardwareFormat] buffer, _ in
-            guard let request = self?.request else { return }
-            let ratio = targetFormat.sampleRate / hardwareFormat.sampleRate
-            let frameCount = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
-            guard frameCount > 0,
-                  let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else { return }
-            var didProvide = false
-            var convError: NSError?
-            converter.convert(to: outBuffer, error: &convError) { _, status in
-                guard !didProvide else { status.pointee = .noDataNow; return nil }
-                didProvide = true
-                status.pointee = .haveData
-                return buffer
-            }
-            guard convError == nil, outBuffer.frameLength > 0 else { return }
-            request.append(outBuffer)
+        // 原生格式直喂 SFSpeechRecognizer，不重采样（macOS 26 on-device 直接处理）
+        // bufferSize 1024 ≈ 23ms @ 44.1kHz，保证实时性
+        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) { [weak self] buffer, _ in
+            self?.request?.append(buffer)
         }
         audioEngine.prepare()
         try audioEngine.start()
