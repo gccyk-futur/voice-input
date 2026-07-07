@@ -4,12 +4,7 @@ import Speech
 import CoreMedia
 
 /// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + DictationTranscriber（实时渐进连续听写）。
-/// 选用 DictationTranscriber 而非 SpeechTranscriber，是因为前者使用系统「连续听写」的
-/// 本地模型（用户已确认本机可用），而 SpeechTranscriber 的中文短句资产经常缺失。
-///
-/// 注意：本类**不隔离到主线程**。音频采集、语音模型加载与转写分析都在调用方提供的
-/// 后台 Task 中执行，避免阻塞 UI 主线程（否则表现为菜单栏转圈、整 app 卡死）。
-/// 仅通过 onPartial 把识别结果抛回上层，由上层负责切回 MainActor 刷新界面。
+@available(macOS 26, *)
 final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system"
     let displayName = "系统听写"
