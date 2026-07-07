@@ -350,12 +350,14 @@ final class AppCoordinator {
         print("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
         switch configStore.config.asr.engine {
         case "dictation":
-            let raw = configStore.config.asr.system.language
-            let loc = Locale(identifier: raw)
-            if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
-                return SystemDictationEngine()
+            if #available(macOS 26, *) {
+                let raw = configStore.config.asr.system.language
+                let loc = Locale(identifier: raw)
+                if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+                    return SystemDictationEngine()
+                }
             }
-            fallthrough // 回退到 system
+            fallthrough
         case "aliyun":
             // 复用常驻连接
             if let existing = asrEngine, existing.id == "aliyun" {
@@ -382,7 +384,8 @@ final class AppCoordinator {
             if let recognizer, recognizer.isAvailable {
                 return LegacyDictationEngine()
             }
-            if await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+            if #available(macOS 26, *),
+               await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
                 return SystemDictationEngine()
             }
             return LegacyDictationEngine()
