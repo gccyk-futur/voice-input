@@ -112,7 +112,7 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
                 "model": model,
                 "parameters": [
                     "format": "pcm", "sample_rate": 16000,
-                    "language_hints": locale.language.languageCode?.identifier == "zh" ? ["zh"] : [],
+                    "language_hints": [languageHint(for: locale)],
                     "semantic_punctuation_enabled": semanticPunctuation,
                     "speech_noise_threshold": speechNoiseThreshold,
                     "max_sentence_silence": maxSentenceSilence
@@ -230,6 +230,43 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     }
 
     // MARK: - 事件处理
+
+    private func languageHint(for locale: Locale) -> String {
+        let id = locale.language.languageCode?.identifier ?? "zh"
+        switch id {
+        case "zh": return "zh"
+        case "en": return "en"
+        case "ja": return "ja"
+        case "ko": return "ko"
+        case "vi": return "vi"
+        case "th": return "th"
+        case "id": return "id"
+        case "ms": return "ms"
+        case "tl": return "tl"
+        case "hi": return "hi"
+        case "ar": return "ar"
+        case "fr": return "fr"
+        case "de": return "de"
+        case "es": return "es"
+        case "pt": return "pt"
+        case "ru": return "ru"
+        case "it": return "it"
+        case "nl": return "nl"
+        case "sv": return "sv"
+        case "da": return "da"
+        case "fi": return "fi"
+        case "no": return "no"
+        case "el": return "el"
+        case "pl": return "pl"
+        case "cs": return "cs"
+        case "hu": return "hu"
+        case "ro": return "ro"
+        case "bg": return "bg"
+        case "hr": return "hr"
+        case "sk": return "sk"
+        default: return id
+        }
+    }
 
     private var taskStartedCont: CheckedContinuation<Void, Error>?
     private var onPartial: (@Sendable (String) -> Void)?
