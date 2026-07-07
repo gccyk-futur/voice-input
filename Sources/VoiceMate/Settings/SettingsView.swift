@@ -48,7 +48,7 @@ struct SettingsView: View {
                 labeled("引擎") {
                     Picker("", selection: $draft.asr.engine) {
                         Text("系统听写（稳定，不抢焦点）").tag("system")
-                        Text("连续听写（更流畅，需前台）").tag("dictation")
+                        Text("阿里云 Fun-ASR（在线，高精度带标点）").tag("aliyun")
                         Text("Whisper（本地，待实现）").tag("whisper")
                     }
                     .labelsHidden()
@@ -58,6 +58,20 @@ struct SettingsView: View {
                     TextField("zh-CN", text: $draft.asr.system.language)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 160)
+                }
+                if draft.asr.engine == "aliyun" {
+                    labeled("API Key") {
+                        SecureField("sk-...", text: $draft.asr.aliyun.apiKey)
+                            .textFieldStyle(.roundedBorder).frame(width: 280)
+                    }
+                    labeled("Workspace ID") {
+                        TextField("ws-...", text: $draft.asr.aliyun.workspaceId)
+                            .textFieldStyle(.roundedBorder).frame(width: 280)
+                    }
+                    labeled("模型") {
+                        TextField("fun-asr-realtime", text: $draft.asr.aliyun.model)
+                            .textFieldStyle(.roundedBorder).frame(width: 200)
+                    }
                 }
             }
             .padding(8)

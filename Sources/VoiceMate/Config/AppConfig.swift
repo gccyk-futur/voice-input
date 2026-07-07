@@ -37,8 +37,9 @@ struct ASRIflytekConfig: Codable {
     var apiKey: String = ""
 }
 struct ASRAliyunConfig: Codable {
-    var accessKey: String = ""
-    var accessSecret: String = ""
+    var apiKey: String = ""
+    var workspaceId: String = ""
+    var model: String = "fun-asr-realtime"
 }
 struct ASROpenAIWhisperConfig: Codable {
     var apiKey: String = ""

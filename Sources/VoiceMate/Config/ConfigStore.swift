@@ -25,8 +25,10 @@ final class ConfigStore {
     static func read(fileURL: URL) -> AppConfig {
         guard let data = try? Data(contentsOf: fileURL),
               let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
+            print("[ConfigStore] 读取 config.json 失败，使用默认配置")
             return AppConfig()
         }
+        print("[ConfigStore] config loaded, asr.engine=\(decoded.asr.engine)")
         return decoded
     }
 
