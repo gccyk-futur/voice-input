@@ -69,10 +69,16 @@ struct SettingsView: View {
                 Text("识别语言").frame(width: 80, alignment: .leading)
                 Picker("", selection: $draft.asr.system.language) {
                     Text("中文").tag("zh-Hans-CN")
-                    Text("英文").tag("en-US")
-                    Text("日语").tag("ja-JP")
-                    Text("自动").tag("auto")
-                }.labelsHidden().frame(width: 140)
+                    Text("English").tag("en-US")
+                    Text("日本語").tag("ja-JP")
+                    Text("한국어").tag("ko-KR")
+                    Text("Français").tag("fr-FR")
+                    Text("Deutsch").tag("de-DE")
+                    Text("Español").tag("es-ES")
+                    Text("Português").tag("pt-BR")
+                    Text("Русский").tag("ru-RU")
+                    Text("Italiano").tag("it-IT")
+                }.labelsHidden().frame(width: 180)
             }
 
 
