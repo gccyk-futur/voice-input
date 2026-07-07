@@ -120,9 +120,9 @@ final class AppCoordinator {
         statusText = "聆听中…"
 
         let languageID = configStore.config.asr.system.language
-        Task {
+        Task { @MainActor in
             let engine = await self.resolveASR()
-            await MainActor.run { self.asrEngine = engine }
+            self.asrEngine = engine
             panel.show()
             panel.makeKey()
             print("[Coordinator] starting \(engine.displayName)")
