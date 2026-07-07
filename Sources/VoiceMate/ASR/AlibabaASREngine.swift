@@ -174,6 +174,7 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         // 清理旧的 tap（如果有）
         audioEngine.inputNode.removeTap(onBus: 0)
         if audioEngine.isRunning { audioEngine.stop() }
+        audioEngine.reset()  // 强制重新查询硬件格式
 
         let inputNode = audioEngine.inputNode
         let hardwareFormat = inputNode.outputFormat(forBus: 0)
