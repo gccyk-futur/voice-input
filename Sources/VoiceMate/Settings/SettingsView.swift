@@ -6,6 +6,8 @@ struct SettingsView: View {
     var onDone: () -> Void = {}
 
     @State private var draft: AppConfig = .default
+    /// 打开设置时的原始配置，用于判断是否有未保存变更
+    @State private var originalConfig: AppConfig = .default
     @State private var selectedTab = 0
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
@@ -33,20 +35,36 @@ struct SettingsView: View {
             .padding(.horizontal, 20).padding(.top, 12)
 
             ScrollView {
-                Group {
-                    switch selectedTab {
-                    case 0: generalTab
-                    case 1: asrTab
-                    case 2: llmTab
-                    case 3: aboutTab
-                    default: EmptyView()
+                VStack(spacing: 0) {
+                    // 未保存变更提示条
+                    if hasChanges {
+                        HStack(spacing: 4) {
+                            Image(systemName: "pencil.circle.fill")
+                                .font(.caption2)
+                            Text("有未保存的变更")
+                                .font(.caption2)
+                        }
+                        .foregroundStyle(.orange)
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(.orange.opacity(0.08))
                     }
+
+                    Group {
+                        switch selectedTab {
+                        case 0: generalTab
+                        case 1: asrTab
+                        case 2: llmTab
+                        case 3: aboutTab
+                        default: EmptyView()
+                        }
+                    }
+                    .padding(20)
                 }
-                .padding(20)
             }
         }
         .frame(width: 560, height: 620)
-        .task { draft = ConfigStore.shared.config }
         .toolbar {
             ToolbarItem(placement: .confirmationAction) { Button("保存") { save() } }
             ToolbarItem(placement: .cancellationAction) { Button("取消") { onDone() } }
@@ -425,6 +443,11 @@ struct SettingsView: View {
         }
     }
 
+    /// 当前 draft 与打开时的原始配置是否有差异
+    private var hasChanges: Bool {
+        draft != originalConfig
+    }
+
     // MARK: - 保存
 
     private func save() {
@@ -463,8 +486,13 @@ struct SettingsView: View {
                 showValidationAlert = true; return
             }
         }
-        ConfigStore.shared.update(draft)
+        if let loginItemErr = ConfigStore.shared.update(draft) {
+            validationMessage = "登录项设置失败：\(loginItemErr)"
+            showValidationAlert = true
+            return
+        }
         HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
+        originalConfig = draft
         onDone()
     }
 
