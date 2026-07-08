@@ -79,23 +79,32 @@ final class ConfigStore {
             eventMask: [.write, .rename, .delete],
             queue: reloadQueue
         )
-        // 注意：本闭包在后台队列执行，不能捕获 @MainActor 的 self。
-        // 只捕获 fileURL，通过弱引用切回主线程更新。
-        let targetURL = fileURL
-        src.setEventHandler {
+        // 通过 nonisolated static 方法脱离 @MainActor 上下文，
+        // 避免 macOS 26 严格并发检查在后台队列上触发 actor isolation 断言
+        Self.setupFileWatch(source: src, url: fileURL, fd: fd)
+        self.source = src
+    }
+
+    /// nonisolated static：脱离 @MainActor 上下文，禁止捕获 self，
+    /// 只通过 ConfigStore.shared 单向更新主线程配置。
+    private nonisolated static func setupFileWatch(
+        source: DispatchSourceFileSystemObject,
+        url: URL,
+        fd: Int32
+    ) {
+        source.setEventHandler {
             for _ in 0..<3 {
-                if let data = try? Data(contentsOf: targetURL),
+                if let data = try? Data(contentsOf: url),
                    let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
-                    Task { @MainActor [weak self] in
-                        self?.config = decoded
+                    Task { @MainActor in
+                        ConfigStore.shared.config = decoded
                     }
                     return
                 }
                 Thread.sleep(forTimeInterval: 0.1)
             }
         }
-        src.setCancelHandler { close(fd) }
-        src.resume()
-        self.source = src
+        source.setCancelHandler { close(fd) }
+        source.resume()
     }
 }

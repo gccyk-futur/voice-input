@@ -9,6 +9,7 @@ struct StatusBarMenuView: View {
     @State private var coordinator = AppCoordinator.shared
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
+    @State private var hoveredItemID: String?
 
     private let popoverMinWidth: CGFloat = 260
     private let popoverMaxHeight: CGFloat = 460
@@ -67,6 +68,10 @@ struct StatusBarMenuView: View {
             // ── 底部操作区 ──
             Divider().padding(.horizontal, 10)
             HStack(spacing: 0) {
+                bottomButton("历史记录", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
+                    HistoryWindowController.shared.show()
+                }
+                Divider().frame(height: 20)
                 bottomButton("设置…", systemImage: "gearshape") {
                     SettingsWindowController.shared.show()
                 }
@@ -219,47 +224,50 @@ struct StatusBarMenuView: View {
         }
     }
 
-    // MARK: - 历史记录
+    // MARK: - 历史记录（内联展开）
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if historyItems.isEmpty {
-                HStack {
-                    Text("历史记录").font(.caption).foregroundStyle(.secondary)
-                    Spacer()
-                    Text("(0)").font(.caption2).foregroundStyle(.tertiary)
+            // 标题行：左侧 caption，右侧计数字
+            HStack {
+                Text("历史记录").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !historyItems.isEmpty {
+                    Text("已记录 \(historyItems.count)/\(config.general.maxHistoryCount) 条")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
+            }
+            if historyItems.isEmpty {
                 Text("暂无记录")
-                    .font(.caption).foregroundStyle(.tertiary)
+                    .font(.body).foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 6)
             } else {
-                Menu {
-                    ForEach(Array(historyItems.prefix(5))) { item in
-                        Button(action: { copyItem(item) }) {
+                ForEach(Array(historyItems.prefix(5).enumerated()), id: \.element.id) { idx, item in
+                    Button(action: { copyItem(item) }) {
+                        HStack(spacing: 4) {
+                            Text("\(idx + 1).")
+                                .font(.callout)
+                                .foregroundStyle(.tertiary)
+                                .frame(width: 18, alignment: .leading)
                             Text(item.llmResult ?? item.asrResult)
-                                .lineLimit(2)
-                                .frame(maxWidth: 220, alignment: .leading)
+                                .font(.callout)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 0)
                         }
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 2)
+                        .background(
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(hoveredItemID == item.id ? Color.primary.opacity(0.08) : Color.clear)
+                        )
                     }
-                    Divider()
-                    Button("查看全部 (\(historyItems.count) 条)") {
-                        HistoryWindowController.shared.show()
-                        dismissMenuBarExtra()
-                    }
-                } label: {
-                    HStack {
-                        Text("历史记录")
-                            .font(.caption)
-                        Spacer()
-                        Text("(\(historyItems.count))")
-                            .font(.caption2).foregroundStyle(.tertiary)
-                        Image(systemName: "chevron.right")
-                            .font(.caption2).foregroundStyle(.tertiary)
+                    .buttonStyle(.plain)
+                    .onHover { hovering in
+                        hoveredItemID = hovering ? item.id : nil
                     }
                 }
-                .menuStyle(.borderlessButton)
-                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -333,7 +341,4 @@ struct StatusBarMenuView: View {
         historyItems = HistoryStore.shared.items
     }
 }
-
-// MARK: - 迷你历史行（内联复制）
-
 

@@ -493,7 +493,10 @@ struct SettingsView: View {
         }
         HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
         originalConfig = draft
-        onDone()
+        // 延迟 dismiss 到下一 RunLoop，避免在 toolbar action 处理中同步关闭窗口导致崩溃
+        DispatchQueue.main.async {
+            self.onDone()
+        }
     }
 
     // MARK: - 关于
