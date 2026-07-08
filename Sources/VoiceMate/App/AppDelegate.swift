@@ -5,9 +5,13 @@ import AppKit
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
         _ = AppCoordinator.shared
         syncLoginItem()
+
+        // 根据配置决定是否启动时显示设置页面
+        if ConfigStore.shared.config.general.showSettingsOnLaunch {
+            SettingsWindowController.shared.show()
+        }
     }
 
     /// 根据配置同步登录项（登录时启动开关）。

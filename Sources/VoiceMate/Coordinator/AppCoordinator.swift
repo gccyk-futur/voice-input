@@ -74,7 +74,7 @@ final class AppCoordinator {
         }
 
         // 播放开始提示音
-        NSSound(named: .init("Tink"))?.play()
+        playSound(named: configStore.config.general.sound.startSound)
         beginRecordingFlow()
     }
 
@@ -123,6 +123,16 @@ final class AppCoordinator {
         Task { @MainActor in
             let engine = await self.resolveASR()
             self.asrEngine = engine
+            // 本地引擎：传入静音检测配置
+            if let legacy = engine as? LegacyDictationEngine {
+                let cfg = configStore.config.asr.system
+                legacy.configureAutoStop(
+                    enabled: cfg.silenceAutoStopEnabled,
+                    timeout: cfg.silenceTimeout,
+                    threshold: Float(cfg.silenceThreshold)
+                )
+                print("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
+            }
             NSApp.activate(ignoringOtherApps: true)
             panel.show()
             panel.makeKey()
@@ -216,7 +226,7 @@ final class AppCoordinator {
         }
         // 到达就绪态：自动粘贴
         await MainActor.run {
-            NSSound(named: .init("Purr"))?.play()
+            self.playSound(named: self.configStore.config.general.sound.stopSound)
             self.confirmPaste()
         }
     }
@@ -250,29 +260,20 @@ final class AppCoordinator {
             // 仅 activate 把 app 推到前台不够——文本框聚焦是异步的。
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self else { return }
-                // 优先通过 PID 直送 ⌘V（无需目标在前台），回退到 HID 级别事件。
                 let pasteOK = self.pasteService.paste(text, to: targetPID)
-                print("[Paste] primary paste (postToPid) result=\(pasteOK)")
-                if pasteOK {
-                    self.historyStore.append(HistoryItem(
-                        asrResult: self.asrText,
-                        llmResult: useLLM ? self.llmText : nil,
-                        engine: self.asrEngine?.id ?? "system",
-                        llmEngine: useLLM ? self.configStore.config.llm.engine : nil
-                    ))
-                } else {
-                    // postToPid 失败：用 HID 事件做二次尝试
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                        let retry = self.pasteService.paste(text)
-                        print("[Paste] fallback paste (HID) result=\(retry)")
-                    }
-                    if !self.pasteService.isTrusted {
-                        self.pasteService.openAccessibilitySettings()
-                        self.statusText = "未授权辅助功能（签名不匹配），请用 Xcode Run 构建并在 系统设置→隐私与安全性→辅助功能 中重新授权。文字已复制到剪贴板。"
-                    } else {
-                        self.statusText = "已复制到剪贴板，请手动 ⌘V"
-                    }
+                print("[Paste] paste result=\(pasteOK), isTrusted=\(self.pasteService.isTrusted)")
+
+                // 辅助功能未授权时：文字已在剪贴板，引导用户去授权（下次即可自动回写）
+                if !self.pasteService.isTrusted {
+                    self.statusText = "辅助功能未授权，文字已复制到剪贴板（请手动 ⌘V）。授权后下次自动回写。"
                 }
+
+                self.historyStore.append(HistoryItem(
+                    asrResult: self.asrText,
+                    llmResult: useLLM ? self.llmText : nil,
+                    engine: self.asrEngine?.id ?? "system",
+                    llmEngine: useLLM ? self.configStore.config.llm.engine : nil
+                ))
                 self.reset()
                 self.finalizing = false
             }
@@ -311,6 +312,11 @@ final class AppCoordinator {
         // 归还焦点给之前的应用
         if let t = targetApp { t.activate() }
         targetApp = nil
+    }
+
+    private func playSound(named name: String) {
+        guard configStore.config.general.sound.enabled else { return }
+        NSSound(named: .init(name))?.play()
     }
 
     private func reset() {
@@ -397,9 +403,6 @@ final class AppCoordinator {
         switch cfg.engine {
         case "ollama": return OllamaEngine(config: cfg.ollama)
         case "openai": return OpenAICompatibleEngine(baseUrl: cfg.openai.baseUrl, apiKey: cfg.openai.apiKey, model: cfg.openai.model, temperature: cfg.openai.temperature, kind: .openai)
-        case "deepseek": return OpenAICompatibleEngine(baseUrl: cfg.deepseek.baseUrl, apiKey: cfg.deepseek.apiKey, model: cfg.deepseek.model, temperature: cfg.deepseek.temperature, kind: .deepseek)
-        case "custom": return OpenAICompatibleEngine(baseUrl: cfg.custom.baseUrl, apiKey: cfg.custom.apiKey, model: cfg.custom.model, temperature: cfg.custom.temperature, kind: .custom)
-        case "claude": return ClaudeEngine(baseUrl: cfg.claude.baseUrl, apiKey: cfg.claude.apiKey, model: cfg.claude.model, temperature: cfg.claude.temperature)
         default: return nil
         }
     }

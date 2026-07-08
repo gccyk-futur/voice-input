@@ -51,6 +51,8 @@ final class FloatingPanelController {
 
     func show() {
         if panel == nil { buildPanel() }
+        // macOS 14 兼容：后台 app 的 NSPanel 需要先 activate 才能显示
+        NSApp.activate(ignoringOtherApps: true)
         panel?.center()
         // 必须让面板成为 key window，本 app 才会真正激活——on-device 听写 daemon 只在
         // 本 app 为激活态时才回传结果（否则必须手动点面板才开始识别）。停止时会把焦点

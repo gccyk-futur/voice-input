@@ -21,6 +21,21 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     private var task: SFSpeechRecognitionTask?
     private var finalText: String = ""
     private var finishContinuation: CheckedContinuation<String, Never>?
+    // 静音检测
+    private var onAudioLevel: (@Sendable (Float) -> Void)?
+    private var onAutoStop: (@Sendable () -> Bool)?
+    private var silenceStart: Date?
+    private var silenceAutoStopEnabled = true
+    private var silenceTimeout: TimeInterval = 2.0
+    private var silenceThreshold: Float = 0.02
+    private var engineStartTime = Date.distantPast
+
+    /// 配置静音自动停止参数（由 AppCoordinator 在 start 之前调用）
+    func configureAutoStop(enabled: Bool, timeout: TimeInterval, threshold: Float) {
+        self.silenceAutoStopEnabled = enabled
+        self.silenceTimeout = timeout
+        self.silenceThreshold = threshold
+    }
 
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
@@ -37,6 +52,12 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
             throw ASRError.speechNotAvailable(locale: locale.identifier)
         }
         self.recognizer = recognizer
+
+        // 存储回调
+        self.onAudioLevel = onAudioLevel
+        self.onAutoStop = onAutoStop
+        self.silenceStart = nil
+        self.engineStartTime = Date()
 
         let request = SFSpeechAudioBufferRecognitionRequest()
         request.shouldReportPartialResults = true
@@ -80,6 +101,32 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
                 return buffer
             }
             guard convError == nil, outBuffer.frameLength > 0 else { return }
+
+            // 计算 RMS 电平 + 静音检测
+            let needsLevel = self.onAudioLevel != nil
+            let needsSilence = self.silenceAutoStopEnabled && self.onAutoStop != nil
+            if needsLevel || needsSilence {
+                let chData = outBuffer.floatChannelData![0]
+                let len = Int(outBuffer.frameLength)
+                var sum: Float = 0
+                for i in 0..<len { let s = chData[i]; sum += s * s }
+                let rms = sqrt(sum / Float(len))
+                if needsLevel { self.onAudioLevel?(rms) }
+                if needsSilence {
+                    // 启动后 1 秒内不触发静音检测，避免刚启动就被误判
+                    let graceOk = Date().timeIntervalSince(self.engineStartTime) >= 1.0
+                    if graceOk, rms < self.silenceThreshold {
+                        if self.silenceStart == nil { self.silenceStart = Date() }
+                        if let start = self.silenceStart,
+                           Date().timeIntervalSince(start) >= self.silenceTimeout {
+                            if self.onAutoStop?() == true { self.silenceStart = nil }
+                        }
+                    } else {
+                        self.silenceStart = nil
+                    }
+                }
+            }
+
             self.appendQueue.async { request.append(outBuffer) }
         }
         audioEngine.prepare()
