@@ -5,9 +5,9 @@ import Speech
 struct SettingsView: View {
     var onDone: () -> Void = {}
 
-    @State private var draft: AppConfig = .default
+    @State private var draft: AppConfig = ConfigStore.shared.config
     /// 打开设置时的原始配置，用于判断是否有未保存变更
-    @State private var originalConfig: AppConfig = .default
+    @State private var originalConfig: AppConfig = ConfigStore.shared.config
     @State private var selectedTab = 0
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
@@ -66,7 +66,7 @@ struct SettingsView: View {
         }
         .frame(width: 560, height: 620)
         .toolbar {
-            ToolbarItem(placement: .confirmationAction) { Button("保存") { save() } }
+            ToolbarItem(placement: .confirmationAction) { Button("保存") { save() }.disabled(!hasChanges) }
             ToolbarItem(placement: .cancellationAction) { Button("取消") { onDone() } }
         }
         .alert("保存失败", isPresented: $showValidationAlert) {

@@ -42,7 +42,9 @@ final class HistoryWindowController: NSObject {
     func close() {
         guard let win = window, win.isVisible else { return }
         win.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }
 
@@ -51,7 +53,9 @@ final class HistoryWindowController: NSObject {
 extension HistoryWindowController: NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         print("[HistoryWindow] 窗口关闭 → 切回 accessory 策略")
-        NSApp.setActivationPolicy(.accessory)
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
     func windowDidBecomeKey(_ notification: Notification) {

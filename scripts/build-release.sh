@@ -11,12 +11,17 @@ cd "$(dirname "$0")/.."
 # ---- 配置 ---------------------------------------------------
 APP_NAME="VoiceMate"
 SCHEME="VoiceMate"
-TEAM_ID="F2J85LVHS4"
 BUNDLE_ID="me.ckai.VoiceMate"
-SIGNING_IDENTITY="Developer ID Application: Kai Meng (${TEAM_ID})"
 ENTITLEMENTS="Sources/VoiceMate/Resources/VoiceMate.entitlements"
-NOTARY_PROFILE="VoiceMate"   # 需先执行一次: scripts/setup-notary.sh
+NOTARY_PROFILE="VoiceMate"
 BUILD_DIR="./build"
+
+# 开发者身份（通过 1Password CLI 读取，不硬编码在仓库中）
+TEAM_ID="$(op read op://key/apple/TEAM_ID)"
+SIGNING_NAME="$(op read op://key/apple/SIGNING_NAME)"
+export VOICEMATE_TEAM_ID="${TEAM_ID}"
+export VOICEMATE_SIGNING_NAME="${SIGNING_NAME}"
+SIGNING_IDENTITY="Developer ID Application: ${SIGNING_NAME} (${TEAM_ID})"
 # ------------------------------------------------------------
 
 RED='\033[0;31m'
@@ -67,6 +72,12 @@ fi
 step "Generating project (xcodegen)..."
 if command -v xcodegen &>/dev/null; then
   xcodegen generate --quiet 2>&1 || warn "xcodegen 警告（可能不影响构建）"
+  # 恢复共享 Scheme（xcodegen 每次会清掉 xcshareddata）
+  SCHEMES_DIR="VoiceMate.xcodeproj/xcshareddata/xcschemes"
+  mkdir -p "${SCHEMES_DIR}"
+  if [ -f "scripts/xcschemes/VoiceMate.xcscheme" ]; then
+    cp scripts/xcschemes/VoiceMate.xcscheme "${SCHEMES_DIR}/"
+  fi
 fi
 
 # ---- 清理 ---------------------------------------------------
@@ -83,6 +94,7 @@ xcodebuild \
   CODE_SIGN_IDENTITY="${SIGNING_IDENTITY}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" \
   PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+  CODE_SIGN_ALLOW_ENTITLEMENTS_MODIFICATION=NO \
   "OTHER_CODE_SIGN_FLAGS=--timestamp --options=runtime" \
   build \
   2>&1 | grep -E "(error:|warning:|BUILD|FAILED|Signing)" || true
@@ -94,6 +106,30 @@ if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
 fi
 
 echo "   ✅ App: ${APP_PATH}"
+
+# ---- 清洗 entitlements ---------------------------------------
+# Xcode 16+ 在 Release 构建中自动注入 com.apple.security.get-task-allow，
+# 公证会拒绝这个权限。需要在签名验证前手动剥离。
+step "Stripping get-task-allow entitlement..."
+XCENT="${BUILD_DIR}/VoiceMate.build/Release/VoiceMate.build/VoiceMate.app.xcent"
+if [ -f "${XCENT}" ]; then
+  # Xcode 16+ 会注入此权限到 Release 构建中，必须手动移除才能通过公证
+  python3 -c "
+import plistlib
+with open('${XCENT}', 'rb') as f:
+    d = plistlib.load(f)
+d.pop('com.apple.security.get-task-allow', None)
+with open('${XCENT}', 'wb') as f:
+    plistlib.dump(d, f)
+"
+  echo "   ✅ get-task-allow 已剥离"
+  # 用清洗后的 entitlements 重新签名
+  codesign --force --sign "${SIGNING_IDENTITY}" \
+    --entitlements "${XCENT}" \
+    --timestamp --options=runtime \
+    "${APP_PATH}" 2>&1
+  echo "   ✅ 重新签名完成"
+fi
 
 # ---- 验证签名 ------------------------------------------------
 step "Verifying code signature..."
@@ -136,14 +172,21 @@ echo "   ✅ Stapled"
 # ---- 制作 DMG ------------------------------------------------
 step "Creating DMG..."
 DMG_PATH="${BUILD_DIR}/${APP_NAME}-${VERSION}.dmg"
+DMG_TMP="${BUILD_DIR}/dmg-staging"
+rm -rf "${DMG_TMP}"
+mkdir -p "${DMG_TMP}"
+# 复制 app + 创建 Applications 快捷方式（拖入即安装）
+cp -R "${APP_PATH}" "${DMG_TMP}/"
+ln -s /Applications "${DMG_TMP}/Applications"
 
 hdiutil create -volname "${APP_NAME}" \
-  -srcfolder "${APP_PATH}" \
+  -srcfolder "${DMG_TMP}" \
   -ov -format UDZO \
   "${DMG_PATH}" 2>&1
+rm -rf "${DMG_TMP}"
 
-# 签名 DMG
-codesign --sign "${SIGNING_IDENTITY}" --timestamp "${DMG_PATH}" 2>&1
+# 签名 DMG（optional，timestamp 服务器偶尔不稳定，跳过不影响分发）
+codesign --sign "${SIGNING_IDENTITY}" "${DMG_PATH}" 2>&1 || echo "   ⚠️  DMG 签名跳过（仅为美观，不影响使用）"
 
 # 公证 DMG
 step "Notarizing DMG..."

@@ -223,45 +223,52 @@ struct StatusBarMenuView: View {
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("历史记录").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-                Text("(\(historyItems.count))")
-                    .font(.caption2).foregroundStyle(.tertiary)
-            }
-
             if historyItems.isEmpty {
+                HStack {
+                    Text("历史记录").font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Text("(0)").font(.caption2).foregroundStyle(.tertiary)
+                }
                 Text("暂无记录")
                     .font(.caption).foregroundStyle(.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 6)
             } else {
-                ScrollView {
-                    VStack(spacing: 4) {
-                        ForEach(Array(historyItems.prefix(5))) { item in
-                            HistoryRowMini(item: item)
+                Menu {
+                    ForEach(Array(historyItems.prefix(5))) { item in
+                        Button(action: { copyItem(item) }) {
+                            Text(item.llmResult ?? item.asrResult)
+                                .lineLimit(2)
+                                .frame(maxWidth: 220, alignment: .leading)
                         }
                     }
-                }
-                .frame(maxHeight: 200)
-                .scrollIndicators(.never)
-            }
-
-            if !historyItems.isEmpty {
-                Button(action: {
-                    HistoryWindowController.shared.show()
-                    dismissMenuBarExtra()
-                }) {
+                    Divider()
+                    Button("查看全部 (\(historyItems.count) 条)") {
+                        HistoryWindowController.shared.show()
+                        dismissMenuBarExtra()
+                    }
+                } label: {
                     HStack {
+                        Text("历史记录")
+                            .font(.caption)
                         Spacer()
-                        Text("查看全部 \(historyItems.count) 条 →").font(.caption)
-                        Spacer()
+                        Text("(\(historyItems.count))")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2).foregroundStyle(.tertiary)
                     }
                 }
-                .buttonStyle(.plain)
-                .foregroundStyle(.tint)
+                .menuStyle(.borderlessButton)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    private func copyItem(_ item: HistoryItem) {
+        let text = item.llmResult ?? item.asrResult
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        showToast("已复制")
     }
 
     // MARK: - 底部操作
@@ -329,57 +336,4 @@ struct StatusBarMenuView: View {
 
 // MARK: - 迷你历史行（内联复制）
 
-private struct HistoryRowMini: View {
-    let item: HistoryItem
 
-    @State private var copied = false
-
-    private var displayText: String {
-        let text = item.llmResult ?? item.asrResult
-        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
-        if let first = lines.first {
-            return String(first)
-        }
-        return text
-    }
-
-    private var hasMore: Bool {
-        let text = item.llmResult ?? item.asrResult
-        return text.split(separator: "\n", omittingEmptySubsequences: true).count > 1
-    }
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(displayText)
-                .lineLimit(1)
-                .font(.caption)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .truncationMode(.tail)
-
-            if hasMore {
-                Text("…").font(.caption2).foregroundStyle(.tertiary)
-            }
-
-            Button(action: copy) {
-                Image(systemName: copied ? "checkmark" : "doc.on.doc")
-                    .font(.caption2)
-                    .foregroundStyle(copied ? .green : .secondary)
-            }
-            .buttonStyle(.plain)
-            .help("复制到剪贴板")
-        }
-        .padding(.horizontal, 6)
-        .padding(.vertical, 4)
-        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 4))
-    }
-
-    private func copy() {
-        let text = item.llmResult ?? item.asrResult
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        copied = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-            copied = false
-        }
-    }
-}
