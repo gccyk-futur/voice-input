@@ -8,6 +8,8 @@
 	<string>VoiceMate</string>
 	<key>CFBundleExecutable</key>
 	<string>VoiceMate</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>me.ckai.VoiceMate</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -21,7 +23,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSUIElement</key>
-	<false/>
+	<true/>
 	<key>NSHumanReadableCopyright</key>
 	<string>Copyright © 2026 VoiceMate. MIT License.</string>
 	<key>NSMicrophoneUsageDescription</key>

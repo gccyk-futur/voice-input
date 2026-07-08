@@ -14,8 +14,16 @@ struct AppConfig: Codable {
 struct GeneralConfig: Codable {
     var hotkey: String = "Cmd+Shift+V"
     var launchAtStartup: Bool = false
+    var showSettingsOnLaunch: Bool = true
     var windowStyle: String = "vibrancy"
     var maxHistoryCount: Int = 50
+    var sound: SoundConfig = .init()
+}
+
+struct SoundConfig: Codable {
+    var enabled: Bool = true
+    var startSound: String = "Tink"
+    var stopSound: String = "Purr"
 }
 
 struct ASRConfig: Codable {
@@ -27,7 +35,12 @@ struct ASRConfig: Codable {
     var openaiWhisper: ASROpenAIWhisperConfig = .init()
 }
 
-struct ASRSystemConfig: Codable { var language: String = "zh-Hans-CN" }
+struct ASRSystemConfig: Codable {
+    var language: String = "zh-Hans-CN"
+    var silenceAutoStopEnabled: Bool = false
+    var silenceTimeout: Double = 2.0
+    var silenceThreshold: Double = 0.02
+}
 struct ASRWhisperConfig: Codable {
     var modelPath: String = ""
     var threads: Int = 4
@@ -55,12 +68,9 @@ struct ASROpenAIWhisperConfig: Codable {
 
 struct LLMConfig: Codable {
     var enabled: Bool = false
-    var engine: String = "ollama" // ollama | openai | deepseek | claude | custom
+    var engine: String = "ollama" // ollama | openai
     var ollama: LLMOllamaConfig = .init()
     var openai: LLMOpenAIConfig = .init()
-    var deepseek: LLMDeepSeekConfig = .init()
-    var claude: LLMClaudeConfig = .init()
-    var custom: LLMCustomConfig = .init()
     var prompt: LLMPromptConfig = .init()
 }
 struct LLMOllamaConfig: Codable {
@@ -73,24 +83,6 @@ struct LLMOpenAIConfig: Codable {
     var apiKey: String = ""
     var model: String = "gpt-4o-mini"
     var baseUrl: String = "https://api.openai.com/v1"
-    var temperature: Double = 0.7
-}
-struct LLMDeepSeekConfig: Codable {
-    var apiKey: String = ""
-    var model: String = "deepseek-v4-flash"
-    var baseUrl: String = "https://api.deepseek.com/v1"
-    var temperature: Double = 0.7
-}
-struct LLMClaudeConfig: Codable {
-    var apiKey: String = ""
-    var model: String = "claude-3-5-sonnet-20241022"
-    var baseUrl: String = "https://api.anthropic.com/v1"
-    var temperature: Double = 0.7
-}
-struct LLMCustomConfig: Codable {
-    var apiKey: String = ""
-    var model: String = ""
-    var baseUrl: String = ""
     var temperature: Double = 0.7
 }
 struct LLMPromptConfig: Codable {

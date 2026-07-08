@@ -21,7 +21,10 @@ settings:
       ENABLE_HARDENED_RUNTIME: false
     Release:
       ENABLE_HARDENED_RUNTIME: true
+      CODE_SIGN_STYLE: Manual
+      CODE_SIGN_IDENTITY: "Developer ID Application: Kai Meng (F2J85LVHS4)"
       CODE_SIGN_ENTITLEMENTS: Sources/VoiceMate/Resources/VoiceMate.entitlements
+      OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
 targets:
   VoiceMate:
     type: application
@@ -38,8 +41,9 @@ targets:
         CFBundleShortVersionString: "1.0.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceMate
+        CFBundleIconFile: AppIcon
         NSPrincipalClass: NSApplication
-        LSUIElement: false
+        LSUIElement: true
         NSMicrophoneUsageDescription: "VoiceMate 需要使用麦克风进行语音输入。"
         NSSpeechRecognitionUsageDescription: "VoiceMate 需要使用语音识别将语音实时转为文字。"
         NSHumanReadableCopyright: "Copyright © 2026 VoiceMate. MIT License."

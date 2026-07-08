@@ -9,8 +9,7 @@
   "asr": {
     "engine": "system",
     "system": {
-      "language": "zh-Hans-CN",
-      "targetLanguage": "zh-Hans-CN"
+      "language": "zh-Hans-CN"
     },
     "aliyun": {
       "apiKey": "sk-your-api-key",
@@ -22,19 +21,6 @@
       "autoStopEnabled": true,
       "autoStopTimeout": 3.5,
       "autoStopThreshold": 0.01
-    },
-    "whisper": {
-      "threads": 4,
-      "language": "auto",
-      "modelPath": ""
-    },
-    "openaiWhisper": {
-      "apiKey": "",
-      "model": "whisper-1"
-    },
-    "iflytek": {
-      "appId": "",
-      "apiKey": ""
     }
   },
   "llm": {
@@ -51,24 +37,6 @@
       "model": "qwen2.5:7b",
       "temperature": 0.7,
       "numPredict": 512
-    },
-    "deepseek": {
-      "baseUrl": "https://api.deepseek.com/v1",
-      "apiKey": "",
-      "model": "deepseek-v4-flash",
-      "temperature": 0.7
-    },
-    "claude": {
-      "baseUrl": "https://api.anthropic.com/v1",
-      "apiKey": "",
-      "model": "claude-3-5-sonnet-20241022",
-      "temperature": 0.7
-    },
-    "custom": {
-      "baseUrl": "",
-      "apiKey": "",
-      "model": "",
-      "temperature": 0.7
     },
     "prompt": {
       "system": "你是一个专业的文字润色助手，请将口语改写为书面语。",
