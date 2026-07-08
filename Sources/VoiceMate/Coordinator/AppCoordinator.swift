@@ -381,7 +381,7 @@ final class AppCoordinator {
             let cfg = configStore.config.asr.aliyun
             if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
                 return AlibabaASREngine(
-                    apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, model: cfg.model,
+                    apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
                     semanticPunctuation: cfg.semanticPunctuation,
                     speechNoiseThreshold: cfg.speechNoiseThreshold,
                     maxSentenceSilence: cfg.maxSentenceSilence,
@@ -390,7 +390,11 @@ final class AppCoordinator {
                     autoStopThreshold: Float(cfg.autoStopThreshold)
                 )
             }
-            print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，回退到 system")
+            print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
+            // 自动回退：把配置写回 system，下次就不用再判断了
+            var corrected = configStore.config
+            corrected.asr.engine = "system"
+            configStore.update(corrected)
             fallthrough
         default:
             let raw = configStore.config.asr.system.language
@@ -405,6 +409,24 @@ final class AppCoordinator {
             }
             return LegacyDictationEngine()
         }
+    }
+
+    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
+    func prewarmAliyunEngine() async {
+        if asrEngine?.id == "aliyun" { return } // 已有引擎，无需重建
+        let cfg = configStore.config.asr.aliyun
+        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
+        let engine = AlibabaASREngine(
+            apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
+            semanticPunctuation: cfg.semanticPunctuation,
+            speechNoiseThreshold: cfg.speechNoiseThreshold,
+            maxSentenceSilence: cfg.maxSentenceSilence,
+            autoStopEnabled: cfg.autoStopEnabled,
+            autoStopTimeout: cfg.autoStopTimeout,
+            autoStopThreshold: Float(cfg.autoStopThreshold)
+        )
+        self.asrEngine = engine
+        print("[Coordinator] 阿里云引擎预建连完成")
     }
 
     func resolveLLM() -> (any LLMEngine)? {

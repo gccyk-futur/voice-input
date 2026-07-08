@@ -1,5 +1,4 @@
 import AppKit
-import Carbon.HIToolbox
 import ApplicationServices
 
 /// 粘贴服务：写剪贴板 + postToPid ⌘V。
@@ -11,12 +10,6 @@ final class PasteService {
 
     func writeClipboardOnly(_ text: String) {
         writeClipboard(text)
-    }
-
-    @discardableResult
-    func paste(_ text: String) -> Bool {
-        writeClipboard(text)
-        return simulateCmdVviaHID()
     }
 
     @discardableResult
@@ -36,22 +29,6 @@ final class PasteService {
     }
 
     // MARK: - Cmd+V 模拟
-
-    private func simulateCmdVviaHID() -> Bool {
-        guard isTrusted,
-              let source = CGEventSource(stateID: .combinedSessionState),
-              let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let up   = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
-            print("[Paste] HID Cmd+V skipped (isTrusted=\(isTrusted))")
-            return false
-        }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
-        down.post(tap: .cghidEventTap)
-        usleep(10_000)
-        up.post(tap: .cghidEventTap)
-        return true
-    }
 
     private func simulateCmdVviaPostToPid(pid: pid_t) {
         guard let source = CGEventSource(stateID: .combinedSessionState),

@@ -1,74 +1,332 @@
 import SwiftUI
+import AppKit
 
-/// 状态栏菜单：状态区 + 操作区。
-/// 每次打开菜单时重新读取 AppCoordinator 状态，保证实时。
-struct StatusBarMenu: View {
-    // 直接读 shared，因为 MenuBarExtra 不继承 @Environment
+/// 状态栏弹出面板：Surge 风格，支持引擎切换、润色开关、历史记录行内复制。
+/// 使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
+struct StatusBarMenuView: View {
+    @State private var config = ConfigStore.shared.config
+    @State private var historyItems: [HistoryItem] = []
+
     private var coordinator: AppCoordinator { AppCoordinator.shared }
-    private var engineId: String { ConfigStore.shared.config.asr.engine }
+
+    private let popoverMinWidth: CGFloat = 260
+    private let popoverMaxHeight: CGFloat = 460
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 标题
+        VStack(alignment: .leading, spacing: 0) {
+            // ── 标题栏 ──
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
+                    .foregroundStyle(.tint)
                 Text("VoiceMate").font(.headline)
-            }
-
-            Divider()
-
-            // ── 状态区 ──
-            statusRow(label: "引擎", value: coordinator.engineDisplayName)
-            if engineId == "aliyun" {
-                HStack(spacing: 4) {
+                Spacer()
+                if coordinator.sessionState != .idle {
                     Circle()
-                        .fill(coordinator.wsConnected ? Color.green : Color.red)
+                        .fill(statusColor)
                         .frame(width: 6, height: 6)
-                    Text(coordinator.wsConnected ? "WebSocket 已连接" : "WebSocket 未连接")
-                        .font(.caption2).foregroundStyle(.secondary)
                 }
-                .padding(.leading, 4)
             }
+            .padding(.horizontal, 14)
+            .padding(.top, 12)
+            .padding(.bottom, 6)
+
+            Divider().padding(.horizontal, 10)
+
+            // ── 引擎切换 ──
+            engineSection
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+
+            Divider().padding(.horizontal, 10)
+
+            // ── AI 润色开关 ──
+            llmToggleSection
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+
+            Divider().padding(.horizontal, 10)
+
+            // ── 历史记录 ──
+            historySection
+                .padding(.horizontal, 14)
+                .padding(.vertical, 8)
+
+            Spacer(minLength: 0)
+
+            // ── 底部操作区 ──
+            Divider().padding(.horizontal, 10)
+            HStack(spacing: 0) {
+                bottomButton("设置…", systemImage: "gearshape") {
+                    SettingsWindowController.shared.show()
+                }
+                Divider().frame(height: 20)
+                bottomButton("退出", systemImage: "xmark") {
+                    // bottomButton 内部会处理 terminate
+                }
+            }
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+        }
+        .frame(width: popoverMinWidth)
+        .frame(maxHeight: popoverMaxHeight)
+        .task { reloadHistory() }
+        .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
+        .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
+            config = ConfigStore.shared.config
+        }
+    }
+
+    // MARK: - 引擎
+
+    private var engineSection: some View {
+        let aliyunConfigured = !config.asr.aliyun.apiKey.isEmpty && !config.asr.aliyun.workspaceId.isEmpty
+
+        return VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("AI 润色").font(.caption).foregroundStyle(.secondary)
+                Text("语音引擎").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+            }
+
+            // 未配置阿里云 → 只显示「系统听写」，提供配置入口
+            // 已配置阿里云 → 显示双引擎 Picker，可选切换
+            if aliyunConfigured {
+                Picker("", selection: Binding(
+                    get: { config.asr.engine },
+                    set: { newValue in
+                        var cfg = config
+                        cfg.asr.engine = newValue
+                        config = cfg
+                        ConfigStore.shared.update(cfg)
+                        coordinator.invalidateASREngine()
+                        // 切到阿里云后主动预建连，确保状态灯正常
+                        if newValue == "aliyun" {
+                            Task { await coordinator.prewarmAliyunEngine() }
+                        }
+                    }
+                )) {
+                    Text("系统听写").tag("system")
+                    Text("阿里云 Fun-ASR").tag("aliyun")
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+
+                if config.asr.engine == "aliyun" {
+                    HStack(spacing: 4) {
+                        Circle()
+                            .fill(coordinator.wsConnected ? Color.green : Color.red)
+                            .frame(width: 5, height: 5)
+                        Text(coordinator.wsConnected ? "已连接" : "未连接")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
+            } else {
+                // 仅显示系统听写 + 配置阿里云的入口
+                HStack {
+                    Text("系统听写").font(.body)
+                    Spacer()
+                    Button("配置阿里云引擎 →") {
+                        SettingsWindowController.shared.show()
+                        dismissMenuBarExtra()
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                    .foregroundStyle(.tint)
+                }
+                .padding(.vertical, 2)
+            }
+        }
+    }
+
+    // MARK: - AI 润色
+
+    private var llmToggleSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("AI 润色").font(.body)
+                    HStack(spacing: 4) {
+                        Text(llmEngineLabel)
+                            .font(.caption2)
+                        Text(config.llm.enabled ? "已开启" : "已关闭")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
+                }
                 Spacer()
                 Toggle("", isOn: Binding(
-                    get: { ConfigStore.shared.config.llm.enabled },
+                    get: { config.llm.enabled },
                     set: { v in
-                        var cfg = ConfigStore.shared.config
+                        var cfg = config
                         cfg.llm.enabled = v
+                        config = cfg
                         ConfigStore.shared.update(cfg)
                     }
                 ))
                 .toggleStyle(.switch)
-                .controlSize(.small)
                 .labelsHidden()
             }
-
-            Divider()
-
-            // ── 操作区 ──
-            Button("历史记录…") {
-                HistoryWindowController.shared.show()
-            }
-            Button("设置…") {
-                SettingsWindowController.shared.show()
-            }
-
-            Divider()
-
-            Button("退出 VoiceMate") {
-                NSApp.terminate(nil)
-            }
         }
-        .padding(10)
-        .frame(minWidth: 220)
     }
 
-    private func statusRow(label: String, value: String) -> some View {
-        HStack {
-            Text(label).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.caption)
+    private var llmEngineLabel: String {
+        switch config.llm.engine {
+        case "ollama": return "Ollama"
+        case "openai": return "OpenAI 协议"
+        default: return ""
+        }
+    }
+
+    // MARK: - 历史记录
+
+    private var historySection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("历史记录").font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                Text("(\(historyItems.count))")
+                    .font(.caption2).foregroundStyle(.tertiary)
+            }
+
+            if historyItems.isEmpty {
+                Text("暂无记录")
+                    .font(.caption).foregroundStyle(.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 6)
+            } else {
+                ScrollView {
+                    VStack(spacing: 4) {
+                        ForEach(Array(historyItems.prefix(5))) { item in
+                            HistoryRowMini(item: item)
+                        }
+                    }
+                }
+                .frame(maxHeight: 200)
+                .scrollIndicators(.never)
+            }
+
+            if !historyItems.isEmpty {
+                Button(action: {
+                    HistoryWindowController.shared.show()
+                    dismissMenuBarExtra()
+                }) {
+                    HStack {
+                        Spacer()
+                        Text("查看全部 \(historyItems.count) 条 →").font(.caption)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.tint)
+            }
+        }
+    }
+
+    // MARK: - 底部操作
+
+    private func bottomButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: {
+            // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
+            if title == "退出" {
+                NSApp.terminate(nil)
+                return
+            }
+            action()
+            dismissMenuBarExtra()
+        }) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.caption)
+                Text(title).font(.caption)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(.secondary)
+    }
+
+    /// 关闭 MenuBarExtra 弹出面板（除已知窗口外全部关掉）。
+    private func dismissMenuBarExtra() {
+        let knownWindows = Set([
+            SettingsWindowController.shared.window,
+            HistoryWindowController.shared.window
+        ].compactMap { $0 })
+        DispatchQueue.main.async {
+            for win in NSApp.windows where !knownWindows.contains(win) {
+                if win.isVisible { win.orderOut(nil) }
+            }
+        }
+    }
+
+    // MARK: - 辅助
+
+    private var statusColor: Color {
+        switch coordinator.sessionState {
+        case .recording: return .red
+        case .transcribing, .polishing: return .orange
+        case .ready: return .green
+        default: return .gray
+        }
+    }
+
+    private func reloadHistory() {
+        historyItems = HistoryStore.shared.items
+    }
+}
+
+// MARK: - 迷你历史行（内联复制）
+
+private struct HistoryRowMini: View {
+    let item: HistoryItem
+
+    @State private var copied = false
+
+    private var displayText: String {
+        let text = item.llmResult ?? item.asrResult
+        let lines = text.split(separator: "\n", omittingEmptySubsequences: true)
+        if let first = lines.first {
+            return String(first)
+        }
+        return text
+    }
+
+    private var hasMore: Bool {
+        let text = item.llmResult ?? item.asrResult
+        return text.split(separator: "\n", omittingEmptySubsequences: true).count > 1
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(displayText)
+                .lineLimit(1)
+                .font(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .truncationMode(.tail)
+
+            if hasMore {
+                Text("…").font(.caption2).foregroundStyle(.tertiary)
+            }
+
+            Button(action: copy) {
+                Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                    .font(.caption2)
+                    .foregroundStyle(copied ? .green : .secondary)
+            }
+            .buttonStyle(.plain)
+            .help("复制到剪贴板")
+        }
+        .padding(.horizontal, 6)
+        .padding(.vertical, 4)
+        .background(.quaternary.opacity(0.3), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private func copy() {
+        let text = item.llmResult ?? item.asrResult
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+        copied = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            copied = false
         }
     }
 }

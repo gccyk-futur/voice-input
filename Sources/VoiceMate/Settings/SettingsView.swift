@@ -27,6 +27,7 @@ struct SettingsView: View {
                 Text("常规").tag(0)
                 Text("语音识别").tag(1)
                 Text("AI 润色").tag(2)
+                Text("关于").tag(3)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20).padding(.top, 12)
@@ -37,6 +38,7 @@ struct SettingsView: View {
                     case 0: generalTab
                     case 1: asrTab
                     case 2: llmTab
+                    case 3: aboutTab
                     default: EmptyView()
                     }
                 }
@@ -138,46 +140,40 @@ struct SettingsView: View {
 
     private var asrTab: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // 固定布局：引擎 + 语言始终不变，宽度撑满避免居中偏移
-            HStack(alignment: .top, spacing: 4) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("引擎").font(.caption).foregroundStyle(.secondary)
-                    Picker("", selection: $draft.asr.engine) {
-                        Text("系统听写").tag("system")
-                        Text("阿里云 Fun-ASR").tag("aliyun")
-                    }.labelsHidden().frame(width: 200)
-                }
-                asrEngineHelp(for: draft.asr.engine)
+            section("引擎") {
+                Picker("", selection: $draft.asr.engine) {
+                    Text("系统听写").tag("system")
+                    Text("阿里云 Fun-ASR").tag("aliyun")
+                }.labelsHidden().frame(width: 200)
             }
+            Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
+                .font(.caption2).foregroundStyle(.tertiary)
 
-            HStack(alignment: .top, spacing: 4) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("识别语言").font(.caption).foregroundStyle(.secondary)
-                    Picker("", selection: $draft.asr.system.language) {
-                        Text("中文").tag("zh-Hans-CN")
-                        Text("English").tag("en-US")
-                        Text("日本語").tag("ja-JP")
-                        Text("한국어").tag("ko-KR")
-                        Text("Français").tag("fr-FR")
-                        Text("Deutsch").tag("de-DE")
-                        Text("Español").tag("es-ES")
-                        Text("Português").tag("pt-BR")
-                        Text("Русский").tag("ru-RU")
-                        Text("Italiano").tag("it-IT")
-                    }.labelsHidden().frame(width: 180)
-                }
-                helpIcon("你说什么语言就选什么语言，偶尔夹带外文单词也能识别")
+            section("识别语言") {
+                Picker("", selection: $draft.asr.system.language) {
+                    Text("中文").tag("zh-Hans-CN")
+                    Text("English").tag("en-US")
+                    Text("日本語").tag("ja-JP")
+                    Text("한국어").tag("ko-KR")
+                    Text("Français").tag("fr-FR")
+                    Text("Deutsch").tag("de-DE")
+                    Text("Español").tag("es-ES")
+                    Text("Português").tag("pt-BR")
+                    Text("Русский").tag("ru-RU")
+                    Text("Italiano").tag("it-IT")
+                }.labelsHidden().frame(width: 180)
             }
+            Text("选择你说什么语言，偶尔夹带外文单词也能识别")
+                .font(.caption2).foregroundStyle(.tertiary)
 
             // 阿里云专属配置
             if draft.asr.engine == "aliyun" {
                 Divider()
                 Text("阿里云 Fun-ASR 配置").font(.headline)
 
-                HStack(alignment: .top, spacing: 4) {
-                    Toggle("语义断句", isOn: $draft.asr.aliyun.semanticPunctuation)
-                    helpIcon("开启：由 AI 语义模型自动判断句子边界并加标点，结果更自然\n关闭：基于 VAD 语音活动检测简单断句，仅靠停顿分割")
-                }
+                Toggle("语义断句", isOn: $draft.asr.aliyun.semanticPunctuation)
+                Text("开启：AI 语义模型自动加标点，结果更自然。关闭：仅靠停顿分割。")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if !draft.asr.aliyun.semanticPunctuation {
                     section("停顿时长") {
                         HStack {
@@ -203,10 +199,9 @@ struct SettingsView: View {
                 }
 
                 Divider()
-                HStack(alignment: .top, spacing: 4) {
-                    Toggle("静音自动停止", isOn: $draft.asr.aliyun.autoStopEnabled)
-                    helpIcon("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
-                }
+                Toggle("静音自动停止", isOn: $draft.asr.aliyun.autoStopEnabled)
+                Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if draft.asr.aliyun.autoStopEnabled {
                     section("静音阈值") {
                         HStack {
@@ -247,19 +242,17 @@ struct SettingsView: View {
                     TextField("ws-...", text: $draft.asr.aliyun.workspaceId)
                         .textFieldStyle(.roundedBorder).frame(maxWidth: 380)
                 }
+                section("区域") {
+                    TextField("cn-beijing", text: $draft.asr.aliyun.region)
+                        .textFieldStyle(.roundedBorder).frame(width: 220)
+                }
                 section("模型") {
                     TextField("fun-asr-realtime", text: $draft.asr.aliyun.model)
                         .textFieldStyle(.roundedBorder).frame(width: 220)
                 }
             }
         }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func asrEngineHelp(for engine: String) -> some View {
-        helpIcon(engine == "system"
-            ? "macOS 内置语音识别引擎。免费、无需联网、适合安静环境。\n按热键开始 → 说话 → 再按热键结束 → 自动粘贴"
-            : "阿里云百炼 Fun-ASR 云端引擎。高精度、自动加标点、支持静音自动停止。\n需配置下方 API Key 和 Workspace ID，有网络延迟")
+        .frame(maxWidth: .infinity, minHeight: 480, alignment: .topLeading)
     }
 
     // MARK: - AI 润色
@@ -269,19 +262,14 @@ struct SettingsView: View {
             Toggle("启用润色", isOn: $draft.llm.enabled)
 
             Group {
-                HStack(alignment: .top, spacing: 4) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("引擎").font(.caption).foregroundStyle(.secondary)
-                        Picker("", selection: $draft.llm.engine) {
-                            Text("OpenAI 协议").tag("openai")
-                            Text("Ollama（本地）").tag("ollama")
-                        }.labelsHidden().frame(width: 220)
-                    }
-                    helpIcon("OpenAI 协议：适用于 OpenAI / DeepSeek / 阿里云百炼 / Groq 等所有兼容 OpenAI Chat Completions 的服务\nOllama：本地运行的大模型，需要先安装并启动 Ollama")
+                section("引擎") {
+                    Picker("", selection: $draft.llm.engine) {
+                        Text("OpenAI 协议").tag("openai")
+                        Text("Ollama（本地）").tag("ollama")
+                    }.labelsHidden().frame(width: 220)
                 }
-                Text("支持 OpenAI / DeepSeek / 阿里云百炼 / Groq 等所有 OpenAI Chat Completions 协议")
+                Text("OpenAI 协议适用于 OpenAI / DeepSeek / 阿里云百炼 / Groq 等。Ollama 需本地先启动。")
                     .font(.caption2).foregroundStyle(.tertiary)
-                    .fixedSize(horizontal: false, vertical: true)
 
                 llmFields
 
@@ -365,17 +353,6 @@ struct SettingsView: View {
             }
             .textFieldStyle(.roundedBorder).frame(width: 220)
         }
-    }
-
-    // MARK: - ?
-
-    private func helpIcon(_ text: String) -> some View {
-        Image(systemName: "questionmark.circle")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .help(text)
-            .onTapGesture {} // 让视图足够大可点击，触发 help 显示
-            .frame(width: 16, height: 16)
     }
 
     // MARK: - 权限
@@ -486,6 +463,85 @@ struct SettingsView: View {
         ConfigStore.shared.update(draft)
         HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
         onDone()
+    }
+
+    // MARK: - 关于
+
+    private var aboutTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            // 标题 + 图标
+            HStack(spacing: 10) {
+                Image(systemName: "waveform")
+                    .font(.title2)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("VoiceMate").font(.title2).bold()
+                    Text("macOS 语音输入助手")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Text(aboutVersionString)
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
+            }
+
+            Divider()
+
+            GroupBox("开源声明") {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("VoiceMate 是完全开源的软件，代码托管在 GitHub，接受社区审计。")
+                        .font(.callout)
+                    HStack(spacing: 4) {
+                        Image(systemName: "link")
+                            .font(.caption)
+                        Text("https://github.com/gccyk-futur/voice-input")
+                            .font(.caption).foregroundStyle(.tint)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox("隐私与安全") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "checkmark.shield")
+                            .font(.caption).foregroundStyle(.green)
+                        Text("打包使用 Apple Developer ID 签名，安全可靠，可直接安装使用。")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "hand.raised")
+                            .font(.caption).foregroundStyle(.green)
+                        Text("软件**不收集任何隐私数据**。ASR 语音识别和 LLM 润色均使用用户自行配置的 API Key 直连对应服务，数据不经由任何第三方中转。")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                            .font(.caption).foregroundStyle(.green)
+                        Text("软件本身没有网络服务、没有遥测、没有统计数据上报。所有网络请求均由用户配置的 ASR/LLM 服务触发。")
+                            .font(.callout)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            Spacer()
+
+            Text("Copyright © 2026 VoiceMate. MIT License.")
+                .font(.caption2).foregroundStyle(.tertiary)
+                .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    /// 从 Info.plist 读取版本号
+    private var aboutVersionString: String {
+        let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
+        return "版本 \(ver) (build \(build))"
     }
 
     private var llmTemperature: Binding<Double> {

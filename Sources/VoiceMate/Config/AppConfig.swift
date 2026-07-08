@@ -27,12 +27,9 @@ struct SoundConfig: Codable {
 }
 
 struct ASRConfig: Codable {
-    var engine: String = "system" // system | whisper | iflytek | aliyun | openai-whisper
+    var engine: String = "system" // system | aliyun
     var system: ASRSystemConfig = .init()
-    var whisper: ASRWhisperConfig = .init()
-    var iflytek: ASRIflytekConfig = .init()
     var aliyun: ASRAliyunConfig = .init()
-    var openaiWhisper: ASROpenAIWhisperConfig = .init()
 }
 
 struct ASRSystemConfig: Codable {
@@ -41,18 +38,10 @@ struct ASRSystemConfig: Codable {
     var silenceTimeout: Double = 2.0
     var silenceThreshold: Double = 0.02
 }
-struct ASRWhisperConfig: Codable {
-    var modelPath: String = ""
-    var threads: Int = 4
-    var language: String = "auto"
-}
-struct ASRIflytekConfig: Codable {
-    var appId: String = ""
-    var apiKey: String = ""
-}
 struct ASRAliyunConfig: Codable {
     var apiKey: String = ""
     var workspaceId: String = ""
+    var region: String = "cn-beijing"
     var model: String = "fun-asr-realtime"
     var semanticPunctuation: Bool = true
     var speechNoiseThreshold: Double = 0.0
@@ -61,11 +50,6 @@ struct ASRAliyunConfig: Codable {
     var autoStopTimeout: Double = 3.5
     var autoStopThreshold: Double = 0.01
 }
-struct ASROpenAIWhisperConfig: Codable {
-    var apiKey: String = ""
-    var model: String = "whisper-1"
-}
-
 struct LLMConfig: Codable {
     var enabled: Bool = false
     var engine: String = "ollama" // ollama | openai
