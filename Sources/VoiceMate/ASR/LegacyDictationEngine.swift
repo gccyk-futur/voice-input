@@ -29,6 +29,8 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     private var silenceTimeout: TimeInterval = 2.0
     private var silenceThreshold: Float = 0.02
     private var engineStartTime = Date.distantPast
+    // 防止 complete(with:) 被多线程并发调用导致 Continuation 重复 resume
+    private let finishLock = NSLock()
 
     /// 配置静音自动停止参数（由 AppCoordinator 在 start 之前调用）
     func configureAutoStop(enabled: Bool, timeout: TimeInterval, threshold: Float) {
@@ -149,9 +151,11 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     }
 
     private func complete(with text: String) {
-        guard let c = finishContinuation else { return }
-        finishContinuation = nil
-        c.resume(returning: text)
+        finishLock.withLock {
+            guard let c = finishContinuation else { return }
+            finishContinuation = nil
+            c.resume(returning: text)
+        }
     }
 
     private func ensureSpeechAuth() async -> Bool {

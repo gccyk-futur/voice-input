@@ -61,11 +61,25 @@ struct PanelView: View {
                 }
             }
 
-            HStack {
+            HStack(spacing: 8) {
+                // 左侧：快捷键提示
                 Text("⌘↵ 粘贴  ·  Esc 退出")
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
+
                 Spacer()
+
+                // 右侧：引擎 + AI 润色状态
+                HStack(spacing: 4) {
+                    Text(coordinator.engineDisplayName)
+                        .font(.caption2)
+                    Text("·")
+                        .font(.caption2)
+                    Text(coordinator.llmEnabled ? "AI 润色已开启" : "AI 润色已关闭")
+                        .font(.caption2)
+                }
+                .foregroundStyle(.tertiary)
+
                 if coordinator.sessionState == .ready {
                     Button("粘贴") { coordinator.confirmPaste() }
                         .keyboardShortcut(.return, modifiers: .command)

@@ -6,8 +6,8 @@ struct VoiceMateApp: App {
 
     var body: some Scene {
         MenuBarExtra("VoiceMate", systemImage: "waveform") {
-            StatusBarMenu()
+            StatusBarMenuView()
         }
-        .menuBarExtraStyle(.menu)
+        .menuBarExtraStyle(.window)
     }
 }

@@ -34,12 +34,18 @@ final class ConfigStore {
     }
 
     func save() {
-        if let data = try? JSONEncoder().encode(config) {
-            try? data.write(to: fileURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(config)
+            try data.write(to: fileURL, options: .atomic)
+        } catch {
+            print("[ConfigStore] 保存配置失败: \(error.localizedDescription)")
         }
     }
 
     /// 用新配置覆盖并持久化；同时同步登录项开关。
+    /// 配置变更通知（StatusBarMenu 等监听刷新）。
+    static let didChange = Notification.Name("VoiceMateConfigDidChange")
+
     func update(_ new: AppConfig) {
         config = new
         save()
@@ -49,6 +55,7 @@ final class ConfigStore {
         if new.asr.engine == "aliyun" {
             AppCoordinator.shared.invalidateASREngine()
         }
+        NotificationCenter.default.post(name: Self.didChange, object: self)
     }
 
     func resetToDefaults() {
