@@ -41,4 +41,16 @@ final class OllamaEngine: LLMEngine {
             return content
         }
     }
+
+    func checkConnectivity() async -> Bool {
+        var comps = URLComponents(string: baseUrl)
+        comps?.path = "/api/tags"
+        guard let url = comps?.url else { return false }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 5
+        guard let (_, response) = try? await URLSession.shared.data(for: req),
+              let http = response as? HTTPURLResponse else { return false }
+        return http.statusCode == 200
+    }
 }

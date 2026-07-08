@@ -12,8 +12,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // 默认 .accessory：无 Dock 图标、不在 Cmd+Tab 出现
         NSApp.setActivationPolicy(.accessory)
 
-        _ = AppCoordinator.shared
+        let coordinator = AppCoordinator.shared
         syncLoginItem()
+
+        // 启动时如果引擎是阿里云且已配置，预建连确保状态栏 WS 灯正确
+        Task { @MainActor in
+            if ConfigStore.shared.config.asr.engine == "aliyun" {
+                await coordinator.prewarmAliyunEngine()
+            }
+        }
 
         // 启动行为
         if ConfigStore.shared.config.general.showSettingsOnLaunch {

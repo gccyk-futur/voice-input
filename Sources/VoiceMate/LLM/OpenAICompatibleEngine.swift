@@ -2,7 +2,7 @@ import Foundation
 
 /// OpenAI 兼容流式引擎（/chat/completions，SSE 返回 choices[0].delta.content）。
 /// 适用于 OpenAI / DeepSeek / 自定义 OpenAI 兼容端点。
-final class OpenAICompatibleEngine: LLMEngine {
+final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
     enum Kind { case openai, deepseek, custom }
 
     let id: String
@@ -52,5 +52,20 @@ final class OpenAICompatibleEngine: LLMEngine {
                   let content = delta["content"] as? String else { return nil }
             return content
         }
+    }
+
+    func checkConnectivity() async -> Bool {
+        let base = URL(string: baseUrl) ?? URL(string: "https://api.openai.com/v1")!
+        let url = base.appendingPathComponent("models")
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 5
+        if !apiKey.isEmpty {
+            req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        }
+        guard let (_, response) = try? await URLSession.shared.data(for: req),
+              let http = response as? HTTPURLResponse else { return false }
+        // 能收到 HTTP 响应（即使 401/403/404）说明服务器可达
+        return http.statusCode > 0
     }
 }

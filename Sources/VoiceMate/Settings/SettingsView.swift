@@ -283,6 +283,9 @@ struct SettingsView: View {
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
 
+                // 连接测试
+                LLMConnectivityTest(llmConfig: draft.llm)
+
                 if draft.llm.engine == "openai" {
                     Toggle("深度思考 (thinking)", isOn: Binding(
                         get: { draft.llm.openai.model.contains("thinking") || draft.llm.openai.model.contains("qwq") },
@@ -678,6 +681,75 @@ private struct LLMTestSheet: View {
                     errorMsg = "请求失败：\(error.localizedDescription)"
                     isRunning = false
                 }
+            }
+        }
+    }
+}
+
+// MARK: - LLM 连接测试
+
+private struct LLMConnectivityTest: View {
+    let llmConfig: LLMConfig
+
+    @State private var status: Status = .idle
+
+    private enum Status: Equatable {
+        case idle, testing, success, failure(String)
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Button("测试连接") {
+                runTest()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+            .disabled(status == .testing)
+
+            if status == .testing {
+                ProgressView()
+                    .scaleEffect(0.5)
+                    .frame(width: 12, height: 12)
+                Text("连接中…")
+                    .font(.caption2).foregroundStyle(.secondary)
+            }
+
+            switch status {
+            case .success:
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+                Text("连接成功")
+                    .font(.caption2).foregroundStyle(.green)
+            case .failure(let msg):
+                Image(systemName: "xmark.circle.fill")
+                    .font(.caption).foregroundStyle(.red)
+                Text(msg)
+                    .font(.caption2).foregroundStyle(.red)
+                    .lineLimit(1)
+            default:
+                EmptyView()
+            }
+
+            Spacer()
+        }
+    }
+
+    private func runTest() {
+        status = .testing
+        Task {
+            let engine: any LLMEngine = switch llmConfig.engine {
+            case "ollama": OllamaEngine(config: llmConfig.ollama)
+            default: OpenAICompatibleEngine(
+                baseUrl: llmConfig.openai.baseUrl,
+                apiKey: llmConfig.openai.apiKey,
+                model: llmConfig.openai.model,
+                temperature: llmConfig.openai.temperature,
+                kind: .openai
+            )
+            }
+            let ok = await engine.checkConnectivity()
+            await MainActor.run {
+                status = ok ? .success : .failure("无法连接，请检查 URL 和网络")
             }
         }
     }

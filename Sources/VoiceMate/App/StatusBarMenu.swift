@@ -6,8 +6,9 @@ import AppKit
 struct StatusBarMenuView: View {
     @State private var config = ConfigStore.shared.config
     @State private var historyItems: [HistoryItem] = []
-
-    private var coordinator: AppCoordinator { AppCoordinator.shared }
+    @State private var coordinator = AppCoordinator.shared
+    @State private var toastMessage: String?
+    @State private var toastWork: DispatchWorkItem?
 
     private let popoverMinWidth: CGFloat = 260
     private let popoverMaxHeight: CGFloat = 460
@@ -50,6 +51,16 @@ struct StatusBarMenuView: View {
             historySection
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
+
+            // ── Toast 提示 ──
+            if let msg = toastMessage {
+                Text(msg)
+                    .font(.caption2)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 4)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
 
             Spacer(minLength: 0)
 
@@ -155,10 +166,43 @@ struct StatusBarMenuView: View {
                 Toggle("", isOn: Binding(
                     get: { config.llm.enabled },
                     set: { v in
+                        guard v else {
+                            // 关闭润色 → 直接允许
+                            var cfg = config
+                            cfg.llm.enabled = false
+                            config = cfg
+                            ConfigStore.shared.update(cfg)
+                            return
+                        }
+                        // 开启润色 → 检查配置是否完整
                         var cfg = config
-                        cfg.llm.enabled = v
-                        config = cfg
-                        ConfigStore.shared.update(cfg)
+                        let engineConfig: (url: String, model: String) = cfg.llm.engine == "openai"
+                            ? (cfg.llm.openai.baseUrl, cfg.llm.openai.model)
+                            : (cfg.llm.ollama.baseUrl, cfg.llm.ollama.model)
+                        if engineConfig.url.trimmingCharacters(in: .whitespaces).isEmpty ||
+                           engineConfig.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                            showToast("请先在设置中配置 LLM 服务地址和模型")
+                            return
+                        }
+                        // 真正测试联通性（异步）
+                        let engine: LLMEngine = cfg.llm.engine == "ollama"
+                            ? OllamaEngine(config: cfg.llm.ollama)
+                            : OpenAICompatibleEngine(
+                                baseUrl: cfg.llm.openai.baseUrl,
+                                apiKey: cfg.llm.openai.apiKey,
+                                model: cfg.llm.openai.model,
+                                temperature: cfg.llm.openai.temperature,
+                                kind: .openai)
+                        Task {
+                            let ok = await engine.checkConnectivity()
+                            if ok {
+                                cfg.llm.enabled = true
+                                config = cfg
+                                ConfigStore.shared.update(cfg)
+                            } else {
+                                showToast("无法连接到 LLM 服务，请在设置中检查配置")
+                            }
+                        }
                     }
                 ))
                 .toggleStyle(.switch)
@@ -243,6 +287,15 @@ struct StatusBarMenuView: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(.secondary)
+    }
+
+    /// 在面板内显示临时提示，3 秒后自动消失。
+    private func showToast(_ message: String) {
+        toastWork?.cancel()
+        toastMessage = message
+        let work = DispatchWorkItem { self.toastMessage = nil }
+        toastWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
     }
 
     /// 关闭 MenuBarExtra 弹出面板（除已知窗口外全部关掉）。
