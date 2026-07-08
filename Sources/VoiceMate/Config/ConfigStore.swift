@@ -44,18 +44,21 @@ final class ConfigStore {
 
     /// 用新配置覆盖并持久化；同时同步登录项开关。
     /// 配置变更通知（StatusBarMenu 等监听刷新）。
+    /// - Returns: 非 nil 表示登录项注册有错误，调用方可展示给用户。
     static let didChange = Notification.Name("VoiceMateConfigDidChange")
 
-    func update(_ new: AppConfig) {
+    @discardableResult
+    func update(_ new: AppConfig) -> String? {
         config = new
         save()
-        LoginItemManager.set(enabled: new.general.launchAtStartup)
+        let loginItemErr = LoginItemManager.set(enabled: new.general.launchAtStartup)
         HistoryStore.shared.maxCount = new.general.maxHistoryCount
         // 阿里云引擎参数变更 → 下次重新创建
         if new.asr.engine == "aliyun" {
             AppCoordinator.shared.invalidateASREngine()
         }
         NotificationCenter.default.post(name: Self.didChange, object: self)
+        return loginItemErr
     }
 
     func resetToDefaults() {
@@ -65,17 +68,26 @@ final class ConfigStore {
 
     // MARK: - 热重载
 
+    /// 后台队列：热重载重试逻辑不阻塞主线程。
+    private let reloadQueue = DispatchQueue(label: "com.voicemate.config.reload", qos: .background)
+
     private func startWatching() {
         let fd = open(fileURL.path, O_EVTONLY)
         guard fd != -1 else { return }
-        let src = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .rename, .delete], queue: .main)
+        let src = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd,
+            eventMask: [.write, .rename, .delete],
+            queue: reloadQueue
+        )
         src.setEventHandler { [weak self] in
             guard let self else { return }
             // atomic write 可能触发中间态读取失败，迭代重试等稳定
             for _ in 0..<3 {
                 if let data = try? Data(contentsOf: self.fileURL),
                    let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
-                    self.config = decoded
+                    DispatchQueue.main.async {
+                        self.config = decoded
+                    }
                     return
                 }
                 Thread.sleep(forTimeInterval: 0.1)

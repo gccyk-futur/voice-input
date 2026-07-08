@@ -26,12 +26,22 @@ struct HotkeyRecorder: NSViewRepresentable {
     final class Coordinator: NSObject {
         let binding: Binding<String>
         var recording = false
-        var monitor: Any?
+        /// 事件监听令牌。写发生在 start()（MainActor），读发生在 stop() 和 deinit。
+        /// 用 nonisolated(unsafe) 标记以允许 deinit（非isolated）读取；
+        /// 实际读写不会并发——stop() 和 deinit 是互斥的。
+        nonisolated(unsafe) var monitor: Any?
         weak var field: HotkeyRecorderField?
 
         init(binding: Binding<String>) {
             self.binding = binding
             super.init()
+        }
+
+        deinit {
+            // 清理残留监听器，防止 Coordinator 意外释放导致泄漏
+            if let m = monitor {
+                NSEvent.removeMonitor(m)
+            }
         }
 
         func toggle(field: HotkeyRecorderField) {
@@ -40,11 +50,17 @@ struct HotkeyRecorder: NSViewRepresentable {
 
         private func start(field: HotkeyRecorderField) {
             guard !recording else { return }
+            // 先清理上一个残留监听器（防止崩溃/视图重建导致的泄漏）
+            if let old = monitor {
+                NSEvent.removeMonitor(old)
+                monitor = nil
+            }
             recording = true
             self.field = field
             field.setRecording(true)
 
-            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+                guard let self else { return event }
                 let keyCode = event.keyCode
                 let flags = event.modifierFlags
                 let swallow = MainActor.assumeIsolated { self.handle(keyCode: keyCode, flags: flags) }

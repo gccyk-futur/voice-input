@@ -38,15 +38,17 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private var _taskStartedCont: CheckedContinuation<Void, Error>?
     private var _isConnected = false
     private var _onPartial: (@Sendable (String) -> Void)?
+    private var _onAudioLevel: (@Sendable (Float) -> Void)?
+    private var _onAutoStop: (@Sendable () -> Bool)?
     private var _receiveTask: Task<Void, Never>?
+    /// 重连指数退避计数器（0=首次连接）
+    private var _reconnectAttempt: Int = 0
 
     // 超时 Task 引用 — 用于取消
     private var _startedTimeoutTask: Task<Void, Never>?
     private var _stoppedTimeoutTask: Task<Void, Never>?
 
     // 静音检测（仅在音频 tap 回调中访问，tap 串行化，无需锁）
-    private var onAudioLevel: (@Sendable (Float) -> Void)?
-    private var onAutoStop: (@Sendable () -> Bool)?
     private var silenceStart: Date?
 
     var wsConnected: Bool { stateLock.withLock { _isConnected } }
@@ -79,6 +81,9 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         }
     }
 
+    /// 重连最大退避时间（秒）
+    private static let maxReconnectDelay: TimeInterval = 30
+
     // MARK: - 常驻连接
 
     private func connect() {
@@ -87,10 +92,19 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 60
 
+        // 取消已有接收循环，避免多个同时运行
+        stateLock.withLock {
+            _receiveTask?.cancel()
+            _receiveTask = nil
+        }
+
         session = URLSession(configuration: .default)
         webSocketTask = session?.webSocketTask(with: req)
         webSocketTask?.resume()
-        stateLock.withLock { _isConnected = true }
+        stateLock.withLock {
+            _isConnected = true
+            _reconnectAttempt = 0
+        }
         print("[AlibabaASR] WebSocket 已连接")
 
         // 统一接收循环：处理所有服务端事件
@@ -113,13 +127,27 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
                 }
             } catch {
                 print("[AlibabaASR] 接收循环断开: \(error)")
-                self.stateLock.withLock { self._isConnected = false }
-                // 自动重连
-                try? await Task.sleep(for: .seconds(2))
-                await MainActor.run { self.connect() }
+                self.stateLock.withLock {
+                    self._isConnected = false
+                    self._reconnectAttempt += 1
+                }
+                // 自动重连（指数退避 + jitter）
+                let delay = self.nextReconnectDelay()
+                let delayStr = String(format: "%.1f", delay)
+                print("[AlibabaASR] 将在 \(delayStr)s 后重连...")
+                try? await Task.sleep(for: .seconds(delay))
+                self.connect()
             }
         }
         stateLock.withLock { _receiveTask = task }
+    }
+
+    /// 指数退避（1s → 2s → 4s → … → max 30s）+ 随机 jitter（±25%）
+    private func nextReconnectDelay() -> TimeInterval {
+        let attempt = stateLock.withLock { _reconnectAttempt }
+        let base = min(pow(2.0, Double(attempt)), Self.maxReconnectDelay)
+        let jitter = Double.random(in: -base * 0.25 ... base * 0.25)
+        return max(0.5, base + jitter)
     }
 
     // MARK: - ASREngine
@@ -164,9 +192,11 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         }
 
         // 存储回调
-        stateLock.withLock { _onPartial = onPartial }
-        self.onAudioLevel = onAudioLevel
-        self.onAutoStop = onAutoStop
+        stateLock.withLock {
+            _onPartial = onPartial
+            _onAudioLevel = onAudioLevel
+            _onAutoStop = onAutoStop
+        }
         self.silenceStart = nil
         await startAudioCapture()
     }
@@ -231,14 +261,22 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             for i in 0..<len { let s = Float(ch[i]); sum += s * s }
             let rms = sqrt(sum / Float(len)) / 32768.0
             let level = min(rms, 1.0)
-            self.onAudioLevel?(level)
+
+            // 在锁下读取回调引用，避免数据竞争
+            var levelCB: (@Sendable (Float) -> Void)?
+            var autoStopCB: (@Sendable () -> Bool)?
+            self.stateLock.withLock {
+                levelCB = self._onAudioLevel
+                autoStopCB = self._onAutoStop
+            }
+            levelCB?(level)
 
             // 静音检测 → 自动停止
             if self.autoStopEnabled && level < self.autoStopThreshold {
                 if self.silenceStart == nil { self.silenceStart = Date() }
                 if let start = self.silenceStart,
                    Date().timeIntervalSince(start) >= self.autoStopTimeout {
-                    if self.onAutoStop?() == true {
+                    if autoStopCB?() == true {
                         self.silenceStart = nil
                     }
                 }
