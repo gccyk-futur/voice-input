@@ -47,7 +47,11 @@ final class SettingsWindowController: NSObject {
     func close() {
         guard let win = window, win.isVisible else { return }
         win.orderOut(nil)
-        NSApp.setActivationPolicy(.accessory)
+        // macOS 14: 立即切 .accessory 可能导致 MenuBarExtra 图标消失，
+        // 延迟一帧让系统完成窗口关闭动画再切换策略。
+        DispatchQueue.main.async {
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 }
 

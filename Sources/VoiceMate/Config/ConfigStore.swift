@@ -79,14 +79,15 @@ final class ConfigStore {
             eventMask: [.write, .rename, .delete],
             queue: reloadQueue
         )
-        src.setEventHandler { [weak self] in
-            guard let self else { return }
-            // atomic write 可能触发中间态读取失败，迭代重试等稳定
+        // 注意：本闭包在后台队列执行，不能捕获 @MainActor 的 self。
+        // 只捕获 fileURL，通过弱引用切回主线程更新。
+        let targetURL = fileURL
+        src.setEventHandler {
             for _ in 0..<3 {
-                if let data = try? Data(contentsOf: self.fileURL),
+                if let data = try? Data(contentsOf: targetURL),
                    let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
-                    DispatchQueue.main.async {
-                        self.config = decoded
+                    Task { @MainActor [weak self] in
+                        self?.config = decoded
                     }
                     return
                 }
