@@ -31,6 +31,7 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private var taskFinishedCont: CheckedContinuation<Void, Never>?
     private var receiveTask: Task<Void, Never>?
     private var isConnected = false
+    nonisolated(unsafe) var wsConnected: Bool { isConnected }
 
     // 静音检测
     private var onAudioLevel: (@Sendable (Float) -> Void)?

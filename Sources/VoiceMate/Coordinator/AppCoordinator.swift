@@ -35,6 +35,15 @@ final class AppCoordinator {
 
     static let shared = AppCoordinator()
 
+    /// 菜单栏状态（供 StatusBarMenu 读取）
+    var engineDisplayName: String {
+        configStore.config.asr.engine == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
+    }
+    var llmEnabled: Bool { configStore.config.llm.enabled }
+    var wsConnected: Bool {
+        (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
+    }
+
     init() {
         hotkey.onActivate = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
