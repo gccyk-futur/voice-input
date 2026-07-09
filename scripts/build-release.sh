@@ -80,6 +80,20 @@ if command -v xcodegen &>/dev/null; then
   fi
 fi
 
+# ---- 版本号自增 -----------------------------------------------
+# 每次构建 CFBundleVersion 自动 +1，确保测试时能区分版本。
+INFO_PLIST="Sources/VoiceMate/Resources/Info.plist"
+OLD_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${INFO_PLIST}")
+NEW_BUILD=$((OLD_BUILD + 1))
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEW_BUILD}" "${INFO_PLIST}"
+echo "   📦 Build #: ${OLD_BUILD} → ${NEW_BUILD}"
+
+# 同步回 project.yml，避免下次 xcodegen 重置
+sed -i '' "s/CFBundleVersion: \"${OLD_BUILD}\"/CFBundleVersion: \"${NEW_BUILD}\"/" project.yml
+
+# 重新读取版本号
+BUILD_NUM="${NEW_BUILD}"
+
 # ---- 清理 ---------------------------------------------------
 step "Cleaning build artifacts..."
 rm -rf "${BUILD_DIR}"
@@ -171,7 +185,7 @@ echo "   ✅ Stapled"
 
 # ---- 制作 DMG ------------------------------------------------
 step "Creating DMG..."
-DMG_PATH="${BUILD_DIR}/${APP_NAME}-${VERSION}.dmg"
+DMG_PATH="${BUILD_DIR}/${APP_NAME}-${VERSION}-build${BUILD_NUM}.dmg"
 DMG_TMP="${BUILD_DIR}/dmg-staging"
 rm -rf "${DMG_TMP}"
 mkdir -p "${DMG_TMP}"
@@ -203,8 +217,9 @@ echo ""
 echo "========================================="
 echo -e " ${GREEN}✅ Release 构建完成${NC}"
 echo ""
-echo "    DMG:  ${DMG_PATH}"
-echo "    App:  ${APP_PATH}"
+echo "    Build:  ${VERSION} (${BUILD_NUM})"
+echo "    DMG:   ${DMG_PATH}"
+echo "    App:   ${APP_PATH}"
 echo ""
 echo "    分发: 将 .dmg 上传到网站/网盘即可"
 echo "    用户: 下载 → 双击挂载 → 拖入 Applications"
