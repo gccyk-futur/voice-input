@@ -361,22 +361,30 @@ struct SettingsView: View {
 
                 // ── 系统提示词 ──
                 section("系统提示词") {
-                    TextField("系统角色描述", text: $draft.llm.prompt.system, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).frame(minHeight: 60)
-                }
-
-                // ── 用户模板（TextEditor 跨版本一致） ──
-                section("用户模板") {
-                    TextEditor(text: $draft.llm.prompt.user)
+                    TextEditor(text: $draft.llm.prompt.system)
                         .font(.body)
                         .frame(minHeight: 60)
+                        .scrollContentBackground(.hidden)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .cornerRadius(6)
                         .overlay(
                             RoundedRectangle(cornerRadius: 6)
                                 .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
                         )
+                }
+
+                // ── 用户模板 ──
+                section("用户模板") {
+                    TextEditor(text: $draft.llm.prompt.user)
+                        .font(.body)
+                        .frame(minHeight: 60)
                         .scrollContentBackground(.hidden)
                         .background(Color(nsColor: .textBackgroundColor))
                         .cornerRadius(6)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        )
                 }
                 Text("{{input}} 会被替换为识别文本").font(.caption2).foregroundStyle(.tertiary)
 
