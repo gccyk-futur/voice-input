@@ -142,10 +142,9 @@ final class AppCoordinator {
                 )
                 print("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
             }
-            NSApp.activate(ignoringOtherApps: true)
-            panel.show()
+            panel.show(needsActivation: engine.requiresForeground)
             panel.makeKey()
-            print("[Coordinator] starting \(engine.displayName)")
+            print("[Coordinator] starting \(engine.displayName), needsActivation=\(engine.requiresForeground)")
             startEngine(engine, languageID: languageID)
         }
     }
@@ -247,66 +246,57 @@ final class AppCoordinator {
         let text = useLLM ? llmText : asrText
         let target = targetApp
         targetApp = nil
-        // 关闭面板，粘贴完成后 reset() 会清理
-        panel.close()
-        print("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count), isTrusted=\(pasteService.isTrusted)")
 
+        // 先关闭面板，让 Accessibility API 能正确拿到目标 App 的焦点元素
+        panel.close()
+
+        print("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
+
+        // 策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）
+        let axService = AccessibilityPasteService.shared
+        if axService.isTrusted {
+            let inserted = axService.insertText(text)
+            if inserted {
+                print("[Paste] Accessibility 直插成功")
+                finalizeAndRecord(useLLM: useLLM, statusText: nil)
+                return
+            }
+            print("[Paste] Accessibility 直插失败，回退剪贴板方案")
+        } else {
+            print("[Paste] 辅助功能未授权，使用剪贴板方案")
+        }
+
+        // 策略2：剪贴板 + Cmd+V（回退方案）
         guard let target else {
             pasteService.writeClipboardOnly(text)
-            reset()
-            finalizing = false
-            statusText = "已复制到剪贴板"
+            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板")
             return
         }
 
         let targetPID = target.processIdentifier
-        target.activate()
-        waitForTargetActivation(target: target) { [weak self] ok in
-            guard let self else { return }
-            let front = NSWorkspace.shared.frontmostApplication
-            print("[Paste] target activation result=\(ok), frontmost=\(front?.localizedName ?? "nil")")
-            // 0.3s 延迟：等待目标 app 内部文本框重新获得键盘焦点。
-            // 仅 activate 把 app 推到前台不够——文本框聚焦是异步的。
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                guard let self else { return }
-                let pasteOK = self.pasteService.paste(text, to: targetPID)
-                print("[Paste] paste result=\(pasteOK), isTrusted=\(self.pasteService.isTrusted)")
+        // .nonactivatingPanel 保证了目标 App 始终在前台，无需 activate+轮询
+        pasteService.writeClipboardOnly(text)
+        let pasteOK = pasteService.paste(text, to: targetPID)
+        print("[Paste] 剪贴板粘贴 result=\(pasteOK)")
 
-                // 辅助功能未授权时：文字已在剪贴板，引导用户去授权（下次即可自动回写）
-                if !self.pasteService.isTrusted {
-                    self.statusText = "辅助功能未授权，文字已复制到剪贴板（请手动 ⌘V）。授权后下次自动回写。"
-                }
-
-                self.historyStore.append(HistoryItem(
-                    asrResult: self.asrText,
-                    llmResult: useLLM ? self.llmText : nil,
-                    engine: self.asrEngine?.id ?? "system",
-                    llmEngine: useLLM ? self.configStore.config.llm.engine : nil
-                ))
-                self.reset()
-                self.finalizing = false
-            }
-        }
+        let msg: String? = pasteOK ? nil : "文字已复制到剪贴板（请手动 ⌘V）"
+        finalizeAndRecord(useLLM: useLLM, statusText: msg)
     }
 
-    /// 轮询等待目标 app 回到前台。
-    private func waitForTargetActivation(target: NSRunningApplication, completion: @escaping (Bool) -> Void) {
-        let deadline = Date().addingTimeInterval(0.6)
-        func check(tick: Int) {
-            let front = NSWorkspace.shared.frontmostApplication
-            if front?.bundleIdentifier == target.bundleIdentifier {
-                completion(true)
-                return
-            }
-            if Date() > deadline {
-                completion(false)
-                return
-            }
-            target.activate()
-            let delay = tick <= 2 ? 0.08 : 0.15
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { check(tick: tick + 1) }
+    private func finalizeAndRecord(useLLM: Bool, statusText: String?) {
+        if let msg = statusText { self.statusText = msg }
+        // 引导用户授权辅助功能（授权后可享丝滑直插体验）
+        if !AccessibilityPasteService.shared.isTrusted {
+            self.statusText = (statusText ?? "") + " 授权辅助功能后可自动输入"
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { check(tick: 0) }
+        historyStore.append(HistoryItem(
+            asrResult: asrText,
+            llmResult: useLLM ? llmText : nil,
+            engine: asrEngine?.id ?? "system",
+            llmEngine: useLLM ? configStore.config.llm.engine : nil
+        ))
+        reset()
+        finalizing = false
     }
 
     func cancel() {

@@ -49,16 +49,19 @@ final class FloatingPanelController {
         print("[Panel] clickToActivate posted, pid=\(pid), point=\(clickPoint)")
     }
 
-    func show() {
+    func show(needsActivation: Bool = false) {
         if panel == nil { buildPanel() }
-        // macOS 14 兼容：后台 app 的 NSPanel 需要先 activate 才能显示
-        NSApp.activate(ignoringOtherApps: true)
+        // .nonactivatingPanel 保证面板浮在最前且可接收键盘事件，但不激活 App。
+        // 目标 App 始终保持前台，无需来回切换焦点。
+        // needsActivation=true 时额外触发激活（仅 DictationTranscriber 引擎需此行为）。
         panel?.center()
-        // 必须让面板成为 key window，本 app 才会真正激活——on-device 听写 daemon 只在
-        // 本 app 为激活态时才回传结果（否则必须手动点面板才开始识别）。停止时会把焦点
-        // 还给目标 app，因此此处抢焦点是安全的。
         panel?.orderFrontRegardless()
         panel?.makeKey()
+        if needsActivation {
+            // 轻量激活：激活 App 但不隐藏其他 App 窗口（与 ignoringOtherApps: true 不同）
+            NSApp.activate(ignoringOtherApps: false)
+            clickToActivate()
+        }
         installKeyMonitor()
     }
 
@@ -74,7 +77,7 @@ final class FloatingPanelController {
 
         let panel = NSPanel(
             contentRect: NSRect(x: 0, y: 0, width: 520, height: 320),
-            styleMask: [.titled, .closable, .fullSizeContentView],
+            styleMask: [.nonactivatingPanel, .titled, .closable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
