@@ -37,7 +37,7 @@ targets:
         CFBundleName: VoiceMate
         CFBundleDisplayName: VoiceMate
         CFBundleIdentifier: me.ckai.VoiceMate
-        CFBundleVersion: "5"
+        CFBundleVersion: "6"
         CFBundleShortVersionString: "1.0.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceMate

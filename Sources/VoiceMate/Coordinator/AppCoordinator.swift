@@ -227,12 +227,15 @@ final class AppCoordinator {
             startDisplaySync()
             let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
+            print("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
+            print("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
                     llmBuffer += chunk
                 }
                 stopDisplaySync()
                 llmText = llmBuffer
+                print("[LLM] 润色成功, \(llmBuffer.count) 字符")
                 // 累加 token 统计
                 let total = llm.lastPromptTokens + llm.lastCompletionTokens
                 if total > 0, !cfg.llm.selectedModelID.isEmpty {
@@ -240,6 +243,7 @@ final class AppCoordinator {
                 }
             } catch {
                 stopDisplaySync()
+                print("[LLM] 润色失败: \(error)")
                 llmText = final
             }
             sessionState = .ready

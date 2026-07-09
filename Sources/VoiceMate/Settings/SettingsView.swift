@@ -26,9 +26,6 @@ struct SettingsView: View {
     // 模型管理
     @State private var showModelManagement = false
 
-    // 批量测试
-    @State private var showBatchTest = false
-
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $selectedTab) {
@@ -92,11 +89,9 @@ struct SettingsView: View {
         .sheet(isPresented: $showModelManagement) {
             ModelManagementSheet(
                 models: $draft.llm.models,
-                selectedModelID: $draft.llm.selectedModelID
+                selectedModelID: $draft.llm.selectedModelID,
+                temperature: draft.llm.temperature
             )
-        }
-        .sheet(isPresented: $showBatchTest) {
-            BatchTestSheet(models: draft.llm.models, temperature: draft.llm.temperature)
         }
     }
 
@@ -388,8 +383,6 @@ struct SettingsView: View {
                 HStack(spacing: 8) {
                     Button("预览提示词") { showPromptPreview = true }
                     Button("测试润色效果") { llmTestInput = ""; showLLMTest = true }
-                    Button("批量测试") { showBatchTest = true }
-                        .disabled(draft.llm.models.isEmpty)
                 }
             }
             .disabled(!draft.llm.enabled)
@@ -785,17 +778,30 @@ private struct LLMConnectivityTest: View {
     }
 }
 
-// MARK: - 模型管理 Sheet（CRUD）
+// MARK: - 模型管理 Sheet（Table + 批量测试）
 
 private struct ModelManagementSheet: View {
     @Binding var models: [LLMModelDef]
     @Binding var selectedModelID: String
+    let temperature: Double
 
     @Environment(\.dismiss) private var dismiss
     @State private var editingModel: LLMModelDef?
     @State private var showEditor = false
     @State private var showDeleteConfirm = false
     @State private var modelToDelete: LLMModelDef?
+
+    // 批量测试
+    @State private var testingResults: [String: TestRowResult] = [:]
+    @State private var isTesting = false
+    @State private var testedCount = 0
+
+    struct TestRowResult {
+        var success: Bool
+        var latencyMs: Int?
+        var tokensUsed: Int
+        var error: String?
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -808,35 +814,76 @@ private struct ModelManagementSheet: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                List {
-                    ForEach(models) { model in
-                        HStack(spacing: 8) {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(model.name).font(.body)
-                                Text("\(model.engine == "openai" ? "OpenAI 协议" : "Ollama") · \(model.model)")
-                                    .font(.caption).foregroundStyle(.secondary)
+                Table(of: ModelRow.self) {
+                    TableColumn("名称", value: \.name)
+                    TableColumn("引擎") { row in
+                        Text(row.engine == "openai" ? "OpenAI" : "Ollama")
+                            .foregroundStyle(.secondary)
+                    }
+                    TableColumn("模型", value: \.modelName)
+                    TableColumn("Token") { row in
+                        Text("\(row.totalTokens)").foregroundStyle(.secondary)
+                    }
+                    TableColumn("次数") { row in
+                        Text("\(row.usageCount)").foregroundStyle(.secondary)
+                    }
+                    TableColumn("测试") { row in
+                        if let result = testingResults[row.id] {
+                            if result.success {
+                                Text("\(result.latencyMs ?? 0)ms")
+                                    .foregroundStyle(.green)
+                            } else {
+                                Text(result.error ?? "失败")
+                                    .foregroundStyle(.red)
+                                    .lineLimit(1)
                             }
-                            Spacer()
-                            if model.id == selectedModelID {
+                        } else {
+                            Text("-").foregroundStyle(.tertiary)
+                        }
+                    }
+                    TableColumn("") { row in
+                        HStack(spacing: 8) {
+                            if row.id == selectedModelID {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundStyle(.tint)
-                                    .font(.caption)
                             }
                             Button("编辑") {
-                                editingModel = model
-                                showEditor = true
+                                if let m = models.first(where: { $0.id == row.id }) {
+                                    editingModel = m
+                                    showEditor = true
+                                }
                             }
                             .buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
                             Button("删除") {
-                                modelToDelete = model
-                                showDeleteConfirm = true
+                                if let m = models.first(where: { $0.id == row.id }) {
+                                    modelToDelete = m
+                                    showDeleteConfirm = true
+                                }
                             }
                             .buttonStyle(.plain).font(.caption).foregroundStyle(.red)
                         }
-                        .padding(.vertical, 4)
+                    }
+                } rows: {
+                    ForEach(models) { model in
+                        TableRow(ModelRow(
+                            id: model.id,
+                            name: model.name,
+                            engine: model.engine,
+                            modelName: model.model,
+                            totalTokens: model.totalTokens,
+                            usageCount: model.usageCount
+                        ))
                     }
                 }
-                .listStyle(.inset)
+                .frame(minHeight: 200)
+
+                if isTesting {
+                    HStack {
+                        ProgressView().scaleEffect(0.6)
+                        Text("测试中… (\(testedCount)/\(models.count))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             }
 
             HStack {
@@ -848,13 +895,11 @@ private struct ModelManagementSheet: View {
                 }
                 .buttonStyle(.bordered)
 
-                if !models.isEmpty {
-                    Button("设为默认", action: {
-                        // 将选中模型设为首选（当前 draft 已绑定 selectedModelID）
-                    })
-                    .buttonStyle(.bordered)
-                    .disabled(true) // selectedModelID 已通过 Picker 绑定，这里仅提示
+                Button(action: { runBatchTest() }) {
+                    Label("批量测试", systemImage: "gauge.with.dots.needle.33percent")
                 }
+                .buttonStyle(.bordered)
+                .disabled(models.isEmpty || isTesting)
 
                 Spacer()
                 Button("完成") { dismiss() }
@@ -862,7 +907,7 @@ private struct ModelManagementSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 520, height: 440)
+        .frame(width: 700, height: 480)
         .sheet(isPresented: $showEditor) {
             ModelEditorSheet(
                 model: editingModel ?? LLMModelDef(),
@@ -891,6 +936,50 @@ private struct ModelManagementSheet: View {
         } message: {
             Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
         }
+    }
+
+    private func runBatchTest() {
+        guard !isTesting else { return }
+        isTesting = true
+        testedCount = 0
+        testingResults = [:]
+
+        Task {
+            for model in models {
+                let start = Date()
+                let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
+                do {
+                    var acc = ""
+                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
+                    for try await chunk in stream { acc += chunk }
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
+                    await MainActor.run {
+                        testingResults[model.id] = TestRowResult(success: true, latencyMs: elapsed, tokensUsed: tokens)
+                        testedCount += 1
+                        if tokens > 0 {
+                            ConfigStore.shared.addLLMTokenUsage(modelID: model.id, tokens: tokens)
+                        }
+                    }
+                } catch {
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    await MainActor.run {
+                        testingResults[model.id] = TestRowResult(success: false, latencyMs: elapsed, tokensUsed: 0, error: error.localizedDescription)
+                        testedCount += 1
+                    }
+                }
+            }
+            await MainActor.run { isTesting = false }
+        }
+    }
+
+    struct ModelRow: Identifiable {
+        let id: String
+        let name: String
+        let engine: String
+        let modelName: String
+        let totalTokens: Int
+        let usageCount: Int
     }
 }
 
@@ -977,151 +1066,5 @@ private struct ModelEditorSheet: View {
             Text(title).font(.caption).foregroundStyle(.secondary)
             content()
         }
-    }
-}
-
-// MARK: - 批量测试 Sheet
-
-private struct BatchTestSheet: View {
-    let models: [LLMModelDef]
-    let temperature: Double
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var results: [String: TestResult] = [:]
-    @State private var isRunning = false
-    @State private var currentIndex = 0
-    @State private var testedCount = 0
-
-    struct TestResult {
-        var success: Bool
-        var latencyMs: Int?
-        var tokensUsed: Int
-        var error: String?
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("批量测试模型").font(.headline)
-            Text("向每个模型发送简短请求，测量响应速度和 Token 消耗。")
-                .font(.caption).foregroundStyle(.secondary)
-
-            if models.isEmpty {
-                Spacer()
-                Text("暂无模型").foregroundStyle(.secondary)
-                Spacer()
-            } else {
-                Table(of: TestRow.self) {
-                    TableColumn("名称", value: \.name)
-                    TableColumn("引擎", value: \.engine)
-                    TableColumn("累计 Token") { row in
-                        Text("\(row.totalTokens)")
-                    }
-                    TableColumn("次数") { row in
-                        Text("\(row.usageCount)")
-                    }
-                    TableColumn("状态") { row in
-                        if let result = results[row.id] {
-                            if result.success {
-                                if let ms = result.latencyMs {
-                                    Text("\(ms)ms · +\(result.tokensUsed) tokens")
-                                        .foregroundStyle(.green)
-                                } else {
-                                    Text("通过")
-                                        .foregroundStyle(.green)
-                                }
-                            } else {
-                                Text(result.error ?? "失败")
-                                    .foregroundStyle(.red)
-                                    .lineLimit(1)
-                            }
-                        } else if isRunning {
-                            ProgressView().scaleEffect(0.5)
-                        } else {
-                            Text("—").foregroundStyle(.tertiary)
-                        }
-                    }
-                } rows: {
-                    ForEach(models) { model in
-                        TableRow(TestRow(
-                            id: model.id,
-                            name: model.name,
-                            engine: model.engine,
-                            totalTokens: model.totalTokens,
-                            usageCount: model.usageCount
-                        ))
-                    }
-                }
-                .frame(minHeight: 200)
-
-                if isRunning {
-                    HStack {
-                        ProgressView().scaleEffect(0.6)
-                        Text("测试中… (\(testedCount)/\(models.count))")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            HStack {
-                Button("全部测试") { runBatchTest() }
-                    .disabled(isRunning || models.isEmpty)
-                Spacer()
-                Button("关闭") { dismiss() }
-            }
-        }
-        .padding(20)
-        .frame(width: 600, height: 480)
-    }
-
-    private func runBatchTest() {
-        guard !isRunning else { return }
-        isRunning = true
-        testedCount = 0
-        results = [:]
-        currentIndex = 0
-
-        Task {
-            for model in models {
-                currentIndex = models.firstIndex(where: { $0.id == model.id }) ?? currentIndex
-                let start = Date()
-
-                let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
-                do {
-                    var acc = ""
-                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
-                    for try await chunk in stream { acc += chunk }
-                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
-                    let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
-                    await MainActor.run {
-                        results[model.id] = TestResult(success: true, latencyMs: elapsed, tokensUsed: tokens)
-                        testedCount += 1
-                        // 累加到 ConfigStore
-                        if tokens > 0 {
-                            ConfigStore.shared.addLLMTokenUsage(modelID: model.id, tokens: tokens)
-                        }
-                    }
-                } catch {
-                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
-                    await MainActor.run {
-                        results[model.id] = TestResult(
-                            success: false,
-                            latencyMs: elapsed,
-                            tokensUsed: 0,
-                            error: error.localizedDescription
-                        )
-                        testedCount += 1
-                    }
-                }
-            }
-            await MainActor.run { isRunning = false }
-        }
-    }
-
-    struct TestRow: Identifiable {
-        let id: String
-        let name: String
-        let engine: String
-        let totalTokens: Int
-        let usageCount: Int
     }
 }
