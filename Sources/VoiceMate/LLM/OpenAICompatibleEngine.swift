@@ -56,25 +56,45 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         return AsyncThrowingStream { continuation in
             _ = Task {
                 do {
-                    let (bytes, _) = try await URLSession.shared.bytes(for: reqCapture)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: reqCapture)
+                    if let httpResp = response as? HTTPURLResponse {
+                        print("[LLM-Engine] HTTP \(httpResp.statusCode) \(httpResp.url?.absoluteString ?? "?")")
+                    }
+                    var lineCount = 0
                     for try await line in bytes.lines {
-                        guard line.hasPrefix("data:") else { continue }
+                        lineCount += 1
+                        if lineCount <= 3 {
+                            print("[LLM-Engine] raw line[\(lineCount)]: \(line.prefix(200))")
+                        }
+                        guard line.hasPrefix("data:") else {
+                            if !line.trimmingCharacters(in: .whitespaces).isEmpty && lineCount <= 5 {
+                                print("[LLM-Engine] skip non-data line[\(lineCount)]: \(line.prefix(100))")
+                            }
+                            continue
+                        }
                         let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
                         if json == "[DONE]" { continue }
                         guard let data = json.data(using: .utf8),
-                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+                            if lineCount <= 5 { print("[LLM-Engine] json parse fail line[\(lineCount)]") }
+                            continue
+                        }
                         if let choices = obj["choices"] as? [[String: Any]],
                            let delta = choices.first?["delta"] as? [String: Any],
                            let content = delta["content"] as? String {
                             continuation.yield(content)
+                        } else if lineCount <= 5 {
+                            print("[LLM-Engine] no content in line[\(lineCount)] keys=\(obj.keys)")
                         }
                         if let usage = obj["usage"] as? [String: Any] {
                             boxCapture.prompt = usage["prompt_tokens"] as? Int ?? 0
                             boxCapture.completion = usage["completion_tokens"] as? Int ?? 0
                         }
                     }
+                    print("[LLM-Engine] stream done, \(lineCount) lines")
                     continuation.finish()
                 } catch {
+                    print("[LLM-Engine] error: \(error)")
                     continuation.finish(throwing: error)
                 }
             }

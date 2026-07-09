@@ -815,15 +815,15 @@ private struct ModelManagementSheet: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(of: ModelRow.self) {
-                    TableColumn("名称", value: \.name)
+                    TableColumn("名称", value: \.name).width(min: 80)
                     TableColumn("引擎") { row in
                         Text(row.engine == "openai" ? "OpenAI" : "Ollama")
                             .foregroundStyle(.secondary)
-                    }
-                    TableColumn("模型", value: \.modelName)
+                    }.width(60)
+                    TableColumn("模型", value: \.modelName).width(min: 100)
                     TableColumn("Token") { row in
                         Text("\(row.totalTokens)").foregroundStyle(.secondary)
-                    }
+                    }.width(50)
                     TableColumn("次数") { row in
                         Text("\(row.usageCount)").foregroundStyle(.secondary)
                     }
@@ -907,7 +907,7 @@ private struct ModelManagementSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 700, height: 480)
+        .frame(width: 800, height: 500)
         .sheet(isPresented: $showEditor) {
             ModelEditorSheet(
                 model: editingModel ?? LLMModelDef(),
