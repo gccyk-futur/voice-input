@@ -31,7 +31,7 @@ struct PanelView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     Text(coordinator.asrText.isEmpty ? "正在聆听…" : coordinator.asrText)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(coordinator.asrText.isEmpty ? .secondary : .primary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
                         .id("asrBottom")
