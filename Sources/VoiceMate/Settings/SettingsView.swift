@@ -787,7 +787,6 @@ private struct ModelManagementSheet: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var editingModel: LLMModelDef?
-    @State private var showEditor = false
     @State private var showDeleteConfirm = false
     @State private var modelToDelete: LLMModelDef?
 
@@ -850,7 +849,6 @@ private struct ModelManagementSheet: View {
                             Button("编辑") {
                                 if let m = models.first(where: { $0.id == row.id }) {
                                     editingModel = m
-                                    showEditor = true
                                 }
                             }
                             .buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
@@ -889,7 +887,6 @@ private struct ModelManagementSheet: View {
             HStack {
                 Button(action: {
                     editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini")
-                    showEditor = true
                 }) {
                     Label("添加模型", systemImage: "plus")
                 }
@@ -908,9 +905,9 @@ private struct ModelManagementSheet: View {
         }
         .padding(20)
         .frame(width: 800, height: 500)
-        .sheet(isPresented: $showEditor) {
+        .sheet(item: $editingModel) { model in
             ModelEditorSheet(
-                model: editingModel ?? LLMModelDef(),
+                model: model,
                 onSave: { saved in
                     if let idx = models.firstIndex(where: { $0.id == saved.id }) {
                         models[idx] = saved
@@ -918,9 +915,9 @@ private struct ModelManagementSheet: View {
                         models.append(saved)
                         if selectedModelID.isEmpty { selectedModelID = saved.id }
                     }
-                    showEditor = false
+                    editingModel = nil
                 },
-                onCancel: { showEditor = false }
+                onCancel: { editingModel = nil }
             )
         }
         .alert("删除模型？", isPresented: $showDeleteConfirm) {
@@ -986,11 +983,19 @@ private struct ModelManagementSheet: View {
 // MARK: - 模型编辑器 Sheet（新增 / 编辑）
 
 private struct ModelEditorSheet: View {
-    @State var model: LLMModelDef
+    let initialModel: LLMModelDef
     let onSave: (LLMModelDef) -> Void
     let onCancel: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @State private var model: LLMModelDef
+
+    init(model: LLMModelDef, onSave: @escaping (LLMModelDef) -> Void, onCancel: @escaping () -> Void) {
+        self.initialModel = model
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _model = State(initialValue: model)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {

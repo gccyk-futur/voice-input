@@ -60,7 +60,7 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         let box = TokenBox()
         let boxCapture = box
         return AsyncThrowingStream { continuation in
-            _ = Task {
+            _ = Task { [self] in
                 do {
                     let (bytes, response) = try await URLSession.shared.bytes(for: reqCapture)
                     if let httpResp = response as? HTTPURLResponse {
@@ -97,16 +97,15 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
                             boxCapture.completion = usage["completion_tokens"] as? Int ?? 0
                         }
                     }
-                    print("[LLM-Engine] stream done, \(lineCount) lines")
+                    // 在 finish() 之前赋值，确保 handleFinal 能读到
+                    _lastPromptTokens = boxCapture.prompt
+                    _lastCompletionTokens = boxCapture.completion
+                    print("[LLM-Engine] stream done, \(lineCount) lines, tokens: prompt=\(_lastPromptTokens) completion=\(_lastCompletionTokens)")
                     continuation.finish()
                 } catch {
                     print("[LLM-Engine] error: \(error)")
                     continuation.finish(throwing: error)
                 }
-            }
-            continuation.onTermination = { _ in
-                self._lastPromptTokens = boxCapture.prompt
-                self._lastCompletionTokens = boxCapture.completion
             }
         }
     }
