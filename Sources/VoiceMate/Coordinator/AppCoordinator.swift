@@ -33,6 +33,13 @@ final class AppCoordinator {
     /// 收尾标记：自动粘贴流程进行中。此时面板关闭触发的 cancel 应被忽略，避免双重复位。
     private var finalizing = false
 
+    // MARK: - Display Sync (LLM 流式文字 → UI 解耦)
+
+    /// LLM token 流写入此 buffer（不触发 UI）。
+    private var llmBuffer: String = ""
+    /// 按固定间隔将 buffer 同步到 @Observable llmText。
+    private var displayTimer: Timer?
+
     static let shared = AppCoordinator()
 
     /// 菜单栏状态（供 StatusBarMenu 读取）
@@ -216,16 +223,19 @@ final class AppCoordinator {
             sessionState = .polishing
             statusText = "润色中…"
             llmText = ""
+            llmBuffer = ""
+            startDisplaySync()
             let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: cfg.llm.engine)
-            var acc = ""
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
-                    acc += chunk
-                    llmText = acc
+                    llmBuffer += chunk
                 }
+                // 流结束：flush 最后一批，停 timer，拉最终值
+                stopDisplaySync()
+                llmText = llmBuffer
             } catch {
-                // 润色失败回退原文（不要把错误提示粘出去）
+                stopDisplaySync()
                 llmText = final
             }
             sessionState = .ready
@@ -307,10 +317,37 @@ final class AppCoordinator {
         if let engine = asrEngine, !alreadyStopping {
             Task { try? await engine.stop() }
         }
+        stopDisplaySync()
         reset()
         // 归还焦点给之前的应用
         if let t = targetApp { t.activate() }
         targetApp = nil
+    }
+
+    // MARK: - Display Sync
+
+    /// 启动定时器，按 60fps 将 llmBuffer 同步到 @Observable llmText。
+    /// LLM token 流写入 buffer（不触发 UI），定时器按屏幕刷新节奏拉取到 UI 层，
+    /// 避免高频 token 推送导致 SwiftUI body 过度重新求值。
+    private func startDisplaySync() {
+        stopDisplaySync()
+        displayTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                let current = self.llmBuffer
+                if self.llmText != current {
+                    self.llmText = current
+                }
+            }
+        }
+        if let timer = displayTimer {
+            RunLoop.current.add(timer, forMode: .common)
+        }
+    }
+
+    private func stopDisplaySync() {
+        displayTimer?.invalidate()
+        displayTimer = nil
     }
 
     private func playSound(named name: String) {
@@ -319,6 +356,7 @@ final class AppCoordinator {
     }
 
     private func reset() {
+        stopDisplaySync()
         if asrEngine?.id != "aliyun" {
             invalidateASREngine()
         }
