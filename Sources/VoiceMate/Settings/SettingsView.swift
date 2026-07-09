@@ -23,6 +23,12 @@ struct SettingsView: View {
     @State private var showLLMTest = false
     @State private var llmTestInput = ""
 
+    // 模型管理
+    @State private var showModelManagement = false
+
+    // 批量测试
+    @State private var showBatchTest = false
+
     var body: some View {
         VStack(spacing: 0) {
             Picker("", selection: $selectedTab) {
@@ -78,10 +84,19 @@ struct SettingsView: View {
             PromptPreviewSheet(systemPrompt: draft.llm.prompt.system,
                                userTemplate: draft.llm.prompt.user,
                                language: draft.asr.system.language,
-                               engine: draft.llm.engine)
+                               engine: draft.llm.selectedModel?.engine ?? "openai")
         }
         .sheet(isPresented: $showLLMTest) {
             LLMTestSheet(llmConfig: draft.llm, language: draft.asr.system.language)
+        }
+        .sheet(isPresented: $showModelManagement) {
+            ModelManagementSheet(
+                models: $draft.llm.models,
+                selectedModelID: $draft.llm.selectedModelID
+            )
+        }
+        .sheet(isPresented: $showBatchTest) {
+            BatchTestSheet(models: draft.llm.models, temperature: draft.llm.temperature)
         }
     }
 
@@ -280,40 +295,64 @@ struct SettingsView: View {
             Toggle("启用润色", isOn: $draft.llm.enabled)
 
             Group {
-                section("引擎") {
-                    Picker("", selection: $draft.llm.engine) {
-                        Text("OpenAI 协议").tag("openai")
-                        Text("Ollama（本地）").tag("ollama")
-                    }.labelsHidden().frame(width: 220)
+                // ── 模型选择 ──
+                section("模型") {
+                    HStack(spacing: 8) {
+                        Picker("", selection: $draft.llm.selectedModelID) {
+                            if draft.llm.models.isEmpty {
+                                Text("未配置模型").tag("")
+                            }
+                            ForEach(draft.llm.models) { model in
+                                Text(model.name).tag(model.id)
+                            }
+                        }
+                        .labelsHidden().frame(width: 200)
+
+                        Button("管理模型") { showModelManagement = true }
+                            .buttonStyle(.bordered).controlSize(.small)
+                    }
+                    if draft.llm.models.isEmpty {
+                        Text("点击「管理模型」添加 LLM 服务，支持 OpenAI 协议和 Ollama。")
+                            .font(.caption2).foregroundStyle(.tertiary)
+                    } else if let model = draft.llm.selectedModel {
+                        Text("引擎：\(model.engine)  ·  模型：\(model.model)")
+                            .font(.caption2).foregroundStyle(.secondary)
+                    }
                 }
-                Text("OpenAI 协议适用于 OpenAI / DeepSeek / 阿里云百炼 / Groq 等。Ollama 需本地先启动。")
-                    .font(.caption2).foregroundStyle(.tertiary)
 
-                llmFields
-
+                // ── 温度 ──
                 section("温度") {
                     HStack {
-                        Slider(value: llmTemperature, in: 0...2, step: 0.1)
-                        Text(String(format: "%.1f", llmTemperature.wrappedValue))
+                        Slider(value: $draft.llm.temperature, in: 0...2, step: 0.1)
+                        Text(String(format: "%.1f", draft.llm.temperature))
                             .font(.caption).frame(width: 30)
                     }
                     Text("越高输出越随机、有创意；越低越保守、确定性高。润色建议 0.3~0.7。")
                         .font(.caption2).foregroundStyle(.tertiary)
                 }
 
-                // 连接测试
+                // ── 连接测试 ──
                 LLMConnectivityTest(llmConfig: draft.llm)
 
-                if draft.llm.engine == "openai" {
+                // ── 深度思考（仅 OpenAI 模型） ──
+                if let model = draft.llm.selectedModel, model.engine == "openai" {
                     Toggle("深度思考 (thinking)", isOn: Binding(
-                        get: { draft.llm.openai.model.contains("thinking") || draft.llm.openai.model.contains("qwq") },
+                        get: {
+                            let mid = draft.llm.selectedModelID
+                            guard let idx = draft.llm.models.firstIndex(where: { $0.id == mid }) else { return false }
+                            return draft.llm.models[idx].model.contains("thinking") ||
+                                   draft.llm.models[idx].model.contains("qwq")
+                        },
                         set: { v in
+                            let mid = draft.llm.selectedModelID
+                            guard let idx = draft.llm.models.firstIndex(where: { $0.id == mid }) else { return }
                             if v {
-                                if !draft.llm.openai.model.contains("thinking") && !draft.llm.openai.model.contains("qwq") {
-                                    draft.llm.openai.model += "-thinking"
+                                if !draft.llm.models[idx].model.contains("thinking") &&
+                                   !draft.llm.models[idx].model.contains("qwq") {
+                                    draft.llm.models[idx].model += "-thinking"
                                 }
                             } else {
-                                draft.llm.openai.model = draft.llm.openai.model
+                                draft.llm.models[idx].model = draft.llm.models[idx].model
                                     .replacingOccurrences(of: "-thinking", with: "")
                                     .replacingOccurrences(of: "qwq-plus", with: "qwen-plus")
                             }
@@ -325,54 +364,36 @@ struct SettingsView: View {
 
                 Divider()
 
+                // ── 系统提示词 ──
                 section("系统提示词") {
                     TextField("系统角色描述", text: $draft.llm.prompt.system, axis: .vertical)
                         .textFieldStyle(.roundedBorder).frame(minHeight: 60)
                 }
+
+                // ── 用户模板（TextEditor 跨版本一致） ──
                 section("用户模板") {
-                    TextField("口语内容：{{input}}\n\n改写结果：", text: $draft.llm.prompt.user, axis: .vertical)
-                        .textFieldStyle(.roundedBorder).frame(minHeight: 60)
+                    TextEditor(text: $draft.llm.prompt.user)
+                        .font(.body)
+                        .frame(minHeight: 60)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(Color(nsColor: .separatorColor), lineWidth: 1)
+                        )
+                        .scrollContentBackground(.hidden)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .cornerRadius(6)
                 }
                 Text("{{input}} 会被替换为识别文本").font(.caption2).foregroundStyle(.tertiary)
 
                 HStack(spacing: 8) {
                     Button("预览提示词") { showPromptPreview = true }
                     Button("测试润色效果") { llmTestInput = ""; showLLMTest = true }
+                    Button("批量测试") { showBatchTest = true }
+                        .disabled(draft.llm.models.isEmpty)
                 }
             }
             .disabled(!draft.llm.enabled)
             .opacity(draft.llm.enabled ? 1 : 0.35)
-        }
-    }
-
-    @ViewBuilder
-    private var llmFields: some View {
-        section("Base URL") {
-            Group {
-                if draft.llm.engine == "openai" {
-                    TextField("https://api.openai.com/v1", text: $draft.llm.openai.baseUrl)
-                } else {
-                    TextField("http://localhost:11434", text: $draft.llm.ollama.baseUrl)
-                }
-            }
-            .textFieldStyle(.roundedBorder).frame(maxWidth: 380)
-        }
-
-        section("API Key") {
-            SecureField("sk-...", text: $draft.llm.openai.apiKey)
-                .textFieldStyle(.roundedBorder).frame(maxWidth: 380)
-        }
-        .opacity(draft.llm.engine == "openai" ? 1 : 0.2)
-
-        section("模型") {
-            Group {
-                if draft.llm.engine == "openai" {
-                    TextField("gpt-4o-mini", text: $draft.llm.openai.model)
-                } else {
-                    TextField("qwen2.5:7b", text: $draft.llm.ollama.model)
-                }
-            }
-            .textFieldStyle(.roundedBorder).frame(width: 220)
         }
     }
 
@@ -462,27 +483,22 @@ struct SettingsView: View {
                 showValidationAlert = true; return
             }
         }
-        if draft.llm.enabled && draft.llm.engine == "openai" {
-            if draft.llm.openai.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "OpenAI 协议的 Base URL 不能为空"
+        // LLM：检查选中模型是否存在且必填字段完整
+        if draft.llm.enabled {
+            guard let model = draft.llm.selectedModel else {
+                validationMessage = "请先添加并选择一个 LLM 模型"
                 showValidationAlert = true; return
             }
-            if draft.llm.openai.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "OpenAI 协议的 API Key 不能为空"
+            if model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationMessage = "模型「\(model.name)」的 Base URL 不能为空"
                 showValidationAlert = true; return
             }
-            if draft.llm.openai.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "OpenAI 协议的模型名不能为空"
+            if model.engine == "openai" && model.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationMessage = "模型「\(model.name)」的 API Key 不能为空"
                 showValidationAlert = true; return
             }
-        }
-        if draft.llm.enabled && draft.llm.engine == "ollama" {
-            if draft.llm.ollama.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "Ollama 的 Base URL 不能为空"
-                showValidationAlert = true; return
-            }
-            if draft.llm.ollama.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "Ollama 的模型名不能为空"
+            if model.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationMessage = "模型「\(model.name)」的模型名不能为空"
                 showValidationAlert = true; return
             }
         }
@@ -493,7 +509,6 @@ struct SettingsView: View {
         }
         HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
         originalConfig = draft
-        // 延迟 dismiss 到下一 RunLoop，避免在 toolbar action 处理中同步关闭窗口导致崩溃
         DispatchQueue.main.async {
             self.onDone()
         }
@@ -503,7 +518,6 @@ struct SettingsView: View {
 
     private var aboutTab: some View {
         VStack(alignment: .leading, spacing: 16) {
-            // 标题 + 图标
             HStack(spacing: 10) {
                 Image(systemName: "waveform")
                     .font(.title2)
@@ -576,14 +590,6 @@ struct SettingsView: View {
         let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
         return "版本 \(ver) (build \(build))"
-    }
-
-    private var llmTemperature: Binding<Double> {
-        switch draft.llm.engine {
-        case "ollama": return $draft.llm.ollama.temperature
-        case "openai": return $draft.llm.openai.temperature
-        default: return .constant(0.7)
-        }
     }
 }
 
@@ -688,17 +694,18 @@ private struct LLMTestSheet: View {
         errorMsg = nil
         resultText = ""
         let text = inputText.trimmingCharacters(in: .whitespaces)
-        let cfg = llmConfig
+        guard let model = llmConfig.selectedModel else {
+            errorMsg = "未选择模型"
+            isRunning = false
+            return
+        }
 
         Task {
-            let tmpl = PromptTemplate(system: cfg.prompt.system, user: cfg.prompt.user)
-            let (sys, usr) = tmpl.render(input: text, language: language, engine: cfg.engine)
+            let tmpl = PromptTemplate(system: llmConfig.prompt.system, user: llmConfig.prompt.user)
+            let (sys, usr) = tmpl.render(input: text, language: language, engine: model.engine)
+            let engine = AppCoordinator.buildLLMEngine(from: model, temperature: llmConfig.temperature)
 
             do {
-                let engine: any LLMEngine = switch cfg.engine {
-                case "ollama": OllamaEngine(config: cfg.ollama)
-                default: OpenAICompatibleEngine(baseUrl: cfg.openai.baseUrl, apiKey: cfg.openai.apiKey, model: cfg.openai.model, temperature: cfg.openai.temperature, kind: .openai)
-                }
                 var acc = ""
                 for try await chunk in engine.polish(text, system: sys, userTemplate: usr) {
                     acc += chunk
@@ -735,7 +742,7 @@ private struct LLMConnectivityTest: View {
             }
             .buttonStyle(.bordered)
             .controlSize(.small)
-            .disabled(status == .testing)
+            .disabled(status == .testing || llmConfig.selectedModel == nil)
 
             if status == .testing {
                 ProgressView()
@@ -766,22 +773,355 @@ private struct LLMConnectivityTest: View {
     }
 
     private func runTest() {
+        guard let model = llmConfig.selectedModel else { return }
         status = .testing
         Task {
-            let engine: any LLMEngine = switch llmConfig.engine {
-            case "ollama": OllamaEngine(config: llmConfig.ollama)
-            default: OpenAICompatibleEngine(
-                baseUrl: llmConfig.openai.baseUrl,
-                apiKey: llmConfig.openai.apiKey,
-                model: llmConfig.openai.model,
-                temperature: llmConfig.openai.temperature,
-                kind: .openai
-            )
-            }
+            let engine = AppCoordinator.buildLLMEngine(from: model, temperature: llmConfig.temperature)
             let ok = await engine.checkConnectivity()
             await MainActor.run {
                 status = ok ? .success : .failure("无法连接，请检查 URL 和网络")
             }
         }
+    }
+}
+
+// MARK: - 模型管理 Sheet（CRUD）
+
+private struct ModelManagementSheet: View {
+    @Binding var models: [LLMModelDef]
+    @Binding var selectedModelID: String
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var editingModel: LLMModelDef?
+    @State private var showEditor = false
+    @State private var showDeleteConfirm = false
+    @State private var modelToDelete: LLMModelDef?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("管理模型").font(.headline)
+
+            if models.isEmpty {
+                VStack(spacing: 8) {
+                    Image(systemName: "tray").font(.largeTitle).foregroundStyle(.tertiary)
+                    Text("暂无模型，点击下方按钮添加").foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List {
+                    ForEach(models) { model in
+                        HStack(spacing: 8) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(model.name).font(.body)
+                                Text("\(model.engine == "openai" ? "OpenAI 协议" : "Ollama") · \(model.model)")
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if model.id == selectedModelID {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.tint)
+                                    .font(.caption)
+                            }
+                            Button("编辑") {
+                                editingModel = model
+                                showEditor = true
+                            }
+                            .buttonStyle(.plain).font(.caption).foregroundStyle(.tint)
+                            Button("删除") {
+                                modelToDelete = model
+                                showDeleteConfirm = true
+                            }
+                            .buttonStyle(.plain).font(.caption).foregroundStyle(.red)
+                        }
+                        .padding(.vertical, 4)
+                    }
+                }
+                .listStyle(.inset)
+            }
+
+            HStack {
+                Button(action: {
+                    editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini")
+                    showEditor = true
+                }) {
+                    Label("添加模型", systemImage: "plus")
+                }
+                .buttonStyle(.bordered)
+
+                if !models.isEmpty {
+                    Button("设为默认", action: {
+                        // 将选中模型设为首选（当前 draft 已绑定 selectedModelID）
+                    })
+                    .buttonStyle(.bordered)
+                    .disabled(true) // selectedModelID 已通过 Picker 绑定，这里仅提示
+                }
+
+                Spacer()
+                Button("完成") { dismiss() }
+                    .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 520, height: 440)
+        .sheet(isPresented: $showEditor) {
+            ModelEditorSheet(
+                model: editingModel ?? LLMModelDef(),
+                onSave: { saved in
+                    if let idx = models.firstIndex(where: { $0.id == saved.id }) {
+                        models[idx] = saved
+                    } else {
+                        models.append(saved)
+                        if selectedModelID.isEmpty { selectedModelID = saved.id }
+                    }
+                    showEditor = false
+                },
+                onCancel: { showEditor = false }
+            )
+        }
+        .alert("删除模型？", isPresented: $showDeleteConfirm) {
+            Button("删除", role: .destructive) {
+                if let m = modelToDelete {
+                    models.removeAll { $0.id == m.id }
+                    if selectedModelID == m.id {
+                        selectedModelID = models.first?.id ?? ""
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
+        }
+    }
+}
+
+// MARK: - 模型编辑器 Sheet（新增 / 编辑）
+
+private struct ModelEditorSheet: View {
+    @State var model: LLMModelDef
+    let onSave: (LLMModelDef) -> Void
+    let onCancel: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(model.name.isEmpty ? "添加模型" : "编辑模型").font(.headline)
+
+            section("名称") {
+                TextField("例如：我的 DeepSeek", text: $model.name)
+                    .textFieldStyle(.roundedBorder)
+            }
+
+            section("引擎") {
+                Picker("", selection: $model.engine) {
+                    Text("OpenAI 协议").tag("openai")
+                    Text("Ollama（本地）").tag("ollama")
+                }
+                .labelsHidden().frame(width: 220)
+            }
+
+            section("Base URL") {
+                Group {
+                    if model.engine == "openai" {
+                        TextField("https://api.openai.com/v1", text: $model.baseUrl)
+                    } else {
+                        TextField("http://localhost:11434", text: $model.baseUrl)
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+            }
+
+            if model.engine == "openai" {
+                section("API Key") {
+                    SecureField("sk-...", text: $model.apiKey)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            section("模型名") {
+                Group {
+                    if model.engine == "openai" {
+                        TextField("gpt-4o-mini", text: $model.model)
+                    } else {
+                        TextField("qwen2.5:7b", text: $model.model)
+                    }
+                }
+                .textFieldStyle(.roundedBorder)
+            }
+
+            Text("累计 Token：\(model.totalTokens)  ·  使用次数：\(model.usageCount)")
+                .font(.caption2).foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+                Button("取消") {
+                    onCancel()
+                    dismiss()
+                }
+                Button("保存") {
+                    onSave(model)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.name.trimmingCharacters(in: .whitespaces).isEmpty ||
+                          model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty ||
+                          model.model.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 440, height: 420)
+    }
+
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            content()
+        }
+    }
+}
+
+// MARK: - 批量测试 Sheet
+
+private struct BatchTestSheet: View {
+    let models: [LLMModelDef]
+    let temperature: Double
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var results: [String: TestResult] = [:]
+    @State private var isRunning = false
+    @State private var currentIndex = 0
+    @State private var testedCount = 0
+
+    struct TestResult {
+        var success: Bool
+        var latencyMs: Int?
+        var tokensUsed: Int
+        var error: String?
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("批量测试模型").font(.headline)
+            Text("向每个模型发送简短请求，测量响应速度和 Token 消耗。")
+                .font(.caption).foregroundStyle(.secondary)
+
+            if models.isEmpty {
+                Spacer()
+                Text("暂无模型").foregroundStyle(.secondary)
+                Spacer()
+            } else {
+                Table(of: TestRow.self) {
+                    TableColumn("名称", value: \.name)
+                    TableColumn("引擎", value: \.engine)
+                    TableColumn("累计 Token") { row in
+                        Text("\(row.totalTokens)")
+                    }
+                    TableColumn("次数") { row in
+                        Text("\(row.usageCount)")
+                    }
+                    TableColumn("状态") { row in
+                        if let result = results[row.id] {
+                            if result.success {
+                                if let ms = result.latencyMs {
+                                    Text("\(ms)ms · +\(result.tokensUsed) tokens")
+                                        .foregroundStyle(.green)
+                                } else {
+                                    Text("通过")
+                                        .foregroundStyle(.green)
+                                }
+                            } else {
+                                Text(result.error ?? "失败")
+                                    .foregroundStyle(.red)
+                                    .lineLimit(1)
+                            }
+                        } else if isRunning {
+                            ProgressView().scaleEffect(0.5)
+                        } else {
+                            Text("—").foregroundStyle(.tertiary)
+                        }
+                    }
+                } rows: {
+                    ForEach(models) { model in
+                        TableRow(TestRow(
+                            id: model.id,
+                            name: model.name,
+                            engine: model.engine,
+                            totalTokens: model.totalTokens,
+                            usageCount: model.usageCount
+                        ))
+                    }
+                }
+                .frame(minHeight: 200)
+
+                if isRunning {
+                    HStack {
+                        ProgressView().scaleEffect(0.6)
+                        Text("测试中… (\(testedCount)/\(models.count))")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+
+            HStack {
+                Button("全部测试") { runBatchTest() }
+                    .disabled(isRunning || models.isEmpty)
+                Spacer()
+                Button("关闭") { dismiss() }
+            }
+        }
+        .padding(20)
+        .frame(width: 600, height: 480)
+    }
+
+    private func runBatchTest() {
+        guard !isRunning else { return }
+        isRunning = true
+        testedCount = 0
+        results = [:]
+        currentIndex = 0
+
+        Task {
+            for model in models {
+                currentIndex = models.firstIndex(where: { $0.id == model.id }) ?? currentIndex
+                let start = Date()
+
+                let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
+                do {
+                    var acc = ""
+                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
+                    for try await chunk in stream { acc += chunk }
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
+                    await MainActor.run {
+                        results[model.id] = TestResult(success: true, latencyMs: elapsed, tokensUsed: tokens)
+                        testedCount += 1
+                        // 累加到 ConfigStore
+                        if tokens > 0 {
+                            ConfigStore.shared.addLLMTokenUsage(modelID: model.id, tokens: tokens)
+                        }
+                    }
+                } catch {
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    await MainActor.run {
+                        results[model.id] = TestResult(
+                            success: false,
+                            latencyMs: elapsed,
+                            tokensUsed: 0,
+                            error: error.localizedDescription
+                        )
+                        testedCount += 1
+                    }
+                }
+            }
+            await MainActor.run { isRunning = false }
+        }
+    }
+
+    struct TestRow: Identifiable {
+        let id: String
+        let name: String
+        let engine: String
+        let totalTokens: Int
+        let usageCount: Int
     }
 }

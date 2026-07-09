@@ -50,12 +50,57 @@ struct ASRAliyunConfig: Codable, Equatable {
     var autoStopTimeout: Double = 3.5
     var autoStopThreshold: Double = 0.01
 }
+/// LLM 模型定义：用户可自由增删多个模型配置。
+struct LLMModelDef: Codable, Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String = ""
+    var engine: String = "openai" // "openai" | "ollama"
+    var baseUrl: String = ""
+    var apiKey: String = ""
+    var model: String = ""
+    /// 累计 token 数（运行中自动统计并持久化）
+    var totalTokens: Int = 0
+    /// 使用次数
+    var usageCount: Int = 0
+}
+
 struct LLMConfig: Codable, Equatable {
     var enabled: Bool = false
-    var engine: String = "ollama" // ollama | openai
+    var temperature: Double = 0.7
+    var selectedModelID: String = ""
+    var models: [LLMModelDef] = []
+    var prompt: LLMPromptConfig = .init()
+
+    // Legacy fields（仅用于迁移，v2 不再主动写入）
+    var engine: String = "ollama"
     var ollama: LLMOllamaConfig = .init()
     var openai: LLMOpenAIConfig = .init()
-    var prompt: LLMPromptConfig = .init()
+
+    var selectedModel: LLMModelDef? {
+        models.first { $0.id == selectedModelID } ?? models.first
+    }
+
+    /// 从旧版单模型配置迁移到多模型数组（仅首次执行）。
+    mutating func migrateFromLegacy() {
+        guard models.isEmpty else { return }
+        if engine == "openai", !openai.baseUrl.isEmpty {
+            let m = LLMModelDef(
+                name: "OpenAI", engine: "openai",
+                baseUrl: openai.baseUrl, apiKey: openai.apiKey,
+                model: openai.model
+            )
+            models.append(m)
+            selectedModelID = m.id
+        } else if engine == "ollama", !ollama.baseUrl.isEmpty {
+            let m = LLMModelDef(
+                name: "Ollama", engine: "ollama",
+                baseUrl: ollama.baseUrl, apiKey: "",
+                model: ollama.model
+            )
+            models.append(m)
+            selectedModelID = m.id
+        }
+    }
 }
 struct LLMOllamaConfig: Codable, Equatable {
     var baseUrl: String = "http://localhost:11434"

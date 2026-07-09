@@ -6,6 +6,10 @@ protocol LLMEngine: AnyObject, Sendable {
     var id: String { get }
     var displayName: String { get }
 
+    /// 上次 polish 调用消耗的 prompt / completion token 数（调用前重置）
+    var lastPromptTokens: Int { get }
+    var lastCompletionTokens: Int { get }
+
     /// 润色 text，逐段返回（token 增量）。
     func polish(_ text: String, system: String, userTemplate: String) -> AsyncThrowingStream<String, Error>
 

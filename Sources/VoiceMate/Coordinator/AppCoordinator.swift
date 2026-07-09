@@ -226,14 +226,18 @@ final class AppCoordinator {
             llmBuffer = ""
             startDisplaySync()
             let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
-            let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: cfg.llm.engine)
+            let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
                     llmBuffer += chunk
                 }
-                // 流结束：flush 最后一批，停 timer，拉最终值
                 stopDisplaySync()
                 llmText = llmBuffer
+                // 累加 token 统计
+                let total = llm.lastPromptTokens + llm.lastCompletionTokens
+                if total > 0, !cfg.llm.selectedModelID.isEmpty {
+                    configStore.addLLMTokenUsage(modelID: cfg.llm.selectedModelID, tokens: total)
+                }
             } catch {
                 stopDisplaySync()
                 llmText = final
@@ -303,7 +307,7 @@ final class AppCoordinator {
             asrResult: asrText,
             llmResult: useLLM ? llmText : nil,
             engine: asrEngine?.id ?? "system",
-            llmEngine: useLLM ? configStore.config.llm.engine : nil
+            llmEngine: useLLM ? (configStore.config.llm.selectedModel?.engine) : nil
         ))
         reset()
         finalizing = false
@@ -459,10 +463,22 @@ final class AppCoordinator {
 
     func resolveLLM() -> (any LLMEngine)? {
         let cfg = configStore.config.llm
-        switch cfg.engine {
-        case "ollama": return OllamaEngine(config: cfg.ollama)
-        case "openai": return OpenAICompatibleEngine(baseUrl: cfg.openai.baseUrl, apiKey: cfg.openai.apiKey, model: cfg.openai.model, temperature: cfg.openai.temperature, kind: .openai)
-        default: return nil
+        guard let model = cfg.selectedModel else { return nil }
+        return Self.buildLLMEngine(from: model, temperature: cfg.temperature)
+    }
+
+    static func buildLLMEngine(from model: LLMModelDef, temperature: Double) -> any LLMEngine {
+        switch model.engine {
+        case "ollama":
+            return OllamaEngine(config: LLMOllamaConfig(
+                baseUrl: model.baseUrl, model: model.model,
+                temperature: temperature
+            ))
+        default:
+            return OpenAICompatibleEngine(
+                baseUrl: model.baseUrl, apiKey: model.apiKey,
+                model: model.model, temperature: temperature, kind: .openai
+            )
         }
     }
 }

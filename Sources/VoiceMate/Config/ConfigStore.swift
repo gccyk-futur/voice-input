@@ -25,11 +25,13 @@ final class ConfigStore {
 
     static func read(fileURL: URL) -> AppConfig {
         guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
+              var decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
             print("[ConfigStore] 读取 config.json 失败，使用默认配置")
             return AppConfig()
         }
-        print("[ConfigStore] config loaded, asr.engine=\(decoded.asr.engine)")
+        // 迁移：旧版单模型配置 → 多模型数组
+        decoded.llm.migrateFromLegacy()
+        print("[ConfigStore] config loaded, asr.engine=\(decoded.asr.engine), llm.models=\(decoded.llm.models.count)")
         return decoded
     }
 
@@ -59,6 +61,14 @@ final class ConfigStore {
         }
         NotificationCenter.default.post(name: Self.didChange, object: self)
         return loginItemErr
+    }
+
+    /// LLM 调用完成后累加 token 统计并自动落盘。
+    func addLLMTokenUsage(modelID: String, tokens: Int) {
+        guard let idx = config.llm.models.firstIndex(where: { $0.id == modelID }) else { return }
+        config.llm.models[idx].totalTokens += tokens
+        config.llm.models[idx].usageCount += 1
+        save()
     }
 
     func resetToDefaults() {

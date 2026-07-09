@@ -1,7 +1,7 @@
 import Foundation
 
 /// 本地 Ollama 润色引擎（/api/chat 流式，逐字返回 message.content）。
-final class OllamaEngine: LLMEngine {
+final class OllamaEngine: LLMEngine, @unchecked Sendable {
     let id = "ollama"
     let displayName = "Ollama"
 
@@ -9,7 +9,11 @@ final class OllamaEngine: LLMEngine {
     private let model: String
     private let temperature: Double
     private let numPredict: Int
-    private let client = StreamingClient()
+
+    nonisolated(unsafe) private var _lastPromptTokens: Int = 0
+    nonisolated(unsafe) private var _lastCompletionTokens: Int = 0
+    var lastPromptTokens: Int { _lastPromptTokens }
+    var lastCompletionTokens: Int { _lastCompletionTokens }
 
     init(config: LLMOllamaConfig) {
         self.baseUrl = config.baseUrl
@@ -19,6 +23,8 @@ final class OllamaEngine: LLMEngine {
     }
 
     func polish(_ text: String, system: String, userTemplate: String) -> AsyncThrowingStream<String, Error> {
+        _lastPromptTokens = 0
+        _lastCompletionTokens = 0
         var comps = URLComponents(string: baseUrl)
         comps?.path = "/api/chat"
         var req = URLRequest(url: comps?.url ?? URL(string: baseUrl)!)
@@ -34,11 +40,34 @@ final class OllamaEngine: LLMEngine {
             ]
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        return client.stream(request: req) { data in
-            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let message = obj["message"] as? [String: Any],
-                  let content = message["content"] as? String else { return nil }
-            return content
+        let reqCapture = req
+        let box = TokenBox()
+        let boxCapture = box
+        return AsyncThrowingStream { continuation in
+            _ = Task {
+                do {
+                    let (bytes, _) = try await URLSession.shared.bytes(for: reqCapture)
+                    for try await line in bytes.lines {
+                        guard let data = line.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                        if let message = obj["message"] as? [String: Any],
+                           let content = message["content"] as? String, !content.isEmpty {
+                            continuation.yield(content)
+                        }
+                        if obj["done"] as? Bool == true {
+                            boxCapture.prompt = obj["prompt_eval_count"] as? Int ?? 0
+                            boxCapture.completion = obj["eval_count"] as? Int ?? 0
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                self._lastPromptTokens = boxCapture.prompt
+                self._lastCompletionTokens = boxCapture.completion
+            }
         }
     }
 
@@ -53,4 +82,9 @@ final class OllamaEngine: LLMEngine {
               let http = response as? HTTPURLResponse else { return false }
         return http.statusCode == 200
     }
+}
+
+private final class TokenBox: @unchecked Sendable {
+    var prompt: Int = 0
+    var completion: Int = 0
 }
