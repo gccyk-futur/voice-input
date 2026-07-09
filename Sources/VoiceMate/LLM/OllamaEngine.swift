@@ -44,7 +44,7 @@ final class OllamaEngine: LLMEngine, @unchecked Sendable {
         let box = TokenBox()
         let boxCapture = box
         return AsyncThrowingStream { continuation in
-            _ = Task {
+            _ = Task { [self] in
                 do {
                     let (bytes, _) = try await URLSession.shared.bytes(for: reqCapture)
                     for try await line in bytes.lines {
@@ -59,14 +59,12 @@ final class OllamaEngine: LLMEngine, @unchecked Sendable {
                             boxCapture.completion = obj["eval_count"] as? Int ?? 0
                         }
                     }
+                    _lastPromptTokens = boxCapture.prompt
+                    _lastCompletionTokens = boxCapture.completion
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)
                 }
-            }
-            continuation.onTermination = { _ in
-                self._lastPromptTokens = boxCapture.prompt
-                self._lastCompletionTokens = boxCapture.completion
             }
         }
     }
