@@ -65,6 +65,13 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
                     let (bytes, response) = try await URLSession.shared.bytes(for: reqCapture)
                     if let httpResp = response as? HTTPURLResponse {
                         print("[LLM-Engine] HTTP \(httpResp.statusCode) \(httpResp.url?.absoluteString ?? "?")")
+                        guard httpResp.statusCode == 200 else {
+                            var errorBody = ""
+                            for try await line in bytes.lines.prefix(2) { errorBody += line }
+                            print("[LLM-Engine] HTTP error body: \(errorBody.prefix(300))")
+                            throw NSError(domain: "LLM", code: httpResp.statusCode,
+                                userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResp.statusCode): \(errorBody.prefix(200))"])
+                        }
                     }
                     var lineCount = 0
                     for try await line in bytes.lines {

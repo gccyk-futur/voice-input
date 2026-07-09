@@ -46,7 +46,13 @@ final class OllamaEngine: LLMEngine, @unchecked Sendable {
         return AsyncThrowingStream { continuation in
             _ = Task { [self] in
                 do {
-                    let (bytes, _) = try await URLSession.shared.bytes(for: reqCapture)
+                    let (bytes, response) = try await URLSession.shared.bytes(for: reqCapture)
+                    if let httpResp = response as? HTTPURLResponse, httpResp.statusCode != 200 {
+                        var errorBody = ""
+                        for try await line in bytes.lines.prefix(2) { errorBody += line }
+                        throw NSError(domain: "LLM", code: httpResp.statusCode,
+                            userInfo: [NSLocalizedDescriptionKey: "HTTP \(httpResp.statusCode): \(errorBody.prefix(200))"])
+                    }
                     for try await line in bytes.lines {
                         guard let data = line.data(using: .utf8),
                               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
