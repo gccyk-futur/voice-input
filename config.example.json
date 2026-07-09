@@ -26,6 +26,24 @@
   },
   "llm": {
     "enabled": false,
+    "temperature": 0.7,
+    "selectedModelID": "",
+    "models": [
+      {
+        "id": "example-1",
+        "name": "我的 OpenAI",
+        "engine": "openai",
+        "baseUrl": "https://api.openai.com/v1",
+        "apiKey": "sk-...",
+        "model": "gpt-4o-mini",
+        "totalTokens": 0,
+        "usageCount": 0
+      }
+    ],
+    "prompt": {
+      "system": "你是一个专业的文字润色助手，请将口语改写为书面语。",
+      "user": "{{input}}"
+    },
     "engine": "ollama",
     "openai": {
       "baseUrl": "https://api.openai.com/v1",
@@ -38,10 +56,6 @@
       "model": "qwen2.5:7b",
       "temperature": 0.7,
       "numPredict": 512
-    },
-    "prompt": {
-      "system": "你是一个专业的文字润色助手，请将口语改写为书面语。",
-      "user": "{{input}}"
     }
   }
 }

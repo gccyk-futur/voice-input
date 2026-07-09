@@ -181,23 +181,17 @@ struct StatusBarMenuView: View {
                         }
                         // 开启润色 → 检查配置是否完整
                         var cfg = config
-                        let engineConfig: (url: String, model: String) = cfg.llm.engine == "openai"
-                            ? (cfg.llm.openai.baseUrl, cfg.llm.openai.model)
-                            : (cfg.llm.ollama.baseUrl, cfg.llm.ollama.model)
-                        if engineConfig.url.trimmingCharacters(in: .whitespaces).isEmpty ||
-                           engineConfig.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                            showToast("请先在设置中配置 LLM 服务地址和模型")
+                        guard let model = cfg.llm.selectedModel else {
+                            showToast("请先在设置中添加模型")
+                            return
+                        }
+                        if model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty ||
+                           model.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                            showToast("请先在设置中完善模型信息")
                             return
                         }
                         // 真正测试联通性（异步）
-                        let engine: LLMEngine = cfg.llm.engine == "ollama"
-                            ? OllamaEngine(config: cfg.llm.ollama)
-                            : OpenAICompatibleEngine(
-                                baseUrl: cfg.llm.openai.baseUrl,
-                                apiKey: cfg.llm.openai.apiKey,
-                                model: cfg.llm.openai.model,
-                                temperature: cfg.llm.openai.temperature,
-                                kind: .openai)
+                        let engine: any LLMEngine = AppCoordinator.buildLLMEngine(from: model, temperature: cfg.llm.temperature)
                         Task {
                             let ok = await engine.checkConnectivity()
                             if ok {
@@ -217,11 +211,7 @@ struct StatusBarMenuView: View {
     }
 
     private var llmEngineLabel: String {
-        switch config.llm.engine {
-        case "ollama": return "Ollama"
-        case "openai": return "OpenAI 协议"
-        default: return ""
-        }
+        config.llm.selectedModel?.name ?? ""
     }
 
     // MARK: - 历史记录（内联展开）

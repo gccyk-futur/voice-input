@@ -12,7 +12,6 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
     private let apiKey: String
     private let model: String
     private let temperature: Double
-    private let client = StreamingClient()
 
     init(baseUrl: String, apiKey: String, model: String, temperature: Double, kind: Kind) {
         self.baseUrl = baseUrl
@@ -26,8 +25,14 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         }
     }
 
+    nonisolated(unsafe) private var _lastPromptTokens: Int = 0
+    nonisolated(unsafe) private var _lastCompletionTokens: Int = 0
+    var lastPromptTokens: Int { _lastPromptTokens }
+    var lastCompletionTokens: Int { _lastCompletionTokens }
+
     func polish(_ text: String, system: String, userTemplate: String) -> AsyncThrowingStream<String, Error> {
-        // 在 baseUrl 之后追加路径段，避免覆盖 baseUrl 原有的 /v1 前缀。
+        _lastPromptTokens = 0
+        _lastCompletionTokens = 0
         let base = URL(string: baseUrl) ?? URL(string: "https://api.openai.com/v1")!
         var req = URLRequest(url: base.appendingPathComponent("chat/completions"))
         req.httpMethod = "POST"
@@ -45,12 +50,38 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
             ]
         ]
         req.httpBody = try? JSONSerialization.data(withJSONObject: body)
-        return client.stream(request: req) { data in
-            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                  let choices = obj["choices"] as? [[String: Any]],
-                  let delta = choices.first?["delta"] as? [String: Any],
-                  let content = delta["content"] as? String else { return nil }
-            return content
+        let reqCapture = req
+        let box = TokenBox()
+        let boxCapture = box
+        return AsyncThrowingStream { continuation in
+            _ = Task {
+                do {
+                    let (bytes, _) = try await URLSession.shared.bytes(for: reqCapture)
+                    for try await line in bytes.lines {
+                        guard line.hasPrefix("data:") else { continue }
+                        let json = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
+                        if json == "[DONE]" { continue }
+                        guard let data = json.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { continue }
+                        if let choices = obj["choices"] as? [[String: Any]],
+                           let delta = choices.first?["delta"] as? [String: Any],
+                           let content = delta["content"] as? String {
+                            continuation.yield(content)
+                        }
+                        if let usage = obj["usage"] as? [String: Any] {
+                            boxCapture.prompt = usage["prompt_tokens"] as? Int ?? 0
+                            boxCapture.completion = usage["completion_tokens"] as? Int ?? 0
+                        }
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in
+                self._lastPromptTokens = boxCapture.prompt
+                self._lastCompletionTokens = boxCapture.completion
+            }
         }
     }
 
@@ -68,4 +99,10 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         // 能收到 HTTP 响应（即使 401/403/404）说明服务器可达
         return http.statusCode > 0
     }
+}
+
+/// 用于在 Sendable 闭包中传递 token 统计（绕开 Swift 6 严格并发对 self 的捕获限制）
+private final class TokenBox: @unchecked Sendable {
+    var prompt: Int = 0
+    var completion: Int = 0
 }

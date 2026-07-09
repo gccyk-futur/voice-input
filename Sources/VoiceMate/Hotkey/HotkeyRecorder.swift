@@ -155,4 +155,11 @@ final class HotkeyRecorderField: NSView {
     @objc private func toggle() {
         coordinator?.toggle(field: self)
     }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        // 重新拍快照系统动态颜色（修复暗色模式切换后背景色不更新）
+        layer?.backgroundColor = NSColor.textBackgroundColor.cgColor
+        layer?.borderColor = NSColor.separatorColor.cgColor
+    }
 }
