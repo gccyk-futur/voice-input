@@ -313,16 +313,10 @@ struct StatusBarMenuView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
     }
 
-    /// 关闭 MenuBarExtra 弹出面板（除已知窗口外全部关掉）。
+    /// 关闭弹出面板（NSPopover，由 AppDelegate 管理）
     private func dismissMenuBarExtra() {
-        let knownWindows = Set([
-            SettingsWindowController.shared.window,
-            HistoryWindowController.shared.window
-        ].compactMap { $0 })
-        DispatchQueue.main.async {
-            for win in NSApp.windows where !knownWindows.contains(win) {
-                if win.isVisible { win.orderOut(nil) }
-            }
+        if let delegate = NSApp.delegate as? AppDelegate {
+            delegate.dismissPopover()
         }
     }
 
