@@ -33,8 +33,14 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
     func polish(_ text: String, system: String, userTemplate: String) -> AsyncThrowingStream<String, Error> {
         _lastPromptTokens = 0
         _lastCompletionTokens = 0
-        let base = URL(string: baseUrl) ?? URL(string: "https://api.openai.com/v1")!
+        // 去重：如果 baseUrl 已经以 /chat/completions 结尾就不再追加
+        var urlStr = baseUrl
+        if urlStr.hasSuffix("/chat/completions") {
+            urlStr = String(urlStr.dropLast("/chat/completions".count))
+        }
+        let base = URL(string: urlStr) ?? URL(string: "https://api.openai.com/v1")!
         var req = URLRequest(url: base.appendingPathComponent("chat/completions"))
+        print("[LLM-Engine] request url=\(req.url?.absoluteString ?? "?")")
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         if !apiKey.isEmpty {
@@ -106,7 +112,11 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
     }
 
     func checkConnectivity() async -> Bool {
-        let base = URL(string: baseUrl) ?? URL(string: "https://api.openai.com/v1")!
+        var urlStr = baseUrl
+        if urlStr.hasSuffix("/chat/completions") {
+            urlStr = String(urlStr.dropLast("/chat/completions".count))
+        }
+        let base = URL(string: urlStr) ?? URL(string: "https://api.openai.com/v1")!
         let url = base.appendingPathComponent("models")
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
