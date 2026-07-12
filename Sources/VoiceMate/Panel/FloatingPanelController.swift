@@ -94,12 +94,13 @@ final class FloatingPanelController {
         panelDelegate = pdl
 
         let effect = NSVisualEffectView()
-        effect.material = .hudWindow
+        effect.material = .popover
         effect.state = .active
         effect.blendingMode = .behindWindow
         effect.translatesAutoresizingMaskIntoConstraints = false
 
-        let hosting = NSHostingView(rootView: PanelView().environment(coordinator))
+        let hosting = NSHostingView(rootView: PanelView()
+            .environment(coordinator))
         hosting.translatesAutoresizingMaskIntoConstraints = false
 
         panel.contentView = effect

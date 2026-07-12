@@ -94,18 +94,23 @@ final class AppCoordinator {
         beginRecordingFlow()
     }
 
-    /// 显式请求未决定的权限（MainActor）。
+    /// 显式请求未决定的权限。
+    /// 必须用 Task.detached：AVCaptureDevice / SFSpeechRecognizer
+    /// 权限回调在后台线程触发，与 MainActor 隔离的 CheckedContinuation 冲突会在 Debug 构建崩溃。
     private func requestPendingPermissions(micNeeded: Bool, speechNeeded: Bool) {
         panel.show()
-        Task { @MainActor in
+        Task.detached { [weak self] in
+            guard let self else { return }
             if micNeeded {
                 let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                     AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
                 }
                 print("[Coordinator] microphone requestAccess result: \(granted)")
                 guard granted else {
-                    panel.close()
-                    presentPermissionError(micDenied: true, speechDenied: false)
+                    await MainActor.run { [weak self] in
+                        self?.panel.close()
+                        self?.presentPermissionError(micDenied: true, speechDenied: false)
+                    }
                     return
                 }
             }
@@ -115,13 +120,17 @@ final class AppCoordinator {
                 }
                 print("[Coordinator] speech requestAuthorization result: \(granted)")
                 guard granted else {
-                    panel.close()
-                    presentPermissionError(micDenied: false, speechDenied: true)
+                    await MainActor.run { [weak self] in
+                        self?.panel.close()
+                        self?.presentPermissionError(micDenied: false, speechDenied: true)
+                    }
                     return
                 }
             }
             // 全部通过，继续听写流程
-            beginRecordingFlow()
+            await MainActor.run { [weak self] in
+                self?.beginRecordingFlow()
+            }
         }
     }
 
@@ -186,10 +195,10 @@ final class AppCoordinator {
                     if let ae = error as? ASRError {
                         switch ae {
                         case .microphoneNotAuthorized:
-                            self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
+                            self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
                             self.pasteService.openMicrophoneSettings()
                         case .speechNotAuthorized:
-                            self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
+                            self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
                             self.pasteService.openSpeechSettings()
                         default:
                             self.statusText = "听写启动失败：\(error.localizedDescription)"
@@ -382,10 +391,10 @@ final class AppCoordinator {
         llmText = ""
         sessionState = .idle
         if micDenied {
-            statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceMate"
+            statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
             pasteService.openMicrophoneSettings()
         } else {
-            statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceMate"
+            statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
             pasteService.openSpeechSettings()
         }
         panel.show()

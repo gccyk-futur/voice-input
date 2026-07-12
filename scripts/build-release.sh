@@ -9,7 +9,7 @@ cd "$(dirname "$0")/.."
 # ============================================================
 
 # ---- 配置 ---------------------------------------------------
-APP_NAME="VoiceMate"
+APP_NAME="VoiceKit"
 SCHEME="VoiceMate"
 BUNDLE_ID="me.ckai.VoiceMate"
 ENTITLEMENTS="Sources/VoiceMate/Resources/VoiceMate.entitlements"
@@ -73,7 +73,7 @@ step "Generating project (xcodegen)..."
 if command -v xcodegen &>/dev/null; then
   xcodegen generate --quiet 2>&1 || warn "xcodegen 警告（可能不影响构建）"
   # 恢复共享 Scheme（xcodegen 每次会清掉 xcshareddata）
-  SCHEMES_DIR="VoiceMate.xcodeproj/xcshareddata/xcschemes"
+  SCHEMES_DIR="VoiceKit.xcodeproj/xcshareddata/xcschemes"
   mkdir -p "${SCHEMES_DIR}"
   if [ -f "scripts/xcschemes/VoiceMate.xcscheme" ]; then
     cp scripts/xcschemes/VoiceMate.xcscheme "${SCHEMES_DIR}/"

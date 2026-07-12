@@ -47,7 +47,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem?.button else { return }
-        button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "VoiceMate")
+        button.image = NSImage(systemSymbolName: "waveform", accessibilityDescription: "VoiceKit")
         button.action = #selector(togglePopover)
         button.target = self
         button.sendAction(on: [.leftMouseUp, .rightMouseUp])
@@ -141,7 +141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let alert = NSAlert()
-        alert.messageText = "退出 VoiceMate？"
+        alert.messageText = "退出 VoiceKit？"
         alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
         alert.addButton(withTitle: "退出")
         alert.addButton(withTitle: "取消")

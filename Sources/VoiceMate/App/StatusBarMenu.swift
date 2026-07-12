@@ -20,7 +20,7 @@ struct StatusBarMenuView: View {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
-                Text("VoiceMate").font(.headline)
+                Text("VoiceKit").font(.headline)
                 Spacer()
                 if coordinator.sessionState != .idle {
                     Circle()
