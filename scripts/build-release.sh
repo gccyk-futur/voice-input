@@ -10,6 +10,7 @@ cd "$(dirname "$0")/.."
 
 # ---- 配置 ---------------------------------------------------
 APP_NAME="VoiceKit"
+APP_FILE="VoiceMate"
 SCHEME="VoiceMate"
 BUNDLE_ID="me.ckai.VoiceMate"
 ENTITLEMENTS="Sources/VoiceMate/Resources/VoiceMate.entitlements"
@@ -113,7 +114,7 @@ xcodebuild \
   build \
   2>&1 | grep -E "(error:|warning:|BUILD|FAILED|Signing)" || true
 
-APP_PATH="${BUILD_DIR}/Release/${APP_NAME}.app"
+APP_PATH="${BUILD_DIR}/Release/${APP_FILE}.app"
 
 if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
   error "构建失败，未找到 .app。检查上方错误信息。"
@@ -125,7 +126,7 @@ echo "   ✅ App: ${APP_PATH}"
 # Xcode 16+ 在 Release 构建中自动注入 com.apple.security.get-task-allow，
 # 公证会拒绝这个权限。需要在签名验证前手动剥离。
 step "Stripping get-task-allow entitlement..."
-XCENT="${BUILD_DIR}/VoiceMate.build/Release/VoiceMate.build/VoiceMate.app.xcent"
+XCENT="${BUILD_DIR}/VoiceKit.build/Release/${APP_FILE}.build/${APP_FILE}.app.xcent"
 if [ -f "${XCENT}" ]; then
   # Xcode 16+ 会注入此权限到 Release 构建中，必须手动移除才能通过公证
   python3 -c "
