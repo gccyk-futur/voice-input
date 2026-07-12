@@ -10,8 +10,8 @@ cd "$(dirname "$0")/.."
 
 # ---- 配置 ---------------------------------------------------
 APP_NAME="VoiceKit"
-APP_FILE="VoiceMate"
-SCHEME="VoiceMate"
+APP_FILE="VoiceKit"
+SCHEME="VoiceKit"
 BUNDLE_ID="me.ckai.VoiceMate"
 ENTITLEMENTS="Sources/VoiceMate/Resources/VoiceMate.entitlements"
 NOTARY_PROFILE="VoiceMate"

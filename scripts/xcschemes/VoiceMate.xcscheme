@@ -14,9 +14,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "VoiceMate"
-               BuildableName = "VoiceMate.app"
-               BlueprintName = "VoiceMate"
+               BlueprintIdentifier = "VoiceKit"
+               BuildableName = "VoiceKit.app"
+               BlueprintName = "VoiceKit"
                ReferencedContainer = "container:VoiceKit.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -43,9 +43,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "VoiceMate"
-            BuildableName = "VoiceMate.app"
-            BlueprintName = "VoiceMate"
+            BlueprintIdentifier = "VoiceKit"
+            BuildableName = "VoiceKit.app"
+            BlueprintName = "VoiceKit"
             ReferencedContainer = "container:VoiceKit.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -59,9 +59,9 @@
       <BuildableProductRunnable
          runnableDebuggingMode = "0">
          <BuildableReference
-            BlueprintIdentifier = "VoiceMate"
-            BuildableName = "VoiceMate.app"
-            BlueprintName = "VoiceMate"
+            BlueprintIdentifier = "VoiceKit"
+            BuildableName = "VoiceKit.app"
+            BlueprintName = "VoiceKit"
             ReferencedContainer = "container:VoiceKit.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
