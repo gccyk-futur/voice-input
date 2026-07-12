@@ -2,7 +2,7 @@
 
 macOS 语音输入助手 — 全局热键呼出，说话即转文字，自动粘贴到当前光标。
 
-**下载**: [App Store](https://apps.apple.com) | [DMG 直接下载](https://ckai.me/voice-mate)
+**下载**: [GitHub Releases](https://github.com/gccyk-futur/voice-input/releases)
 
 ## 功能
 
