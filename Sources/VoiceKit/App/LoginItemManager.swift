@@ -1,7 +1,7 @@
 import Foundation
 import ServiceManagement
 
-/// 登录项管理：基于 SMAppService.mainApp（macOS 13+，VoiceMate 为非沙盒 agent，无需 Helper）。
+/// 登录项管理：基于 SMAppService.mainApp（macOS 13+，VoiceKit 为非沙盒 agent，无需 Helper）。
 enum LoginItemManager {
     /// 根据 enabled 注册/注销主 app 为登录项。返回 nil 成功，非 nil 为错误描述。
     @discardableResult

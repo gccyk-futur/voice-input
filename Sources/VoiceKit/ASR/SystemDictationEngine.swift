@@ -1,6 +1,6 @@
 import Foundation
-import AVFoundation
-import Speech
+@preconcurrency import AVFAudio
+@preconcurrency import Speech
 import CoreMedia
 
 /// 系统听写引擎：基于 macOS 26 的 SpeechAnalyzer + DictationTranscriber（实时渐进连续听写）。
@@ -84,11 +84,11 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
             let frameCount = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
             guard frameCount > 0,
                   let outBuffer = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: frameCount) else { return }
-            var didProvide = false
+            let didProvide = ConverterFlag()
             var convError: NSError?
             converter.convert(to: outBuffer, error: &convError) { _, status in
-                guard !didProvide else { status.pointee = .noDataNow; return nil }
-                didProvide = true
+                guard !didProvide.value else { status.pointee = .noDataNow; return nil }
+                didProvide.value = true
                 status.pointee = .haveData
                 return buffer
             }

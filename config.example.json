@@ -44,18 +44,6 @@
       "system": "你是一个专业的文字润色助手，请将口语改写为书面语。",
       "user": "{{input}}"
     },
-    "engine": "ollama",
-    "openai": {
-      "baseUrl": "https://api.openai.com/v1",
-      "apiKey": "",
-      "model": "gpt-4o-mini",
-      "temperature": 0.7
-    },
-    "ollama": {
-      "baseUrl": "http://localhost:11434",
-      "model": "qwen2.5:7b",
-      "temperature": 0.7,
-      "numPredict": 512
-    }
+    "engine": ""
   }
 }

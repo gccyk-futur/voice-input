@@ -255,11 +255,11 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             let ratio = targetFormat.sampleRate / hardwareFormat.sampleRate
             let fc = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
             guard fc > 0, let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: fc) else { return }
-            var didProvide = false
+            let didProvide = ConverterFlag()
             var convErr: NSError?
             converter.convert(to: out, error: &convErr) { _, st in
-                guard !didProvide else { st.pointee = .noDataNow; return nil }
-                didProvide = true; st.pointee = .haveData; return buffer
+                guard !didProvide.value else { st.pointee = .noDataNow; return nil }
+                didProvide.value = true; st.pointee = .haveData; return buffer
             }
             guard convErr == nil, out.frameLength > 0 else { return }
             let len = Int(out.frameLength)

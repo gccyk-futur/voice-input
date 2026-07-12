@@ -1,4 +1,4 @@
-# VoiceMate 技术架构设计
+# VoiceKit 技术架构设计
 
 > 承接 `docs/technical-research.md`。本文定义模块边界、可插拔引擎协议、核心数据流与工程目录，作为 `docs/../Sources` 实现的蓝图。
 > 范围：先落地 v1.0 MVP（系统听写 + 悬浮窗 + 热键 + 粘贴 + 基础设置 + 历史 + 配置落盘），引擎协议预留 v1.1/v1.2 扩展点。
@@ -152,11 +152,11 @@ PasteService.paste(待粘贴文本) ──▶ HistoryStore.append(asr:finalText,
 ## 5. 工程目录结构
 
 ```
-VoiceMate/
+VoiceKit/
 ├── project.yml                 # xcodegen 工程定义
 ├── ExportOptions.plist         # 打包导出（发布用）
 ├── Sources/
-│   └── VoiceMate/
+│   └── VoiceKit/
 │       ├── App/
 │       │   ├── VoiceMateApp.swift          # @main，MenuBarExtra + NSApplicationDelegateAdaptor
 │       │   ├── AppDelegate.swift           # 启动 Coordinator / 权限引导
