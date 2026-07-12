@@ -87,8 +87,3 @@ final class OllamaEngine: LLMEngine, @unchecked Sendable {
         return http.statusCode == 200
     }
 }
-
-private final class TokenBox: @unchecked Sendable {
-    var prompt: Int = 0
-    var completion: Int = 0
-}

@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ============================================================
-#  VoiceMate Release Build Script
+#  VoiceKit Release Build Script
 #  签名 → 公证 → 打包 DMG
 # ============================================================
 
@@ -13,7 +13,7 @@ APP_NAME="VoiceKit"
 APP_FILE="VoiceKit"
 SCHEME="VoiceKit"
 BUNDLE_ID="me.ckai.VoiceMate"
-ENTITLEMENTS="Sources/VoiceMate/Resources/VoiceMate.entitlements"
+ENTITLEMENTS="Sources/VoiceKit/Resources/VoiceMate.entitlements"
 NOTARY_PROFILE="VoiceMate"
 BUILD_DIR="./build"
 
@@ -35,11 +35,11 @@ warn()  { echo -e "${YELLOW}⚠${NC}  $1"; }
 error() { echo -e "${RED}✗${NC}  $1"; exit 1; }
 
 # ---- 版本号 -------------------------------------------------
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/VoiceMate/Resources/Info.plist)
-BUILD_NUM=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Sources/VoiceMate/Resources/Info.plist)
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/VoiceKit/Resources/Info.plist)
+BUILD_NUM=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Sources/VoiceKit/Resources/Info.plist)
 
 echo    "========================================="
-echo -e " 🔨 ${GREEN}VoiceMate Release Build${NC}"
+echo -e " 🔨 ${GREEN}VoiceKit Release Build${NC}"
 echo    "    Version: ${VERSION} (build ${BUILD_NUM})"
 echo    "    Team:    ${TEAM_ID}"
 echo    "    Signing: ${SIGNING_IDENTITY}"
@@ -76,14 +76,14 @@ if command -v xcodegen &>/dev/null; then
   # 恢复共享 Scheme（xcodegen 每次会清掉 xcshareddata）
   SCHEMES_DIR="VoiceKit.xcodeproj/xcshareddata/xcschemes"
   mkdir -p "${SCHEMES_DIR}"
-  if [ -f "scripts/xcschemes/VoiceMate.xcscheme" ]; then
-    cp scripts/xcschemes/VoiceMate.xcscheme "${SCHEMES_DIR}/"
+  if [ -f "scripts/xcschemes/VoiceKit.xcscheme" ]; then
+    cp scripts/xcschemes/VoiceKit.xcscheme "${SCHEMES_DIR}/"
   fi
 fi
 
 # ---- 版本号自增 -----------------------------------------------
 # 每次构建 CFBundleVersion 自动 +1，确保测试时能区分版本。
-INFO_PLIST="Sources/VoiceMate/Resources/Info.plist"
+INFO_PLIST="Sources/VoiceKit/Resources/Info.plist"
 OLD_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${INFO_PLIST}")
 NEW_BUILD=$((OLD_BUILD + 1))
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEW_BUILD}" "${INFO_PLIST}"

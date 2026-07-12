@@ -2,6 +2,12 @@ import SwiftUI
 import AVFoundation
 import Speech
 
+private enum ContactInfo {
+    static let email = "gccyk2000@gmail.com"
+    static let website = "ckai.me/voice-mate"
+    static let github = "github.com/gccyk-futur/voice-input"
+}
+
 struct SettingsView: View {
     var onDone: () -> Void = {}
     var onTabChange: (Int) -> Void = { _ in }
@@ -432,14 +438,14 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label("授权后需要重启 App", systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("macOS 的安全机制有时不会立即让新权限生效。如果点击「去授权」并开启权限后，热键或粘贴仍然不工作，请退出 VoiceMate 再重新打开。")
+                Text("macOS 的安全机制有时不会立即让新权限生效。如果点击「去授权」并开启权限后，热键或粘贴仍然不工作，请退出 VoiceKit 再重新打开。")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 
-                Label("多个 VoiceMate 副本", systemImage: "doc.on.doc")
+                Label("多个 VoiceKit 副本", systemImage: "doc.on.doc")
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.top, 4)
-                Text("如果你安装过多个版本的 VoiceMate（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
+                Text("如果你安装过多个版本的 VoiceKit（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -619,7 +625,7 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 4) {
                         Image(systemName: "link").font(.caption)
-                        Text("github.com/gccyk-futur/voice-input")
+                        Text(ContactInfo.github)
                             .font(.caption).foregroundStyle(.tint)
                     }
                 }
@@ -642,7 +648,7 @@ struct SettingsView: View {
                         }
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "cloud.fill").font(.caption).foregroundStyle(.blue)
-                            Text("**阿里云 Fun-ASR**：语音数据直接发送到你自己的阿里云账号。你的 API Key、你的服务实例，VoiceMate 只负责传输，不经过任何中间服务器。")
+                            Text("**阿里云 Fun-ASR**：语音数据直接发送到你自己的阿里云账号。你的 API Key、你的服务实例，VoiceKit 只负责传输，不经过任何中间服务器。")
                                 .font(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -674,13 +680,13 @@ struct SettingsView: View {
                     
                     HStack(spacing: 6) {
                         Image(systemName: "envelope.fill").font(.caption).foregroundStyle(.secondary)
-                        Text("gccyk2000@gmail.com")
+                        Text(ContactInfo.email)
                             .font(.callout).foregroundStyle(.tint)
                     }
                     
                     HStack(spacing: 6) {
                         Image(systemName: "safari.fill").font(.caption).foregroundStyle(.secondary)
-                        Text("ckai.me/voice-mate")
+                        Text(ContactInfo.website)
                             .font(.callout).foregroundStyle(.tint)
                     }
                     Text("VoiceKit 本身不联网，不会自动检查更新。如需了解新版本，请访问上面的网站。")

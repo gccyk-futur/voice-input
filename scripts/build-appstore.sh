@@ -4,7 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ============================================================
-#  VoiceMate App Store Build Script
+#  VoiceKit App Store Build Script
 #  签名（Apple Distribution）→ Archive → Export → .pkg
 # ============================================================
 
@@ -35,11 +35,11 @@ warn()  { echo -e "${YELLOW}⚠${NC}  $1"; }
 error() { echo -e "${RED}✗${NC}  $1"; exit 1; }
 
 # ---- 版本号 -------------------------------------------------
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/VoiceMate/Resources/Info.plist)
-BUILD_NUM=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Sources/VoiceMate/Resources/Info.plist)
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" Sources/VoiceKit/Resources/Info.plist)
+BUILD_NUM=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" Sources/VoiceKit/Resources/Info.plist)
 
 echo    "========================================="
-echo -e " 📦 ${GREEN}VoiceMate App Store Build${NC}"
+echo -e " 📦 ${GREEN}VoiceKit App Store Build${NC}"
 echo    "    Version: ${VERSION} (build ${BUILD_NUM})"
 echo    "    Team:    ${TEAM_ID}"
 echo    "    Signing: ${DIST_IDENTITY}"
@@ -65,8 +65,8 @@ if command -v xcodegen &>/dev/null; then
   xcodegen generate --quiet 2>&1 || warn "xcodegen 警告（可能不影响构建）"
   SCHEMES_DIR="VoiceKit.xcodeproj/xcshareddata/xcschemes"
   mkdir -p "${SCHEMES_DIR}"
-  if [ -f "scripts/xcschemes/VoiceMate.xcscheme" ]; then
-    cp scripts/xcschemes/VoiceMate.xcscheme "${SCHEMES_DIR}/"
+  if [ -f "scripts/xcschemes/VoiceKit.xcscheme" ]; then
+    cp scripts/xcschemes/VoiceKit.xcscheme "${SCHEMES_DIR}/"
   fi
 fi
 
@@ -76,7 +76,7 @@ rm -rf "${ARCHIVE_PATH}" "${PKG_PATH}"
 mkdir -p "${BUILD_DIR}"
 
 # ---- 版本号自增 -----------------------------------------------
-INFO_PLIST="Sources/VoiceMate/Resources/Info.plist"
+INFO_PLIST="Sources/VoiceKit/Resources/Info.plist"
 OLD_BUILD=$(/usr/libexec/PlistBuddy -c "Print :CFBundleVersion" "${INFO_PLIST}")
 NEW_BUILD=$((OLD_BUILD + 1))
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${NEW_BUILD}" "${INFO_PLIST}"

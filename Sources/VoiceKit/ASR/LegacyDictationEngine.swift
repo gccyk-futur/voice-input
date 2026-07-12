@@ -1,6 +1,6 @@
 import Foundation
-import AVFoundation
-import Speech
+@preconcurrency import AVFAudio
+@preconcurrency import Speech
 
 /// 经典系统听写引擎：基于 SFSpeechRecognizer（走 Apple 服务器识别）。
 ///
@@ -94,11 +94,11 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
             let frameCount = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
             guard frameCount > 0,
                   let outBuffer = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: frameCount) else { return }
-            var didProvide = false
+            let didProvide = ConverterFlag()
             var convError: NSError?
             converter.convert(to: outBuffer, error: &convError) { _, status in
-                guard !didProvide else { status.pointee = .noDataNow; return nil }
-                didProvide = true
+                guard !didProvide.value else { status.pointee = .noDataNow; return nil }
+                didProvide.value = true
                 status.pointee = .haveData
                 return buffer
             }
