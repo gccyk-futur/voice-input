@@ -17,7 +17,7 @@
                BlueprintIdentifier = "VoiceMate"
                BuildableName = "VoiceMate.app"
                BlueprintName = "VoiceMate"
-               ReferencedContainer = "container:VoiceMate.xcodeproj">
+               ReferencedContainer = "container:VoiceKit.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,7 +46,7 @@
             BlueprintIdentifier = "VoiceMate"
             BuildableName = "VoiceMate.app"
             BlueprintName = "VoiceMate"
-            ReferencedContainer = "container:VoiceMate.xcodeproj">
+            ReferencedContainer = "container:VoiceKit.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </LaunchAction>
@@ -62,7 +62,7 @@
             BlueprintIdentifier = "VoiceMate"
             BuildableName = "VoiceMate.app"
             BlueprintName = "VoiceMate"
-            ReferencedContainer = "container:VoiceMate.xcodeproj">
+            ReferencedContainer = "container:VoiceKit.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

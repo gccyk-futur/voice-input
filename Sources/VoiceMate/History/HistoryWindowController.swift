@@ -22,7 +22,7 @@ final class HistoryWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        win.title = "VoiceMate 历史"
+        win.title = "VoiceKit 历史"
         win.contentView = NSHostingView(rootView: HistoryView())
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]

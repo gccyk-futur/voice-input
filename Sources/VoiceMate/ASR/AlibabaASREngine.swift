@@ -110,34 +110,43 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         // 统一接收循环：处理所有服务端事件
         let task = Task.detached { [weak self] in
             guard let self else { return }
-            do {
-                while true {
-                    let msg = try await self.webSocketTask?.receive()
-                    guard let msg else { break }
-                    switch msg {
-                    case .string(let jsonText):
-                        guard let data = jsonText.data(using: .utf8),
-                              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                              let header = json["header"] as? [String: Any],
-                              let event = header["event"] as? String else { continue }
-                        self.handle(event: event, header: header, json: json)
-                    case .data: break
-                    @unknown default: break
-                    }
+            while true {
+                // 检查是否被取消（防止旧接收循环与新连接并存）
+                if Task.isCancelled { break }
+
+                guard let ws = self.webSocketTask else { break }
+
+                let msg: URLSessionWebSocketTask.Message
+                do {
+                    msg = try await ws.receive()
+                } catch {
+                    // 对端关闭、网络断开、超时等 → 触发重连
+                    print("[AlibabaASR] 接收循环断开: \(error)")
+                    break
                 }
-            } catch {
-                print("[AlibabaASR] 接收循环断开: \(error)")
-                self.stateLock.withLock {
-                    self._isConnected = false
-                    self._reconnectAttempt += 1
+
+                switch msg {
+                case .string(let jsonText):
+                    guard let data = jsonText.data(using: .utf8),
+                          let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                          let header = json["header"] as? [String: Any],
+                          let event = header["event"] as? String else { continue }
+                    self.handle(event: event, header: header, json: json)
+                case .data: break
+                @unknown default: break
                 }
-                // 自动重连（指数退避 + jitter）
-                let delay = self.nextReconnectDelay()
-                let delayStr = String(format: "%.1f", delay)
-                print("[AlibabaASR] 将在 \(delayStr)s 后重连...")
-                try? await Task.sleep(for: .seconds(delay))
-                self.connect()
             }
+            // 接收循环退出（断连 / 错误 / 对端关闭）→ 自动重连
+            guard !Task.isCancelled else { return }
+            self.stateLock.withLock {
+                self._isConnected = false
+                self._reconnectAttempt += 1
+            }
+            let delay = self.nextReconnectDelay()
+            let delayStr = String(format: "%.1f", delay)
+            print("[AlibabaASR] 将在 \(delayStr)s 后重连...")
+            try? await Task.sleep(for: .seconds(delay))
+            self.connect()
         }
         stateLock.withLock { _receiveTask = task }
     }

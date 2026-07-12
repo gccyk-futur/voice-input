@@ -4,6 +4,7 @@ import Speech
 
 struct SettingsView: View {
     var onDone: () -> Void = {}
+    var onTabChange: (Int) -> Void = { _ in }
 
     @State private var draft: AppConfig = ConfigStore.shared.config
     /// 打开设置时的原始配置，用于判断是否有未保存变更
@@ -32,10 +33,13 @@ struct SettingsView: View {
                 Text("常规").tag(0)
                 Text("语音识别").tag(1)
                 Text("AI 润色").tag(2)
-                Text("关于").tag(3)
+                Text("权限").tag(3)
+                Text("关于").tag(4)
             }
             .pickerStyle(.segmented)
             .padding(.horizontal, 20).padding(.top, 12)
+            .onChange(of: selectedTab) { _, newTab in onTabChange(newTab) }
+            .onAppear { onTabChange(selectedTab) }
 
             ScrollView {
                 VStack(spacing: 0) {
@@ -59,7 +63,8 @@ struct SettingsView: View {
                         case 0: generalTab
                         case 1: asrTab
                         case 2: llmTab
-                        case 3: aboutTab
+                        case 3: permissionTab
+                        case 4: aboutTab
                         default: EmptyView()
                         }
                     }
@@ -67,7 +72,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(width: 560, height: 620)
+        .frame(minWidth: 520, idealWidth: 560)
         .toolbar {
             ToolbarItem(placement: .confirmationAction) { Button("保存") { save() }.disabled(!hasChanges) }
             ToolbarItem(placement: .cancellationAction) { Button("取消") { onDone() } }
@@ -145,22 +150,8 @@ struct SettingsView: View {
             }
 
             Divider()
-            HStack {
-                Text("权限状态").font(.headline)
-                Spacer()
-                Button("刷新") { permissionRefreshID = UUID() }.buttonStyle(.plain).font(.caption)
-            }
-            Text("如果粘贴功能已正常，则辅助功能实际已授权，显示状态可能有延迟。")
+            Text("如有权限问题，请在「权限」标签中查看和授权。")
                 .font(.caption2).foregroundStyle(.tertiary)
-            permissionRow(icon: "mic", name: "麦克风",
-                reason: "语音识别需要采集音频输入",
-                status: micStatus, action: { PasteService.shared.openMicrophoneSettings() })
-            permissionRow(icon: "text.bubble", name: "语音识别",
-                reason: "将语音实时转为文字",
-                status: speechStatus, action: { PasteService.shared.openSpeechSettings() })
-            permissionRow(icon: "accessibility", name: "辅助功能",
-                reason: "将识别结果自动粘贴到目标 app",
-                status: accessibilityStatus, action: { PasteService.shared.openAccessibilitySettings() })
         }
     }
 
@@ -400,6 +391,69 @@ struct SettingsView: View {
 
     // MARK: - 权限
 
+    private var permissionTab: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("VoiceKit 的正常运行需要以下系统权限。")
+                .font(.callout).foregroundStyle(.secondary)
+            
+            // 麦克风
+            permissionCard(
+                icon: "mic.fill",
+                name: "麦克风",
+                why: "听到你的声音，才能转成文字",
+                ifDenied: "不授权：无法使用语音输入",
+                status: micStatus,
+                action: { PasteService.shared.openMicrophoneSettings() }
+            )
+            
+            // 语音识别
+            permissionCard(
+                icon: "text.bubble.fill",
+                name: "语音识别",
+                why: "把你说的话实时转写成文字",
+                ifDenied: "不授权：无法使用语音输入",
+                status: speechStatus,
+                action: { PasteService.shared.openSpeechSettings() }
+            )
+            
+            // 辅助功能（粘贴 + 全局热键）
+            permissionCard(
+                icon: "keyboard.fill",
+                name: "辅助功能",
+                why: "识别完成后自动粘贴到输入框，无需手动复制。同时保证全局热键在任意 App 中都生效。",
+                ifDenied: "不授权：需手动 ⌘V 粘贴；从 App Store 下载的版本热键也可能受影响",
+                status: accessibilityStatus,
+                action: { PasteService.shared.openAccessibilitySettings() }
+            )
+            
+            Divider()
+            
+            // 引导提示
+            VStack(alignment: .leading, spacing: 6) {
+                Label("授权后需要重启 App", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.caption).foregroundStyle(.secondary)
+                Text("macOS 的安全机制有时不会立即让新权限生效。如果点击「去授权」并开启权限后，热键或粘贴仍然不工作，请退出 VoiceMate 再重新打开。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                
+                Label("多个 VoiceMate 副本", systemImage: "doc.on.doc")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                Text("如果你安装过多个版本的 VoiceMate（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
+                    .font(.caption2).foregroundStyle(.tertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(10)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.blue.opacity(0.05))
+            )
+            
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
     private enum PermissionStatus { case granted, denied, notDetermined }
 
     private var micStatus: PermissionStatus {
@@ -430,19 +484,40 @@ struct SettingsView: View {
         return .notDetermined
     }
 
-    private func permissionRow(icon: String, name: String, reason: String, status: PermissionStatus, action: @escaping () -> Void) -> some View {
-        HStack(spacing: 8) {
-            Image(systemName: icon).frame(width: 18)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(name).font(.body)
-                Text(reason).font(.caption).foregroundStyle(.secondary)
+    private func permissionCard(icon: String, name: String, why: String, ifDenied: String, status: PermissionStatus, action: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Image(systemName: icon)
+                    .font(.title3)
+                    .foregroundStyle(status == .granted ? .green : .secondary)
+                    .frame(width: 24)
+                Text(name).font(.body).bold()
+                Spacer()
+                statusBadge(status)
+                if status != .granted {
+                    Button("去授权") { action() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                }
             }
-            Spacer()
-            statusBadge(status)
+            Text(why)
+                .font(.caption).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
             if status != .granted {
-                Button("打开") { action() }.buttonStyle(.bordered).controlSize(.small)
+                Text(ifDenied)
+                    .font(.caption2).foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(status == .granted ? Color.green.opacity(0.05) : Color.orange.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(status == .granted ? Color.green.opacity(0.2) : Color.orange.opacity(0.2), lineWidth: 1)
+        )
     }
 
     private func statusBadge(_ status: PermissionStatus) -> some View {
@@ -518,14 +593,14 @@ struct SettingsView: View {
     // MARK: - 关于
 
     private var aboutTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(spacing: 10) {
                 Image(systemName: "waveform")
                     .font(.title2)
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("VoiceMate").font(.title2).bold()
-                    Text("macOS 语音输入助手")
+                    Text("VoiceKit").font(.title2).bold()
+                    Text("macOS 语音输入助手 — 全局热键，说话即输入")
                         .font(.caption).foregroundStyle(.secondary)
                     Text(aboutVersionString)
                         .font(.caption2).foregroundStyle(.tertiary)
@@ -534,14 +609,17 @@ struct SettingsView: View {
 
             Divider()
 
-            GroupBox("开源声明") {
+            // 开源声明
+            GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("VoiceMate 是完全开源的软件，代码托管在 GitHub，接受社区审计。")
+                    Label("开源免费 · 无需注册", systemImage: "lock.open")
+                        .font(.headline)
+                    Text("VoiceKit 是完全开源的软件，代码托管在 GitHub，任何人都可以查看、审计和参与改进。没有付费墙，没有隐藏费用，也不需要注册任何账号。")
                         .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 4) {
-                        Image(systemName: "link")
-                            .font(.caption)
-                        Text("https://github.com/gccyk-futur/voice-input")
+                        Image(systemName: "link").font(.caption)
+                        Text("github.com/gccyk-futur/voice-input")
                             .font(.caption).foregroundStyle(.tint)
                     }
                 }
@@ -549,29 +627,65 @@ struct SettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            GroupBox("隐私与安全") {
+            // 数据流向：分引擎说明
+            GroupBox {
+                VStack(alignment: .leading, spacing: 12) {
+                    Label("你的数据流向哪里？", systemImage: "arrow.triangle.branch")
+                        .font(.headline)
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "house.fill").font(.caption).foregroundStyle(.green)
+                            Text("**系统听写**：语音数据由 macOS 内置引擎在本地处理，不出设备。")
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "cloud.fill").font(.caption).foregroundStyle(.blue)
+                            Text("**阿里云 Fun-ASR**：语音数据直接发送到你自己的阿里云账号。你的 API Key、你的服务实例，VoiceMate 只负责传输，不经过任何中间服务器。")
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "cpu.fill").font(.caption).foregroundStyle(.orange)
+                            Text("**AI 润色**：识别文本直接发送到你配置的 AI 服务（OpenAI / DeepSeek / Claude / Ollama 等）。如果用 Ollama 本地模型，数据完全不出电脑。")
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    Label("VoiceKit 不碰你的数据", systemImage: "hand.raised.fill")
+                        .font(.headline)
+                    Text("VoiceKit 是一个纯粹的工具软件。没有后台服务器，不收集任何数据，不统计使用情况，不追踪用户行为。你的语音和文字直接在你和设备和你自己的云服务之间流转，VoiceKit 只是中间的管道。")
+                        .font(.callout)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // 联系与更新
+            GroupBox {
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "checkmark.shield")
-                            .font(.caption).foregroundStyle(.green)
-                        Text("打包使用 Apple Developer ID 签名，安全可靠，可直接安装使用。")
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
+                    Label("联系与更新", systemImage: "envelope")
+                        .font(.headline)
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "envelope.fill").font(.caption).foregroundStyle(.secondary)
+                        Text("gccyk2000@gmail.com")
+                            .font(.callout).foregroundStyle(.tint)
                     }
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "hand.raised")
-                            .font(.caption).foregroundStyle(.green)
-                        Text("软件**不收集任何隐私数据**。ASR 语音识别和 LLM 润色均使用用户自行配置的 API Key 直连对应服务，数据不经由任何第三方中转。")
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
+                    
+                    HStack(spacing: 6) {
+                        Image(systemName: "safari.fill").font(.caption).foregroundStyle(.secondary)
+                        Text("ckai.me/voice-mate")
+                            .font(.callout).foregroundStyle(.tint)
                     }
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                            .font(.caption).foregroundStyle(.green)
-                        Text("软件本身没有网络服务、没有遥测、没有统计数据上报。所有网络请求均由用户配置的 ASR/LLM 服务触发。")
-                            .font(.callout)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                    Text("VoiceKit 本身不联网，不会自动检查更新。如需了解新版本，请访问上面的网站。")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -579,7 +693,7 @@ struct SettingsView: View {
 
             Spacer()
 
-            Text("Copyright © 2026 VoiceMate. MIT License.")
+            Text("Copyright © 2026 VoiceKit. MIT License.")
                 .font(.caption2).foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
         }

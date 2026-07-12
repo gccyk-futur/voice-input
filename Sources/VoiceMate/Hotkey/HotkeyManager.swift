@@ -2,16 +2,28 @@ import AppKit
 import Carbon.HIToolbox
 import ApplicationServices
 
-/// 全局热键管理：使用 Carbon 的 RegisterEventHotKey（无需辅助功能权限）。
-/// 热键字符串形如 "Cmd+Shift+V"，可自定义并在设置中热切换。
+/// 全局热键管理：双引擎自动切换。
+///
+/// - 非沙盒环境：Carbon RegisterEventHotKey（零权限，静默注册）
+/// - 沙盒环境（App Store）：自动回退到 NSEvent Global Monitor（需辅助功能权限）
+///
+/// 两者对外接口完全一致，调用方无需感知底层实现。
 @MainActor
 final class HotkeyManager {
     static let shared = HotkeyManager()
 
+    // Carbon 引擎
     private var hotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private let signature: OSType = 0x564D5445 // 'VMTE'
     fileprivate let hotKeyIDValue: UInt32 = 1
+
+    // NSEvent Global Monitor 引擎（沙盒回退）
+    private var globalMonitor: Any?
+
+    /// 当前活跃的引擎类型
+    private enum Engine { case carbon, globalMonitor }
+    private var activeEngine: Engine = .carbon
 
     /// 热键触发回调（已调度到主线程）。
     var onActivate: (() -> Void)?
@@ -19,34 +31,52 @@ final class HotkeyManager {
     nonisolated(unsafe) var capturedTargetApp: NSRunningApplication?
     /// 上次触发时间：用于过滤按键自动重复（auto-repeat）造成的二次触发。
     fileprivate var lastActivation: Date = .distantPast
+    /// 当前热键字符串，供 Global Monitor 匹配用
+    private var currentHotkeyString: String = ""
 
     // MARK: - 注册 / 注销
 
     /// 依据热键字符串（如 "Cmd+Shift+V"）注册；重复调用会先注销旧热键。
     func register(hotkeyString: String) {
         unregister()
+        currentHotkeyString = hotkeyString
         guard let (keyCode, modifiers) = Self.parse(hotkeyString) else {
             print("[HotkeyManager] 无法解析热键：\(hotkeyString)")
             return
         }
-        installEventHandler()
+
+        // 策略 1：尝试 Carbon RegisterEventHotKey（零权限，首选）
+        installCarbonHandler()
         let hotKeyID = EventHotKeyID(signature: signature, id: hotKeyIDValue)
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
-        if status != noErr {
-            print("[HotkeyManager] RegisterEventHotKey 失败，状态码：\(status)")
+        if status == noErr {
+            activeEngine = .carbon
+            print("[HotkeyManager] Carbon 热键注册成功: \(hotkeyString)")
+            return
         }
+
+        // 策略 2：Carbon 失败（沙盒环境）→ 回退 NSEvent Global Monitor
+        print("[HotkeyManager] Carbon 注册失败 (status=\(status))，回退 Global Monitor: \(hotkeyString)")
+        activeEngine = .globalMonitor
+        installGlobalMonitor(keyCode: keyCode, modifiers: modifiers, hotkeyString: hotkeyString)
     }
 
     func unregister() {
+        // 注销 Carbon
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
         }
+        // 注销 Global Monitor
+        if let monitor = globalMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalMonitor = nil
+        }
     }
 
-    // MARK: - 事件处理
+    // MARK: - Carbon 事件处理
 
-    private func installEventHandler() {
+    private func installCarbonHandler() {
         guard eventHandler == nil else { return }
         var types = [EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -61,6 +91,49 @@ final class HotkeyManager {
             selfPtr,
             &eventHandler
         )
+    }
+
+    // MARK: - NSEvent Global Monitor（沙盒回退）
+
+    /// 使用 NSEvent.addGlobalMonitorForEvents 捕获全局按键。
+    /// 需要辅助功能权限（AccessibilityPasteService 已引导用户授权）。
+    private func installGlobalMonitor(keyCode: UInt32, modifiers: UInt32, hotkeyString: String) {
+        let targetModifiers = Self.nseventModifiers(from: modifiers)
+
+        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self else { return }
+            // 仅匹配 keyDown（忽略 auto-repeat：重复触发冷却由 lastActivation 统一处理）
+            guard !event.isARepeat else { return }
+
+            // 匹配修饰键 + 键码
+            let eventMods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard eventMods == targetModifiers, event.keyCode == UInt16(keyCode) else { return }
+
+            // 捕获前台 App（与 Carbon 路径行为一致）
+            self.capturedTargetApp = NSWorkspace.shared.frontmostApplication
+            print("[Hotkey] captured targetApp=\(self.capturedTargetApp?.localizedName ?? "nil")")
+
+            DispatchQueue.main.async {
+                let now = Date()
+                if now.timeIntervalSince(self.lastActivation) < 0.4 {
+                    print("[Hotkey] 忽略重复触发（auto-repeat 冷却中）")
+                    return
+                }
+                self.lastActivation = now
+                self.onActivate?()
+            }
+        }
+        print("[HotkeyManager] Global Monitor 注册成功: \(hotkeyString)")
+    }
+
+    /// 将 Carbon modifiers 转换为 NSEvent.ModifierFlags。
+    private static func nseventModifiers(from carbonModifiers: UInt32) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if carbonModifiers & UInt32(cmdKey) != 0 { flags.insert(.command) }
+        if carbonModifiers & UInt32(shiftKey) != 0 { flags.insert(.shift) }
+        if carbonModifiers & UInt32(optionKey) != 0 { flags.insert(.option) }
+        if carbonModifiers & UInt32(controlKey) != 0 { flags.insert(.control) }
+        return flags
     }
 
     // MARK: - 解析
