@@ -7,7 +7,7 @@
 	<key>CFBundleDisplayName</key>
 	<string>VoiceKit</string>
 	<key>CFBundleExecutable</key>
-	<string>VoiceMate</string>
+	<string>VoiceKit</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
@@ -21,7 +21,7 @@
 	<key>CFBundleShortVersionString</key>
 	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>12</string>
+	<string>13</string>
 	<key>LSApplicationCategoryType</key>
 	<string>public.app-category.utilities</string>
 	<key>LSUIElement</key>

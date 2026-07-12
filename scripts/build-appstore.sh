@@ -10,7 +10,7 @@ cd "$(dirname "$0")/.."
 
 # ---- 配置 ---------------------------------------------------
 APP_NAME="VoiceKit"
-SCHEME="VoiceMate"
+SCHEME="VoiceKit"
 BUNDLE_ID="me.ckai.VoiceMate"
 EXPORT_OPTIONS="./scripts/exportOptions-appstore.plist"
 BUILD_DIR="./build"
