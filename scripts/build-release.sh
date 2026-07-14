@@ -18,8 +18,8 @@ NOTARY_PROFILE="VoiceMate"
 BUILD_DIR="./build"
 
 # 开发者身份（通过 1Password CLI 读取，不硬编码在仓库中）
-TEAM_ID="$(op read op://key/apple/TEAM_ID)"
-SIGNING_NAME="$(op read op://key/apple/SIGNING_NAME)"
+TEAM_ID="$(op read op://My-Keys/apple/TEAM_ID)"
+SIGNING_NAME="$(op read op://My-Keys/apple/SIGNING_NAME)"
 export VOICEMATE_TEAM_ID="${TEAM_ID}"
 export VOICEMATE_SIGNING_NAME="${SIGNING_NAME}"
 SIGNING_IDENTITY="Developer ID Application: ${SIGNING_NAME} (${TEAM_ID})"

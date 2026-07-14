@@ -2,7 +2,9 @@ import Foundation
 import SwiftUI
 import Speech
 import AppKit
+#if !APP_STORE
 import ApplicationServices
+#endif
 import AVFoundation
 
 /// 应用中枢：持有各服务，驱动会话状态机（idle→recording→transcribing→polishing→ready）。
@@ -274,12 +276,13 @@ final class AppCoordinator {
         let target = targetApp
         targetApp = nil
 
-        // 先关闭面板，让 Accessibility API 能正确拿到目标 App 的焦点元素
+        // 先关闭面板
         panel.close()
 
         print("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
 
-        // 策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）
+#if !APP_STORE
+        // 官网版策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）
         let axService = AccessibilityPasteService.shared
         if axService.isTrusted {
             let inserted = axService.insertText(text)
@@ -292,8 +295,9 @@ final class AppCoordinator {
         } else {
             print("[Paste] 辅助功能未授权，使用剪贴板方案")
         }
+#endif
 
-        // 策略2：剪贴板 + Cmd+V（回退方案）
+        // 剪贴板 + Cmd+V
         guard let target else {
             pasteService.writeClipboardOnly(text)
             finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板")
@@ -312,10 +316,12 @@ final class AppCoordinator {
 
     private func finalizeAndRecord(useLLM: Bool, statusText: String?) {
         if let msg = statusText { self.statusText = msg }
+#if !APP_STORE
         // 引导用户授权辅助功能（授权后可享丝滑直插体验）
         if !AccessibilityPasteService.shared.isTrusted {
             self.statusText = (statusText ?? "") + " 授权辅助功能后可自动输入"
         }
+#endif
         historyStore.append(HistoryItem(
             asrResult: asrText,
             llmResult: useLLM ? llmText : nil,

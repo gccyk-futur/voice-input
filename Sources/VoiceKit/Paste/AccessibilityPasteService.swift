@@ -1,3 +1,5 @@
+#if !APP_STORE
+
 import AppKit
 import ApplicationServices
 
@@ -8,7 +10,8 @@ import ApplicationServices
 /// - 不模拟按键（无需焦点切换）
 /// - 文字直接出现在目标 App 的输入框中
 ///
-/// 这是 Superwhisper、MacWhisper、Wispr Flow 等头部听写 App 的标准做法。
+/// 仅官网分发版使用。App Store 版受 Guideline 2.4.5 限制，禁用此实现，
+/// 统一走 PasteService 剪贴板方案。
 @MainActor
 final class AccessibilityPasteService {
     static let shared = AccessibilityPasteService()
@@ -47,7 +50,6 @@ final class AccessibilityPasteService {
                 return false
             }
 
-            // 读取当前值（用于验证写入是否成功）
             let before = (try? getValue(focusedElement)) ?? ""
 
             let result = AXUIElementSetAttributeValue(
@@ -60,7 +62,6 @@ final class AccessibilityPasteService {
                 return false
             }
 
-            // 验证写入：部分 App（如某些 Electron 应用）静默失败
             let after = (try? getValue(focusedElement)) ?? ""
             if before == after, !before.isEmpty {
                 print("[AccessibilityPaste] 写入验证失败（值未变化），回退剪贴板方案")
@@ -117,3 +118,5 @@ enum AccessibilityPasteError: LocalizedError {
         }
     }
 }
+
+#endif

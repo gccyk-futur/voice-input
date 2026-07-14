@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceKit 支持</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; line-height: 1.6; }
+        .container { max-width: 680px; margin: 0 auto; padding: 60px 24px; }
+        h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { color: #86868b; font-size: 17px; margin-bottom: 40px; }
+        .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+        p, li { font-size: 15px; color: #3a3a3c; }
+        ul { padding-left: 20px; margin: 8px 0; }
+        li { margin-bottom: 4px; }
+        a { color: #0071e3; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .footer { margin-top: 40px; color: #86868b; font-size: 13px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VoiceKit</h1>
+        <p class="subtitle">macOS 语音输入助手 — 全局热键，说话即输入</p>
+
+        <div class="card">
+            <h2>常见问题</h2>
+            <p><strong>Q: 热键不生效怎么办？</strong><br>
+            A: 请确保已在 系统设置 → 隐私与安全性 → 辅助功能 中授权 VoiceKit。</p>
+            <p style="margin-top: 12px;"><strong>Q: 听写不工作？</strong><br>
+            A: 检查 系统设置 → 隐私与安全性 → 麦克风 和 语音识别 权限是否已授权。</p>
+            <p style="margin-top: 12px;"><strong>Q: 如何配置 AI 润色？</strong><br>
+            A: 在设置 → AI 润色 中添加模型，支持兼容 OpenAI API 格式的云端服务和 Ollama 本地模型。</p>
+            <p style="margin-top: 12px;"><strong>Q: 我的数据安全吗？</strong><br>
+            A: VoiceKit 是纯客户端工具，无后台服务器。语音数据直接传输到你配置的服务，不经过第三方。详见<a href="https://github.com/gccyk-futur/voice-input/blob/main/PRIVACY.md">隐私政策</a>。</p>
+        </div>
+
+        <div class="card">
+            <h2>联系方式</h2>
+            <p>📧 <a href="mailto:gccyk2000@gmail.com">gccyk2000@gmail.com</a></p>
+            <p>💻 <a href="https://github.com/gccyk-futur/voice-input">GitHub</a></p>
+        </div>
+
+        <div class="card">
+            <h2>下载</h2>
+            <p>从 <a href="https://github.com/gccyk-futur/voice-input/releases">GitHub Releases</a> 下载最新版本，或在 Mac App Store 搜索 "VoiceKit"。</p>
+        </div>
+
+        <div class="footer">
+            VoiceKit · MIT License · Copyright © 2026
+        </div>
+    </div>
+</body>
+</html>

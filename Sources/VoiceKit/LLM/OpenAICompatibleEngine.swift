@@ -38,7 +38,15 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         if urlStr.hasSuffix("/chat/completions") {
             urlStr = String(urlStr.dropLast("/chat/completions".count))
         }
+#if APP_STORE
+        guard let base = URL(string: urlStr) else {
+            return AsyncThrowingStream { continuation in
+                continuation.finish(throwing: NSError(domain: "LLM", code: -1, userInfo: [NSLocalizedDescriptionKey: "未配置有效的 API 地址"]))
+            }
+        }
+#else
         let base = URL(string: urlStr) ?? URL(string: "https://api.openai.com/v1")!
+#endif
         var req = URLRequest(url: base.appendingPathComponent("chat/completions"))
         print("[LLM-Engine] request url=\(req.url?.absoluteString ?? "?")")
         req.httpMethod = "POST"
@@ -122,7 +130,14 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
         if urlStr.hasSuffix("/chat/completions") {
             urlStr = String(urlStr.dropLast("/chat/completions".count))
         }
+#if APP_STORE
+        guard let base = URL(string: urlStr) else {
+            print("[LLM-Engine] invalid base URL for connectivity check")
+            return false
+        }
+#else
         let base = URL(string: urlStr) ?? URL(string: "https://api.openai.com/v1")!
+#endif
         let url = base.appendingPathComponent("models")
         var req = URLRequest(url: url)
         req.httpMethod = "GET"
