@@ -1,5 +1,7 @@
 import AppKit
+#if !APP_STORE
 import ApplicationServices
+#endif
 
 /// 粘贴服务：写剪贴板 + postToPid ⌘V。
 /// macOS 26 上 postToPid 可靠；14 上可能被丢弃，此时文字在剪贴板中可手动粘贴。
@@ -26,7 +28,7 @@ final class PasteService {
         saveCurrentClipboard()
         writeClipboard(text)
         let sent = simulateCmdVviaPostToPid(pid: pid)
-        print("[Paste] postToPid ⌘V → pid=\(pid), isTrusted=\(isTrusted), sent=\(sent)")
+        print("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
 
         // 恢复策略：
         // - 发送失败 → 立即恢复
@@ -105,8 +107,9 @@ final class PasteService {
         return true
     }
 
-    // MARK: - 辅助功能
+    // MARK: - 辅助功能（仅官网版）
 
+#if !APP_STORE
     var isTrusted: Bool {
         AXIsProcessTrusted()
     }
@@ -114,6 +117,7 @@ final class PasteService {
     func openAccessibilitySettings() {
         openPane("Privacy_Accessibility")
     }
+#endif
 
     func openMicrophoneSettings() {
         openPane("Privacy_Microphone")

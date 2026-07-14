@@ -1,11 +1,13 @@
 import AppKit
 import Carbon.HIToolbox
+#if !APP_STORE
 import ApplicationServices
+#endif
 
-/// 全局热键管理：双引擎自动切换。
+/// 全局热键管理：
 ///
-/// - 非沙盒环境：Carbon RegisterEventHotKey（零权限，静默注册）
-/// - 沙盒环境（App Store）：自动回退到 NSEvent Global Monitor（需辅助功能权限）
+/// - 官网版：Carbon RegisterEventHotKey 优先，失败回退 NSEvent Global Monitor（需辅助功能权限）
+/// - App Store 版：仅 Carbon RegisterEventHotKey（沙盒可用，无需辅助功能权限）
 ///
 /// 两者对外接口完全一致，调用方无需感知底层实现。
 @MainActor
@@ -18,12 +20,14 @@ final class HotkeyManager {
     private let signature: OSType = 0x564D5445 // 'VMTE'
     fileprivate let hotKeyIDValue: UInt32 = 1
 
-    // NSEvent Global Monitor 引擎（沙盒回退）
+#if !APP_STORE
+    // NSEvent Global Monitor 引擎（官网版沙盒回退）
     private var globalMonitor: Any?
 
     /// 当前活跃的引擎类型
     private enum Engine { case carbon, globalMonitor }
     private var activeEngine: Engine = .carbon
+#endif
 
     /// 热键触发回调（已调度到主线程）。
     var onActivate: (() -> Void)?
@@ -45,33 +49,40 @@ final class HotkeyManager {
             return
         }
 
-        // 策略 1：尝试 Carbon RegisterEventHotKey（零权限，首选）
+        // Carbon RegisterEventHotKey（零权限，沙盒可用）
         installCarbonHandler()
         let hotKeyID = EventHotKeyID(signature: signature, id: hotKeyIDValue)
         let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
         if status == noErr {
+#if !APP_STORE
             activeEngine = .carbon
+#endif
             print("[HotkeyManager] Carbon 热键注册成功: \(hotkeyString)")
             return
         }
 
-        // 策略 2：Carbon 失败（沙盒环境）→ 回退 NSEvent Global Monitor
+#if !APP_STORE
+        // 官网版：Carbon 失败 → 回退 NSEvent Global Monitor
         print("[HotkeyManager] Carbon 注册失败 (status=\(status))，回退 Global Monitor: \(hotkeyString)")
         activeEngine = .globalMonitor
         installGlobalMonitor(keyCode: keyCode, modifiers: modifiers, hotkeyString: hotkeyString)
+#else
+        // App Store 版：Carbon 失败就失败了，不能碰 Accessibility
+        print("[HotkeyManager] Carbon 热键注册失败 (status=\(status)): \(hotkeyString)")
+#endif
     }
 
     func unregister() {
-        // 注销 Carbon
         if let ref = hotKeyRef {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
         }
-        // 注销 Global Monitor
+#if !APP_STORE
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
         }
+#endif
     }
 
     // MARK: - Carbon 事件处理
@@ -93,10 +104,11 @@ final class HotkeyManager {
         )
     }
 
-    // MARK: - NSEvent Global Monitor（沙盒回退）
+#if !APP_STORE
+    // MARK: - NSEvent Global Monitor（官网版沙盒回退）
 
     /// 使用 NSEvent.addGlobalMonitorForEvents 捕获全局按键。
-    /// 需要辅助功能权限（AccessibilityPasteService 已引导用户授权）。
+    /// 需要辅助功能权限。
     private func installGlobalMonitor(keyCode: UInt32, modifiers: UInt32, hotkeyString: String) {
         let targetModifiers = Self.nseventModifiers(from: modifiers)
 
@@ -125,6 +137,7 @@ final class HotkeyManager {
         }
         print("[HotkeyManager] Global Monitor 注册成功: \(hotkeyString)")
     }
+#endif
 
     /// 将 Carbon modifiers 转换为 NSEvent.ModifierFlags。
     private static func nseventModifiers(from carbonModifiers: UInt32) -> NSEvent.ModifierFlags {

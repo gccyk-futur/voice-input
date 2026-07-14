@@ -1,10 +1,13 @@
 import SwiftUI
 import AVFoundation
 import Speech
+#if !APP_STORE
+import ApplicationServices
+#endif
 
 private enum ContactInfo {
     static let email = "gccyk2000@gmail.com"
-    static let website = "ckai.me/voice-mate"
+    static let website = "ckai.me/voice-kit"
     static let github = "github.com/gccyk-futur/voice-input"
 }
 
@@ -304,7 +307,7 @@ struct SettingsView: View {
                             .buttonStyle(.bordered).controlSize(.small)
                     }
                     if draft.llm.models.isEmpty {
-                        Text("点击「管理模型」添加 LLM 服务，支持 OpenAI 协议和 Ollama。")
+                        Text("点击「管理模型」添加 LLM 服务，支持云端 API 和本地模型。")
                             .font(.caption2).foregroundStyle(.tertiary)
                     } else if let model = draft.llm.selectedModel {
                         Text("引擎：\(model.engine)  ·  模型：\(model.model)")
@@ -326,7 +329,7 @@ struct SettingsView: View {
                 // ── 连接测试 ──
                 LLMConnectivityTest(llmConfig: draft.llm)
 
-                // ── 深度思考（仅 OpenAI 模型） ──
+                // ── 深度思考 ──
                 if let model = draft.llm.selectedModel, model.engine == "openai" {
                     Toggle("深度思考 (thinking)", isOn: Binding(
                         get: {
@@ -422,15 +425,17 @@ struct SettingsView: View {
                 action: { PasteService.shared.openSpeechSettings() }
             )
             
-            // 辅助功能（粘贴 + 全局热键）
+            // 辅助功能（仅官网版）
+#if !APP_STORE
             permissionCard(
                 icon: "keyboard.fill",
                 name: "辅助功能",
                 why: "识别完成后自动粘贴到输入框，无需手动复制。同时保证全局热键在任意 App 中都生效。",
-                ifDenied: "不授权：需手动 ⌘V 粘贴；从 App Store 下载的版本热键也可能受影响",
+                ifDenied: "不授权：需手动 ⌘V 粘贴；从官网下载的版本热键也可能受影响",
                 status: accessibilityStatus,
                 action: { PasteService.shared.openAccessibilitySettings() }
             )
+#endif
             
             Divider()
             
@@ -442,12 +447,14 @@ struct SettingsView: View {
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 
+#if !APP_STORE
                 Label("多个 VoiceKit 副本", systemImage: "doc.on.doc")
                     .font(.caption).foregroundStyle(.secondary)
                     .padding(.top, 4)
                 Text("如果你安装过多个版本的 VoiceKit（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
+#endif
             }
             .padding(10)
             .background(
@@ -480,6 +487,7 @@ struct SettingsView: View {
         }
     }
 
+#if !APP_STORE
     private var accessibilityStatus: PermissionStatus {
         _ = permissionRefreshID
         if PasteService.shared.isTrusted { return .granted }
@@ -489,6 +497,7 @@ struct SettingsView: View {
         if result == .success { return .granted }
         return .notDetermined
     }
+#endif
 
     private func permissionCard(icon: String, name: String, why: String, ifDenied: String, status: PermissionStatus, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -608,8 +617,19 @@ struct SettingsView: View {
                     Text("VoiceKit").font(.title2).bold()
                     Text("macOS 语音输入助手 — 全局热键，说话即输入")
                         .font(.caption).foregroundStyle(.secondary)
-                    Text(aboutVersionString)
-                        .font(.caption2).foregroundStyle(.tertiary)
+                    HStack(spacing: 6) {
+                        Text(aboutVersionString)
+                            .font(.caption2).foregroundStyle(.tertiary)
+                        Text("·")
+                            .font(.caption2).foregroundStyle(.tertiary)
+#if APP_STORE
+                        Text("App Store")
+                            .font(.caption2).foregroundStyle(.blue)
+#else
+                        Text("官网版")
+                            .font(.caption2).foregroundStyle(.secondary)
+#endif
+                    }
                 }
             }
 
@@ -654,9 +674,15 @@ struct SettingsView: View {
                         }
                         HStack(alignment: .top, spacing: 6) {
                             Image(systemName: "cpu.fill").font(.caption).foregroundStyle(.orange)
+#if APP_STORE
+                            Text("**AI 润色**：识别文本直接发送到你配置的 AI 服务（云端 API / 本地模型 等）。如果用本地模型，数据完全不出电脑。")
+                                .font(.callout)
+                                .fixedSize(horizontal: false, vertical: true)
+#else
                             Text("**AI 润色**：识别文本直接发送到你配置的 AI 服务（OpenAI / DeepSeek / Claude / Ollama 等）。如果用 Ollama 本地模型，数据完全不出电脑。")
                                 .font(.callout)
                                 .fixedSize(horizontal: false, vertical: true)
+#endif
                         }
                     }
                     
@@ -944,8 +970,13 @@ private struct ModelManagementSheet: View {
                 Table(of: ModelRow.self) {
                     TableColumn("名称", value: \.name).width(min: 80)
                     TableColumn("引擎") { row in
+#if APP_STORE
+                        Text(row.engine == "openai" ? "云端 API" : "Ollama")
+                            .foregroundStyle(.secondary)
+#else
                         Text(row.engine == "openai" ? "OpenAI" : "Ollama")
                             .foregroundStyle(.secondary)
+#endif
                     }.width(60)
                     TableColumn("模型", value: \.modelName).width(min: 100)
                     TableColumn("Token") { row in
@@ -1014,7 +1045,11 @@ private struct ModelManagementSheet: View {
 
             HStack {
                 Button(action: {
+#if APP_STORE
+                    editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "", apiKey: "", model: "")
+#else
                     editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini")
+#endif
                 }) {
                     Label("添加模型", systemImage: "plus")
                 }
@@ -1136,7 +1171,11 @@ private struct ModelEditorSheet: View {
 
             section("引擎") {
                 Picker("", selection: $model.engine) {
+#if APP_STORE
+                    Text("云端 API").tag("openai")
+#else
                     Text("OpenAI 协议").tag("openai")
+#endif
                     Text("Ollama（本地）").tag("ollama")
                 }
                 .labelsHidden().frame(width: 220)
@@ -1145,7 +1184,11 @@ private struct ModelEditorSheet: View {
             section("Base URL") {
                 Group {
                     if model.engine == "openai" {
+#if APP_STORE
+                        TextField("https://your-api.com/v1", text: $model.baseUrl)
+#else
                         TextField("https://api.openai.com/v1", text: $model.baseUrl)
+#endif
                     } else {
                         TextField("http://localhost:11434", text: $model.baseUrl)
                     }
@@ -1163,7 +1206,11 @@ private struct ModelEditorSheet: View {
             section("模型名") {
                 Group {
                     if model.engine == "openai" {
+#if APP_STORE
+                        TextField("your-model-name", text: $model.model)
+#else
                         TextField("gpt-4o-mini", text: $model.model)
+#endif
                     } else {
                         TextField("qwen2.5:7b", text: $model.model)
                     }

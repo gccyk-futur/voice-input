@@ -18,8 +18,8 @@ ARCHIVE_PATH="${BUILD_DIR}/${APP_NAME}.xcarchive"
 PKG_PATH="${BUILD_DIR}/${APP_NAME}.pkg"
 
 # 开发者身份（与 build-release.sh 共用 1Password 凭证）
-TEAM_ID="$(op read op://key/apple/TEAM_ID)"
-SIGNING_NAME="$(op read op://key/apple/SIGNING_NAME)"
+TEAM_ID="$(op read op://My-Keys/apple/TEAM_ID)"
+SIGNING_NAME="$(op read op://My-Keys/apple/SIGNING_NAME)"
 export VOICEMATE_TEAM_ID="${TEAM_ID}"
 export VOICEMATE_SIGNING_NAME="${SIGNING_NAME}"
 DIST_IDENTITY="Apple Distribution: ${SIGNING_NAME} (${TEAM_ID})"
@@ -96,6 +96,7 @@ xcodebuild archive \
   -configuration Release \
   -archivePath "${ARCHIVE_PATH}" \
   -allowProvisioningUpdates \
+  SWIFT_ACTIVE_COMPILATION_CONDITIONS='APP_STORE' \
   CODE_SIGN_STYLE=Manual \
   CODE_SIGN_IDENTITY="${DIST_IDENTITY}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" \

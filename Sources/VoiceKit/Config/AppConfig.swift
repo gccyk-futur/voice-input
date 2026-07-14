@@ -84,11 +84,19 @@ struct LLMConfig: Codable, Equatable {
     mutating func migrateFromLegacy() {
         guard models.isEmpty else { return }
         if engine == "openai", !openai.baseUrl.isEmpty {
+#if APP_STORE
+            let m = LLMModelDef(
+                name: "云端 API", engine: "openai",
+                baseUrl: openai.baseUrl, apiKey: openai.apiKey,
+                model: openai.model
+            )
+#else
             let m = LLMModelDef(
                 name: "OpenAI", engine: "openai",
                 baseUrl: openai.baseUrl, apiKey: openai.apiKey,
                 model: openai.model
             )
+#endif
             models.append(m)
             selectedModelID = m.id
         } else if engine == "ollama", !ollama.baseUrl.isEmpty {
@@ -110,8 +118,13 @@ struct LLMOllamaConfig: Codable, Equatable {
 }
 struct LLMOpenAIConfig: Codable, Equatable {
     var apiKey: String = ""
+#if APP_STORE
+    var model: String = ""
+    var baseUrl: String = ""
+#else
     var model: String = "gpt-4o-mini"
     var baseUrl: String = "https://api.openai.com/v1"
+#endif
     var temperature: Double = 0.7
 }
 struct LLMPromptConfig: Codable, Equatable {
