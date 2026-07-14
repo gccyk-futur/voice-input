@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceKit 隐私政策</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; line-height: 1.6; }
+        .container { max-width: 680px; margin: 0 auto; padding: 60px 24px; }
+        h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { color: #86868b; font-size: 17px; margin-bottom: 40px; }
+        .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+        p, li { font-size: 15px; color: #3a3a3c; }
+        ul { padding-left: 20px; margin: 8px 0; }
+        li { margin-bottom: 4px; }
+        table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 14px; }
+        th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid #e5e5e7; }
+        th { font-weight: 600; color: #86868b; font-size: 13px; }
+        a { color: #0071e3; text-decoration: none; }
+        .footer { margin-top: 40px; color: #86868b; font-size: 13px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VoiceKit 隐私政策</h1>
+        <p class="subtitle">最后更新：2026 年 7 月 14 日</p>
+
+        <div class="card">
+            <h2>我们收集什么</h2>
+            <p><strong>什么都不收集。</strong> VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不统计使用情况。</p>
+        </div>
+
+        <div class="card">
+            <h2>数据存储在哪</h2>
+            <p>所有数据仅存储在你的 Mac 本地：</p>
+            <table>
+                <tr><th>数据</th><th>位置</th></tr>
+                <tr><td>配置（含 API Key）</td><td>~/Library/Application Support/VoiceKit/config.json</td></tr>
+                <tr><td>历史记录</td><td>~/Library/Application Support/VoiceKit/history.json</td></tr>
+            </table>
+        </div>
+
+        <div class="card">
+            <h2>语音和文字的去向</h2>
+            <ul>
+                <li><strong>系统听写</strong>：音频送往 Apple 服务器进行识别，受 Apple 隐私政策约束。</li>
+                <li><strong>阿里云 Fun-ASR</strong>：音频通过 WebSocket 发往你自己的阿里云账号，你是数据的控制者。</li>
+                <li><strong>AI 润色</strong>：识别后的文字发往你配置的 AI 服务。如果用本地模型，文字不出电脑。</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>权限</h2>
+            <table>
+                <tr><th>权限</th><th>用途</th></tr>
+                <tr><td>麦克风</td><td>录音</td></tr>
+                <tr><td>语音识别</td><td>将语音转为文字</td></tr>
+                <tr><td>辅助功能（官网版可选）</td><td>识别完成后自动粘贴到输入框</td></tr>
+            </table>
+            <p style="margin-top: 8px;">所有权限可在「系统设置 → 隐私与安全性」中随时撤销。</p>
+        </div>
+
+        <div class="card">
+            <h2>联系</h2>
+            <p>📧 <a href="mailto:gccyk2000@gmail.com">gccyk2000@gmail.com</a></p>
+            <p>💻 <a href="https://github.com/gccyk-futur/voice-input">GitHub</a></p>
+        </div>
+
+        <div class="footer">
+            VoiceKit · MIT License · Copyright © 2026
+        </div>
+    </div>
+</body>
+</html>
