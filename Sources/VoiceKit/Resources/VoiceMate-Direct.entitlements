@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	官网版（Developer ID 分发）专用 entitlements：不含 App Sandbox。
+	沙盒与 Accessibility / CGEvent 事件投递不兼容，会导致直插和模拟 ⌘V
+	在真实用户机器上静默失效。App Store 版仍使用 VoiceMate.entitlements（含沙盒）。
+	audio-input 是 hardened runtime 下麦克风访问所需，必须保留。
+	-->
+	<key>com.apple.security.device.audio-input</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+</dict>
+</plist>

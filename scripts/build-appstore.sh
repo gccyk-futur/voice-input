@@ -101,6 +101,7 @@ xcodebuild archive \
   CODE_SIGN_IDENTITY="${DIST_IDENTITY}" \
   DEVELOPMENT_TEAM="${TEAM_ID}" \
   PRODUCT_BUNDLE_IDENTIFIER="${BUNDLE_ID}" \
+  CODE_SIGN_ENTITLEMENTS="Sources/VoiceKit/Resources/VoiceMate.entitlements" \
   "OTHER_CODE_SIGN_FLAGS=--timestamp --options=runtime" \
   2>&1 | grep -E "(error:|warning:|BUILD|FAILED|Signing|Archive)" || true
 
