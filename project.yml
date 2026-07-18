@@ -23,7 +23,9 @@ settings:
       ENABLE_HARDENED_RUNTIME: true
       CODE_SIGN_STYLE: Manual
       CODE_SIGN_IDENTITY: "Developer ID Application: $(VOICEMATE_SIGNING_NAME) ($(VOICEMATE_TEAM_ID))"
-      CODE_SIGN_ENTITLEMENTS: Sources/VoiceKit/Resources/VoiceMate.entitlements
+      # 官网版默认不带沙盒（Accessibility/事件投递需要）；App Store 构建由
+      # build-appstore.sh 通过 CODE_SIGN_ENTITLEMENTS 覆盖为含沙盒的 VoiceMate.entitlements
+      CODE_SIGN_ENTITLEMENTS: Sources/VoiceKit/Resources/VoiceMate-Direct.entitlements
       OTHER_CODE_SIGN_FLAGS: "--timestamp --options=runtime"
 targets:
   VoiceKit:
@@ -37,7 +39,7 @@ targets:
         CFBundleName: VoiceKit
         CFBundleDisplayName: VoiceKit
         CFBundleIdentifier: me.ckai.VoiceMate
-        CFBundleVersion: "20"
+        CFBundleVersion: "29"
         CFBundleShortVersionString: "1.0.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceKit

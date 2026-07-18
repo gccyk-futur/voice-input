@@ -412,9 +412,9 @@ struct SettingsView: View {
                 why: "听到你的声音，才能转成文字",
                 ifDenied: "不授权：无法使用语音输入",
                 status: micStatus,
-                action: { PasteService.shared.openMicrophoneSettings() }
+                action: requestMicPermission
             )
-            
+
             // 语音识别
             permissionCard(
                 icon: "text.bubble.fill",
@@ -422,7 +422,7 @@ struct SettingsView: View {
                 why: "把你说的话实时转写成文字",
                 ifDenied: "不授权：无法使用语音输入",
                 status: speechStatus,
-                action: { PasteService.shared.openSpeechSettings() }
+                action: requestSpeechPermission
             )
             
             // 辅助功能（仅官网版）
@@ -433,7 +433,7 @@ struct SettingsView: View {
                 why: "识别完成后自动粘贴到输入框，无需手动复制。同时保证全局热键在任意 App 中都生效。",
                 ifDenied: "不授权：需手动 ⌘V 粘贴；从官网下载的版本热键也可能受影响",
                 status: accessibilityStatus,
-                action: { PasteService.shared.openAccessibilitySettings() }
+                action: requestAccessibilityPermission
             )
 #endif
             
@@ -443,7 +443,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 Label("授权后需要重启 App", systemImage: "arrow.triangle.2.circlepath")
                     .font(.caption).foregroundStyle(.secondary)
-                Text("macOS 的安全机制有时不会立即让新权限生效。如果点击「去授权」并开启权限后，热键或粘贴仍然不工作，请退出 VoiceKit 再重新打开。")
+                Text("macOS 的安全机制有时不会立即让新权限生效。如果在系统弹窗或系统设置中开启权限后，热键或粘贴仍然不工作，请退出 VoiceKit 再重新打开。")
                     .font(.caption2).foregroundStyle(.tertiary)
                     .fixedSize(horizontal: false, vertical: true)
                 
@@ -465,6 +465,10 @@ struct SettingsView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        // 从系统设置返回 App 时刷新权限状态，保证授权结果立即反映到界面
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissionRefreshID = UUID()
+        }
     }
 
     private enum PermissionStatus { case granted, denied, notDetermined }
@@ -487,6 +491,37 @@ struct SettingsView: View {
         }
     }
 
+    /// 未决定时触发系统授权弹窗（App Review 5.1.1(iv)：按钮用「继续」而非「去授权」）；
+    /// 已被拒绝时系统弹窗不会再出现，改为打开对应系统设置页。
+    /// 必须 Task.detached：权限回调在后台线程（TCC XPC 回复队列）触发，
+    /// 闭包若从 View 继承 MainActor 隔离，会触发 swift_task_checkIsolatedSwift
+    /// 断言崩溃（EXC_BAD_INSTRUCTION，Release 同样崩）。
+    private func requestMicPermission() {
+        guard AVCaptureDevice.authorizationStatus(for: .audio) == .notDetermined else {
+            PasteService.shared.openMicrophoneSettings()
+            return
+        }
+        Task.detached {
+            _ = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
+            }
+            await MainActor.run { permissionRefreshID = UUID() }
+        }
+    }
+
+    private func requestSpeechPermission() {
+        guard SFSpeechRecognizer.authorizationStatus() == .notDetermined else {
+            PasteService.shared.openSpeechSettings()
+            return
+        }
+        Task.detached {
+            _ = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
+                SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
+            }
+            await MainActor.run { permissionRefreshID = UUID() }
+        }
+    }
+
 #if !APP_STORE
     private var accessibilityStatus: PermissionStatus {
         _ = permissionRefreshID
@@ -496,6 +531,16 @@ struct SettingsView: View {
         let result = AXUIElementCopyAttributeValue(elem, kAXFocusedUIElementAttribute as CFString, &focused)
         if result == .success { return .granted }
         return .notDetermined
+    }
+
+    /// 辅助功能没有异步授权 API：AXIsProcessTrustedWithOptions(prompt: true)
+    /// 会弹出系统授权提示，并把 App 自动加入辅助功能列表（默认未勾选），
+    /// 用户勾选后生效。授权结果不回调，靠 didBecomeActiveNotification 刷新状态。
+    private func requestAccessibilityPermission() {
+        guard !PasteService.shared.isTrusted else { return }
+        // kAXTrustedCheckOptionPrompt 是可变全局变量，Swift 6 并发检查不允许直接引用；
+        // 该 key 字符串是稳定 API，直接使用字面量。
+        _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 #endif
 
@@ -510,7 +555,9 @@ struct SettingsView: View {
                 Spacer()
                 statusBadge(status)
                 if status != .granted {
-                    Button("去授权") { action() }
+                    // App Review 5.1.1(iv)：授权弹窗前的按钮用「继续」这类中性文案；
+                    // 已被拒绝时按钮的作用是跳转系统设置，如实标注。
+                    Button(status == .notDetermined ? "继续" : "打开系统设置") { action() }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }

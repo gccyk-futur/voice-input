@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.0.0 (build 28) — 2026-07-18
+
+修复 App Store 审核拒绝（Guideline 2.1(a) / 5.1.1(iv)），并修复官网版沙盒导致的粘贴失效。
+
+### 权限
+- 权限页按钮直接触发系统授权弹窗（此前只跳转系统设置，语音识别因此从不出现授权请求、设置列表中也没有本 App）
+- 权限状态实时刷新：系统弹窗完成或从系统设置返回 App 后立即更新（此前授权后界面仍显示「未授权」）
+- 按审核要求，授权前按钮文案改为「继续」；已被拒绝时显示「打开系统设置」
+- 修复点击「继续」后权限回调触发线程隔离断言导致的崩溃（EXC_BAD_INSTRUCTION）
+- 官网版辅助功能卡片同样改为触发系统授权提示，App 自动进入辅助功能列表（此前只能手动点「+」添加）
+
+### 官网版
+- 移除 App Sandbox（entitlements 拆分为 VoiceMate-Direct.entitlements）：此前官网版与 App Store 版共用沙盒权限清单，导致辅助功能状态假阳性「已授权」、Accessibility 直插与模拟 ⌘V 在真实用户机器上静默失效。App Store 版保持沙盒不变（build-appstore.sh 显式指定）
+- 注意：移除沙盒后配置/历史存储路径变更（~/Library/Application Support/VoiceMate），需重新配置一次
+
 ## 1.0.0 (build 13) — 2026-07-12
 
 首个正式版本，已上架 App Store。
