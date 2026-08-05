@@ -14,9 +14,9 @@ echo "========================================="
 echo ""
 echo "从 1Password 读取 Apple ID 和密码..."
 
-TEAM_ID="$(op read op://key/apple/TEAM_ID)"
-APPLE_ID="$(op read op://key/apple/apple_id)"
-PASSWORD="$(op read op://key/apple/password)"
+TEAM_ID="$(op read op://My-Keys/apple/TEAM_ID)"
+APPLE_ID="$(op read op://My-Keys/apple/apple_id)"
+PASSWORD="$(op read op://My-Keys/apple/password)"
 
 echo "   Apple ID: ${APPLE_ID}"
 echo "   Team ID:  ${TEAM_ID}"
