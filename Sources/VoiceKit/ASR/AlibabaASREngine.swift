@@ -13,6 +13,12 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     let displayName = "阿里云 Fun-ASR"
     let requiresForeground = false
 
+    var onFailure: (@Sendable (Error) -> Void)? {
+        get { stateLock.withLock { _onFailure } }
+        set { stateLock.withLock { _onFailure = newValue } }
+    }
+    private var _onFailure: (@Sendable (Error) -> Void)?
+
     // MARK: - 状态锁 — 保护所有跨线程访问的 mutable 状态
 
     private let stateLock = NSLock()
@@ -29,8 +35,10 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private let autoStopThreshold: Float
 
     private let capture = AudioCapture()
+    /// 常驻 URLSession：整个引擎生命周期复用，避免每次重连新建 session 导致连接/线程泄漏。
+    /// delegate 为 self，必须在 super.init 之后创建，故用 IUO。
+    private var session: URLSession!
     private var webSocketTask: URLSessionWebSocketTask?
-    private var session: URLSession?
     private var taskId: String = ""
     private let sendQueue = DispatchQueue(label: "com.voicemate.aliyun.send")
 
@@ -75,6 +83,9 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         self.autoStopTimeout = autoStopTimeout
         self.autoStopThreshold = autoStopThreshold
         super.init()
+        // session 在整个引擎生命周期复用；delegate 为 self（必须在 super.init 之后）
+        let config = URLSessionConfiguration.default
+        self.session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         connect()
     }
 
@@ -91,6 +102,8 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             _connectWait?.cont.resume(throwing: AlibabaASRError.notConnected)
             _connectWait = nil
         }
+        webSocketTask?.cancel()
+        session?.invalidateAndCancel()
     }
 
     /// 重连最大退避时间（秒）
@@ -104,18 +117,15 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 60
 
-        // 取消已有接收循环，避免多个同时运行
+        // 取消旧的接收循环和 WebSocket 任务，避免多个连接并存；session 复用不重建
         stateLock.withLock {
             _receiveTask?.cancel()
             _receiveTask = nil
             _reconnectScheduled = false
             // 注意：此时还不能置 _isConnected = true，需等 delegate didOpen 回调确认握手成功
         }
-
-        // delegate 队列用独立串行队列，回调内自行加锁
-        let config = URLSessionConfiguration.default
-        session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
-        webSocketTask = session?.webSocketTask(with: req)
+        webSocketTask?.cancel()
+        webSocketTask = session.webSocketTask(with: req)
         webSocketTask?.resume()
         print("[AlibabaASR] 正在连接 WebSocket…")
 
@@ -381,6 +391,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 self?.stateLock.withLock { cb = self?._onAutoStop }
                 return cb?() ?? false
             },
+            onInterruption: { [weak self] error in self?.failSession(error) },
             onBuffer: { [weak self] out in
                 guard let self else { return }
                 let len = Int(out.frameLength)
@@ -392,6 +403,27 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             }
         )
         print("[AlibabaASR] 音频引擎启动")
+    }
+
+    /// 录音中发生不可恢复的错误（连接断开、麦克风中断等）：停采集、解开会话等待者、
+    /// 通过 onFailure 通知上层结束会话。best-effort，不抛错。
+    private func failSession(_ error: Error) {
+        capture.stop()
+        var startedCont: CheckedContinuation<Void, Error>?
+        var finishedCont: CheckedContinuation<Void, Never>?
+        var failureCB: (@Sendable (Error) -> Void)?
+        stateLock.withLock {
+            guard _sessionActive else { return }
+            _sessionActive = false
+            startedCont = _taskStartedCont
+            _taskStartedCont = nil
+            finishedCont = _taskFinishedCont
+            _taskFinishedCont = nil
+            failureCB = _onFailure
+        }
+        startedCont?.resume(throwing: error)
+        finishedCont?.resume()
+        failureCB?(error)
     }
 
     // MARK: - 事件处理
@@ -518,9 +550,8 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         // 只有活跃 session 之外的断开才重连；session 正常结束由 finish 流程处理
         let active = stateLock.withLock { _sessionActive }
         if active {
-            // 录音中连接掉了：让等待中的 start/stop 抛错；不自动重连以免半成品
-            safeResumeStarted(.failure(AlibabaASRError.notConnected))
-            safeResumeFinished()
+            // 录音中连接掉了：让等待中的 start/stop 抛错并通知上层；不自动重连以免半成品
+            failSession(AlibabaASRError.notConnected)
         } else {
             scheduleReconnect()
         }

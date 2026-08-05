@@ -181,6 +181,15 @@ final class AppCoordinator {
             }
             return true
         }
+        // 飞行中失败（麦克风断开、云端连接中断等）：退回 idle 并提示，面板保持可见
+        engine.onFailure = { [weak self] error in
+            Task { @MainActor in
+                guard let self, self.sessionState != .idle else { return }
+                print("[Coordinator] engine runtime failure: \(error)")
+                self.sessionState = .idle
+                self.statusText = "听写中断：\(error.localizedDescription)"
+            }
+        }
         Task {
             do {
                 try await engine.start(locale: Locale(identifier: languageID),

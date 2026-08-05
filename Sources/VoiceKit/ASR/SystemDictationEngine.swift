@@ -10,6 +10,8 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let displayName = "系统听写"
     let requiresForeground = true
 
+    var onFailure: (@Sendable (Error) -> Void)?
+
     private let capture = AudioCapture()
     private var analyzer: SpeechAnalyzer?
     private var transcriber: DictationTranscriber?
@@ -81,6 +83,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
                 silence: nil,
                 onLevel: onAudioLevel,
                 onAutoStop: nil,
+                onInterruption: { [weak self] error in self?.onFailure?(error) },
                 onBuffer: { outBuffer in
                     inputBuilder.yield(AnalyzerInput(buffer: outBuffer))
                 }

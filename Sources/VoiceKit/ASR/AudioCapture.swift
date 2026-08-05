@@ -28,6 +28,10 @@ final class AudioCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var tapInstalled = false
     private var silenceStart: Date?
+    /// 录音中被中断（设备断开/路由变更导致输入失效）时回调；引擎已先 stop，上层应结束会话并提示。
+    private var onInterruption: (@Sendable (Error) -> Void)?
+    private var configObserver: NSObjectProtocol?
+    private var active = false
 
     /// 执行可能抛 NSException 的代码，返回 Swift.Error（来自桥接的 NSError）；
     /// 正常返回 nil。ObjC 的 `BOOL...error:` 被 Swift 导入为 `throws`。
@@ -47,6 +51,7 @@ final class AudioCapture: @unchecked Sendable {
                silence: SilenceConfig? = nil,
                onLevel: (@Sendable (Float) -> Void)? = nil,
                onAutoStop: (@Sendable () -> Bool)? = nil,
+               onInterruption: (@Sendable (Error) -> Void)? = nil,
                onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
         // ① 设备预检：CoreAudio 确认默认输入设备存在
         guard Self.hasDefaultInputDevice() else {
@@ -105,6 +110,40 @@ final class AudioCapture: @unchecked Sendable {
             cleanupTap(inputNode)
             throw ASRError.audioEngineStartFailed(startError.localizedDescription)
         }
+
+        // ⑤ 监听音频路由变化（AirPods 断开、切换输入设备等）。
+        // 回调在非主线程，所有访问都走 lock。若变更后输入设备失效/引擎停转，
+        // 主动 stop 并通过 onInterruption 通知上层结束会话，避免静默无声或 IO 线程崩溃。
+        self.onInterruption = onInterruption
+        lock.withLock { self.active = true }
+        let center = NotificationCenter.default
+        configObserver = center.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: engine,
+            queue: nil
+        ) { [weak self] _ in
+            self?.handleConfigurationChange()
+        }
+    }
+
+    private func handleConfigurationChange() {
+        // 配置变化通常意味着输入设备切换。若新路由下没有可用输入，或引擎已停转，
+        // 判定为中断：清理采集并回调上层。注意不在此处重新装 tap——热切换格式容易再次崩溃，
+        // 由上层提示用户后重试更稳妥。
+        let stillActive = lock.withLock { active }
+        guard stillActive else { return }
+        let inputOK = Self.hasDefaultInputDevice()
+            && engine.inputNode.outputFormat(forBus: 0).sampleRate > 0
+        let running = engine.isRunning
+        if !inputOK || !running {
+            let reason = inputOK ? "音频引擎已停止" : "麦克风已断开"
+            let cb = lock.withLock { () -> (@Sendable (Error) -> Void)? in
+                self.active = false
+                return self.onInterruption
+            }
+            stop()
+            cb?(ASRError.audioEngineStartFailed(reason))
+        }
     }
 
     // MARK: - 停止（幂等）
@@ -114,7 +153,12 @@ final class AudioCapture: @unchecked Sendable {
         let installed = tapInstalled
         tapInstalled = false
         silenceStart = nil
+        active = false
+        onInterruption = nil
+        let obs = configObserver
+        configObserver = nil
         lock.unlock()
+        if let obs { NotificationCenter.default.removeObserver(obs) }
 
         // 只有真的装过 tap 才 removeTap：对没装过的 inputNode 调 removeTap 会抛 NSException
         if installed {

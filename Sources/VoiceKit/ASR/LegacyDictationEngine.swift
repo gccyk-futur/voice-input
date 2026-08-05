@@ -15,6 +15,8 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     let displayName = "系统听写（服务器）"
     let requiresForeground = false
 
+    var onFailure: (@Sendable (Error) -> Void)?
+
     private let capture = AudioCapture()
     private let appendQueue = DispatchQueue(label: "com.voicemate.speech.append")
     private var recognizer: SFSpeechRecognizer?
@@ -88,6 +90,7 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
             silence: silence,
             onLevel: onAudioLevel,
             onAutoStop: onAutoStop,
+            onInterruption: { [weak self] error in self?.onFailure?(error) },
             onBuffer: { [weak self] outBuffer in
                 self?.appendQueue.async { self?.request?.append(outBuffer) }
             }

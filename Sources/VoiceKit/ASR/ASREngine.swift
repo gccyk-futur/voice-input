@@ -9,6 +9,11 @@ protocol ASREngine: AnyObject, Sendable {
     /// DictationTranscriber 需要 app 在前台；SFSpeechRecognizer 不需要。
     var requiresForeground: Bool { get }
 
+    /// 录音过程中发生的运行时错误（设备断开、云端连接中断等）。
+    /// start() 抛出的是"起飞失败"；本回调覆盖"飞行中失败"。由 coordinator 设置，
+    /// 触发后应把会话退回 idle 并提示用户。
+    var onFailure: (@Sendable (Error) -> Void)? { get set }
+
     /// 开始识别。
     /// - Parameters:
     ///   - onPartial: 实时中间结果回调
