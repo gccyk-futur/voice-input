@@ -142,7 +142,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
             } catch {
                 // 流结束或中止，忽略
             }
-            print("[SystemDictation] result stream ended, segments=\(segments.count), finalized=\(finalizedCount)")
+            Log.info("[SystemDictation] result stream ended, segments=\(segments.count), finalized=\(finalizedCount)")
         }
     }
 

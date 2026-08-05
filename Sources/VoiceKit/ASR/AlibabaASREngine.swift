@@ -127,7 +127,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         webSocketTask?.cancel()
         webSocketTask = session.webSocketTask(with: req)
         webSocketTask?.resume()
-        print("[AlibabaASR] 正在连接 WebSocket…")
+        Log.info("[AlibabaASR] 正在连接 WebSocket…")
 
         // 握手看门狗：10s 内没收到 didOpen → 认为连接失败，安排重连。
         // 与 ensureConnected 的超时互不干扰（后者只让当次 start 快速失败返回）。
@@ -138,7 +138,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             guard let self else { return }
             let connected = self.stateLock.withLock { self._isConnected }
             if !connected {
-                print("[AlibabaASR] 握手超时，安排重连")
+                Log.info("[AlibabaASR] 握手超时，安排重连")
                 self.scheduleReconnect()
             }
         }
@@ -156,7 +156,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                     msg = try await ws.receive()
                 } catch {
                     // 对端关闭、网络断开、超时等 → 退出循环，由下面决定是否重连
-                    print("[AlibabaASR] 接收循环断开: \(error)")
+                    Log.error("[AlibabaASR] 接收循环断开: \(error)")
                     break
                 }
 
@@ -175,11 +175,11 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             var active = false
             self.stateLock.withLock { active = self._sessionActive }
             if active {
-                print("[AlibabaASR] session 结束，不触发重连")
+                Log.info("[AlibabaASR] session 结束，不触发重连")
                 return
             }
             guard !Task.isCancelled else { return }
-            print("[AlibabaASR] 连接异常断开，将重连")
+            Log.error("[AlibabaASR] 连接异常断开，将重连")
             self.scheduleReconnect()
         }
         stateLock.withLock { _receiveTask = task }
@@ -200,7 +200,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         }
         guard delay >= 0 else { return }
         let delayStr = String(format: "%.1f", delay)
-        print("[AlibabaASR] 将在 \(delayStr)s 后重连...")
+        Log.info("[AlibabaASR] 将在 \(delayStr)s 后重连...")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             self?.connect()
@@ -339,7 +339,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         }
 
         try await sendFinishTask()
-        print("[AlibabaASR] finish-task sent")
+        Log.info("[AlibabaASR] finish-task sent")
 
         // 等待接收循环唤醒（task-finished / task-failed / 超时 5s）
         let stopped = Task { [weak self] in
@@ -402,7 +402,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 }
             }
         )
-        print("[AlibabaASR] 音频引擎启动")
+        Log.info("[AlibabaASR] 音频引擎启动")
     }
 
     /// 录音中发生不可恢复的错误（连接断开、麦克风中断等）：停采集、解开会话等待者、
@@ -514,11 +514,11 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         case "task-failed":
             let code = header["error_code"] as? String ?? "?"
             let msg = header["error_message"] as? String ?? ""
-            print("[AlibabaASR] 任务失败: \(code) - \(msg)")
+            Log.error("[AlibabaASR] 任务失败: \(code) - \(msg)")
             safeResumeFinished()
 
         case "task-finished":
-            print("[AlibabaASR] task-finished")
+            Log.info("[AlibabaASR] task-finished")
             safeResumeFinished()
 
         default: break
@@ -538,7 +538,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
             _connectTimeoutTask?.cancel()
             _connectTimeoutTask = nil
         }
-        print("[AlibabaASR] WebSocket 已连接")
+        Log.info("[AlibabaASR] WebSocket 已连接")
         resumeConnectWait(result: .success(()))
     }
 
@@ -546,7 +546,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
                     didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         stateLock.withLock { _isConnected = false }
         resumeConnectWait(result: .failure(AlibabaASRError.notConnected))
-        print("[AlibabaASR] WebSocket 关闭 code=\(closeCode.rawValue)")
+        Log.info("[AlibabaASR] WebSocket 关闭 code=\(closeCode.rawValue)")
         // 只有活跃 session 之外的断开才重连；session 正常结束由 finish 流程处理
         let active = stateLock.withLock { _sessionActive }
         if active {

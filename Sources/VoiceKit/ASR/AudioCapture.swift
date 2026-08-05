@@ -164,7 +164,7 @@ final class AudioCapture: @unchecked Sendable {
         if installed {
             let inputNode = engine.inputNode
             if let err = Self.guarded({ inputNode.removeTap(onBus: 0) }) {
-                print("[AudioCapture] removeTap 异常: \(err.localizedDescription)")
+                Log.error("[AudioCapture] removeTap 异常: \(err.localizedDescription)")
             }
         }
         engine.stop()
@@ -175,7 +175,7 @@ final class AudioCapture: @unchecked Sendable {
 
     private func cleanupTap(_ inputNode: AVAudioNode) {
         if let err = Self.guarded({ inputNode.removeTap(onBus: 0) }) {
-            print("[AudioCapture] cleanupTap removeTap 异常: \(err.localizedDescription)")
+            Log.error("[AudioCapture] cleanupTap removeTap 异常: \(err.localizedDescription)")
         }
         lock.withLock { self.tapInstalled = false }
         engine.stop()

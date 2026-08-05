@@ -78,7 +78,7 @@ final class AppCoordinator {
         guard sessionState == .idle else { return }
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
-        print("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
+        Log.info("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
 
         if micStatus == .denied || speechStatus == .denied {
             presentPermissionError(micDenied: micStatus == .denied, speechDenied: speechStatus == .denied)
@@ -107,7 +107,7 @@ final class AppCoordinator {
                 let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                     AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
                 }
-                print("[Coordinator] microphone requestAccess result: \(granted)")
+                Log.info("[Coordinator] microphone requestAccess result: \(granted)")
                 guard granted else {
                     await MainActor.run { [weak self] in
                         self?.panel.close()
@@ -120,7 +120,7 @@ final class AppCoordinator {
                 let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                     SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
                 }
-                print("[Coordinator] speech requestAuthorization result: \(granted)")
+                Log.info("[Coordinator] speech requestAuthorization result: \(granted)")
                 guard granted else {
                     await MainActor.run { [weak self] in
                         self?.panel.close()
@@ -140,7 +140,7 @@ final class AppCoordinator {
     private func beginRecordingFlow() {
         targetApp = hotkey.capturedTargetApp ?? NSWorkspace.shared.frontmostApplication
         hotkey.capturedTargetApp = nil
-        print("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil")")
+        Log.info("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil")")
         asrText = ""
         llmText = ""
         sessionState = .recording
@@ -158,11 +158,11 @@ final class AppCoordinator {
                     timeout: cfg.silenceTimeout,
                     threshold: Float(cfg.silenceThreshold)
                 )
-                print("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
+                Log.info("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
             }
             panel.show(needsActivation: engine.requiresForeground)
             panel.makeKey()
-            print("[Coordinator] starting \(engine.displayName), needsActivation=\(engine.requiresForeground)")
+            Log.info("[Coordinator] starting \(engine.displayName), needsActivation=\(engine.requiresForeground)")
             startEngine(engine, languageID: languageID)
         }
     }
@@ -185,7 +185,7 @@ final class AppCoordinator {
         engine.onFailure = { [weak self] error in
             Task { @MainActor in
                 guard let self, self.sessionState != .idle else { return }
-                print("[Coordinator] engine runtime failure: \(error)")
+                Log.error("[Coordinator] engine runtime failure: \(error)")
                 self.sessionState = .idle
                 self.statusText = "听写中断：\(error.localizedDescription)"
             }
@@ -200,7 +200,7 @@ final class AppCoordinator {
                     onAutoStop: onSilence
                 )
             } catch {
-                print("[Coordinator] engine.start failed: \(error)")
+                Log.error("[Coordinator] engine.start failed: \(error)")
                 await MainActor.run {
                     self.sessionState = .idle
                     if let ae = error as? ASRError {
@@ -229,7 +229,7 @@ final class AppCoordinator {
     /// 双通道抢占前台：NSApp.activate（AppKit）+ clickToActivate（CGEvent 模拟点击），
     /// 持续 3s 覆盖 DictationTranscriber 初始化全过程。对抗 iTerm2 等 reclaim 行为。
     func stopAndProcess() {
-        print("[Coordinator] stopAndProcess() called, sessionState=\(sessionState), engine=\(asrEngine != nil)")
+        Log.info("[Coordinator] stopAndProcess() called, sessionState=\(sessionState), engine=\(asrEngine != nil)")
         guard let engine = asrEngine else { return }
         sessionState = .transcribing
         statusText = "转写中…"
@@ -251,15 +251,15 @@ final class AppCoordinator {
             startDisplaySync()
             let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
-            print("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
-            print("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
+            Log.info("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
+            Log.info("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
                     llmBuffer += chunk
                 }
                 stopDisplaySync()
                 llmText = llmBuffer
-                print("[LLM] 润色成功, \(llmBuffer.count) 字符")
+                Log.info("[LLM] 润色成功, \(llmBuffer.count) 字符")
                 // 累加 token 统计
                 let total = llm.lastPromptTokens + llm.lastCompletionTokens
                 if total > 0, !cfg.llm.selectedModelID.isEmpty {
@@ -267,7 +267,7 @@ final class AppCoordinator {
                 }
             } catch {
                 stopDisplaySync()
-                print("[LLM] 润色失败: \(error)")
+                Log.error("[LLM] 润色失败: \(error)")
                 llmText = final
             }
             sessionState = .ready
@@ -292,7 +292,7 @@ final class AppCoordinator {
         // 先关闭面板
         panel.close()
 
-        print("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
+        Log.info("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
 
 #if !APP_STORE
         // 官网版策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）
@@ -300,13 +300,13 @@ final class AppCoordinator {
         if axService.isTrusted {
             let inserted = axService.insertText(text)
             if inserted {
-                print("[Paste] Accessibility 直插成功")
+                Log.info("[Paste] Accessibility 直插成功")
                 finalizeAndRecord(useLLM: useLLM, statusText: nil)
                 return
             }
-            print("[Paste] Accessibility 直插失败，回退剪贴板方案")
+            Log.error("[Paste] Accessibility 直插失败，回退剪贴板方案")
         } else {
-            print("[Paste] 辅助功能未授权，使用剪贴板方案")
+            Log.info("[Paste] 辅助功能未授权，使用剪贴板方案")
         }
 #endif
 
@@ -321,7 +321,7 @@ final class AppCoordinator {
         // .nonactivatingPanel 保证了目标 App 始终在前台，无需 activate+轮询
         pasteService.writeClipboardOnly(text)
         let pasteOK = pasteService.paste(text, to: targetPID)
-        print("[Paste] 剪贴板粘贴 result=\(pasteOK)")
+        Log.info("[Paste] 剪贴板粘贴 result=\(pasteOK)")
 
         let msg: String? = pasteOK ? nil : "文字已复制到剪贴板（请手动 ⌘V）"
         finalizeAndRecord(useLLM: useLLM, statusText: msg)
@@ -346,7 +346,7 @@ final class AppCoordinator {
     }
 
     func cancel() {
-        print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
+        Log.info("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
         if finalizing { return }
         // idle 态（如启动失败后）也必须关面板，否则 Esc/关闭按钮无法收起悬浮窗
         if sessionState != .idle {
@@ -428,7 +428,7 @@ final class AppCoordinator {
     /// - "dictation"：DictationTranscriber（原生连续听写，需前台）
     /// - "aliyun"：阿里云 Fun-ASR WebSocket（在线，高精度带标点）
     func resolveASR() async -> any ASREngine {
-        print("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
+        Log.info("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
         switch configStore.config.asr.engine {
         case "dictation":
             if #available(macOS 26, *) {
@@ -456,7 +456,7 @@ final class AppCoordinator {
                     autoStopThreshold: Float(cfg.autoStopThreshold)
                 )
             }
-            print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
+            Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
             // 自动回退：把配置写回 system，下次就不用再判断了
             var corrected = configStore.config
             corrected.asr.engine = "system"
@@ -492,7 +492,7 @@ final class AppCoordinator {
             autoStopThreshold: Float(cfg.autoStopThreshold)
         )
         self.asrEngine = engine
-        print("[Coordinator] 阿里云引擎预建连完成")
+        Log.info("[Coordinator] 阿里云引擎预建连完成")
     }
 
     func resolveLLM() -> (any LLMEngine)? {
