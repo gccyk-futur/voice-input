@@ -550,8 +550,10 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         // 只有活跃 session 之外的断开才重连；session 正常结束由 finish 流程处理
         let active = stateLock.withLock { _sessionActive }
         if active {
-            // 录音中连接掉了：让等待中的 start/stop 抛错并通知上层；不自动重连以免半成品
+            // 录音中连接掉了：让等待中的 start/stop 抛错并通知上层结束本次会话；
+            // 同时后台重连常驻连接，保证下次呼出能直接用（不会半成品——session 已 fail）
             failSession(AlibabaASRError.notConnected)
+            scheduleReconnect()
         } else {
             scheduleReconnect()
         }
