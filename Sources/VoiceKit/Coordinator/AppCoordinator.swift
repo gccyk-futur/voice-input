@@ -319,7 +319,8 @@ final class AppCoordinator {
 
         let targetPID = target.processIdentifier
         // .nonactivatingPanel 保证了目标 App 始终在前台，无需 activate+轮询
-        pasteService.writeClipboardOnly(text)
+        // paste() 内部会保存原剪贴板 → 写入文字 → ⌘V → 延迟恢复，不要在此预先写入，
+        // 否则快照到的将是我们自己写入的内容，用户剪贴板将无法还原。
         let pasteOK = pasteService.paste(text, to: targetPID)
         Log.info("[Paste] 剪贴板粘贴 result=\(pasteOK)")
 

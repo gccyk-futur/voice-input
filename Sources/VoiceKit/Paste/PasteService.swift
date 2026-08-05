@@ -12,8 +12,10 @@ final class PasteService {
 
     // 剪贴板保存/恢复
     private struct SavedClipboard {
-        let changeCount: Int
+        /// 用户原始剪贴板内容（写入我们的文字之前快照）。
         let items: [NSPasteboardItem]
+        /// 写入我们文字之后的 changeCount；恢复前若它再变化，说明用户手动复制了新内容。
+        let changeCountAfterWrite: Int
     }
     private var savedClipboard: SavedClipboard?
     private var restoreWork: DispatchWorkItem?
@@ -24,48 +26,44 @@ final class PasteService {
 
     @discardableResult
     func paste(_ text: String, to pid: pid_t) -> Bool {
-        // 保存当前剪贴板，以备恢复
-        saveCurrentClipboard()
+        // ① 在碰剪贴板之前，先快照用户原始内容
+        let savedItems = NSPasteboard.general.pasteboardItems ?? []
+        // ② 写入我们的文字供 ⌘V 使用
         writeClipboard(text)
+        // ③ 记录写入后的 changeCount，作为"用户是否又复制了新内容"的基准
+        let countAfterWrite = NSPasteboard.general.changeCount
+        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
+
         let sent = simulateCmdVviaPostToPid(pid: pid)
-        print("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
+        Log.info("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
 
         // 恢复策略：
-        // - 发送失败 → 立即恢复
         // - 发送成功 → 延迟 2s 恢复（给目标 app 处理粘贴的时间）
+        // - 发送失败 → 不恢复，把文字留在剪贴板供用户手动 ⌘V
+        //   （调用方会提示"文字已复制到剪贴板"）
         if sent {
             scheduleRestore(delay: 2.0)
-        } else {
-            restoreClipboard()
         }
         return sent
     }
 
     // MARK: - 剪贴板保存与恢复
 
-    /// 保存当前剪贴板全部 item（含 changeCount 用于后续判断用户是否有新复制行为）。
-    private func saveCurrentClipboard() {
-        let pb = NSPasteboard.general
-        let items = pb.pasteboardItems ?? []
-        savedClipboard = SavedClipboard(changeCount: pb.changeCount, items: items)
-    }
-
     /// 恢复剪贴板（如果用户在此期间没有手动复制新内容）。
     func restoreClipboard() {
         restoreWork?.cancel()
         restoreWork = nil
         guard let saved = savedClipboard else { return }
+        savedClipboard = nil
         let pb = NSPasteboard.general
-        // 用户在此期间手动复制了内容 → 不恢复，尊重用户操作
-        guard pb.changeCount == saved.changeCount else {
-            print("[Paste] 剪贴板已被用户更新，跳过恢复")
-            savedClipboard = nil
+        // changeCount 相对"我们写入后"又前进了 → 用户在此期间手动复制了内容，尊重它不覆盖
+        guard pb.changeCount == saved.changeCountAfterWrite else {
+            Log.info("[Paste] 剪贴板已被用户更新，跳过恢复")
             return
         }
         pb.clearContents()
         pb.writeObjects(saved.items)
-        savedClipboard = nil
-        print("[Paste] 剪贴板已恢复")
+        Log.info("[Paste] 剪贴板已恢复")
     }
 
     /// 延迟恢复（避免过早恢复导致目标 app 粘贴失败）。
