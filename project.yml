@@ -16,6 +16,7 @@ settings:
     INFOPLIST_FILE: Sources/VoiceKit/Resources/Info.plist
     LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/VoiceKit/VoiceKit-Bridging-Header.h
   configs:
     Debug:
       ENABLE_HARDENED_RUNTIME: false

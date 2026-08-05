@@ -202,9 +202,13 @@ final class AppCoordinator {
                         case .speechNotAuthorized:
                             self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
                             self.pasteService.openSpeechSettings()
+                        case .noInputDevice:
+                            self.statusText = "未检测到麦克风：请连接麦克风或在 系统设置→声音→输入 中选择输入设备"
                         default:
                             self.statusText = "听写启动失败：\(error.localizedDescription)"
                         }
+                    } else if let aliyunErr = error as? AlibabaASRError {
+                        self.statusText = "听写启动失败：\(aliyunErr.localizedDescription)"
                     } else {
                         self.statusText = "听写启动失败：\(error.localizedDescription)"
                     }
@@ -334,13 +338,15 @@ final class AppCoordinator {
 
     func cancel() {
         print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
-        if sessionState == .idle { return }
         if finalizing { return }
-        let alreadyStopping = (sessionState == .transcribing || sessionState == .polishing)
-        if let engine = asrEngine, !alreadyStopping {
-            Task { try? await engine.stop() }
+        // idle 态（如启动失败后）也必须关面板，否则 Esc/关闭按钮无法收起悬浮窗
+        if sessionState != .idle {
+            let alreadyStopping = (sessionState == .transcribing || sessionState == .polishing)
+            if let engine = asrEngine, !alreadyStopping {
+                Task { try? await engine.stop() }
+            }
+            stopDisplaySync()
         }
-        stopDisplaySync()
         reset()
         // 归还焦点给之前的应用
         if let t = targetApp { t.activate() }
