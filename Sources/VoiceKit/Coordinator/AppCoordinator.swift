@@ -374,9 +374,8 @@ final class AppCoordinator {
         }
 
         let targetPID = target.processIdentifier
-        // ⌘V 改为系统会话级投递（避免 postToPid 导致目标 app 修饰键状态错乱/键盘被锁），
-        // 因此必须确保目标 App 在前台且为 key window：面板已 close，这里显式激活目标。
-        target.activate(options: [])
+        // .nonactivatingPanel 保证目标 App 在前台，postToPid 直接投递目标进程，
+        // 无需显式激活（激活曾引入额外开销/副作用）。
         // paste() 内部会保存原剪贴板 → 写入文字 → ⌘V → 延迟恢复，不要在此预先写入，
         // 否则快照到的将是我们自己写入的内容，用户剪贴板将无法还原。
         let pasteOK = pasteService.paste(text, to: targetPID)

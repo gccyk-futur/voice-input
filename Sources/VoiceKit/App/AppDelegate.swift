@@ -46,7 +46,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// 主线程看门狗（诊断）：后台心跳探测主线程响应性，超过 5 秒未响应则记日志。
+    /// 主线程看门狗（诊断）：后台心跳探测主线程响应性，超过 2 秒未响应则记日志。
     /// 用于确认"假死"是否主线程被阻塞、发生在哪个操作之后。
     private func startMainThreadWatchdog() {
         DispatchQueue.global(qos: .background).async { [weak self] in
@@ -54,10 +54,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 if self == nil { break }
                 let sem = DispatchSemaphore(value: 0)
                 DispatchQueue.main.async { sem.signal() }
-                if sem.wait(timeout: .now() + 5) == .timedOut {
-                    Log.error("[Watchdog] 主线程超过 5 秒未响应（疑似假死）")
+                if sem.wait(timeout: .now() + 2) == .timedOut {
+                    Log.error("[Watchdog] 主线程超过 2 秒未响应")
                 }
-                Thread.sleep(forTimeInterval: 2)
+                Thread.sleep(forTimeInterval: 1)
             }
         }
     }
