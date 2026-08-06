@@ -16,13 +16,13 @@ import ApplicationServices
 final class AccessibilityPasteService {
     static let shared = AccessibilityPasteService()
 
-    private let textElementRoles: Set<String> = [
-        "AXTextField",
-        "AXTextArea",
-    ]
-
-    /// 检查辅助功能权限
-    var isTrusted: Bool { AXIsProcessTrusted() }
+    /// 检查辅助功能权限。
+    ///
+    /// AXIsProcessTrusted() 是 Accessibility API 官方提供的权限检查；
+    /// CGEvent tap 属于另一套事件监听能力，不能用来推断 AXUIElement 是否可用。
+    var isTrusted: Bool {
+        AXIsProcessTrusted()
+    }
 
     func openAccessibilitySettings() {
         let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
@@ -43,40 +43,91 @@ final class AccessibilityPasteService {
         do {
             let focusedElement = try getFocusedElement()
             let role = try getRole(focusedElement)
-            print("[AccessibilityPaste] 焦点元素角色: \(role)")
-
-            guard textElementRoles.contains(role) else {
-                print("[AccessibilityPaste] 不支持的焦点元素角色: \(role)，回退剪贴板方案")
+            Log.info("[Paste] Accessibility 焦点元素角色: \(role)")
+            let before = try getValue(focusedElement)
+            guard let selectedRange = getSelectedTextRange(focusedElement),
+                  let plan = TextInsertionPlan.make(
+                    currentValue: before,
+                    selectedRange: selectedRange,
+                    insertion: text
+                  ) else {
+                Log.info("[Paste] Accessibility 元素没有可用文本值/选区，回退剪贴板方案")
                 return false
             }
 
-            let before = (try? getValue(focusedElement)) ?? ""
+            var settable = DarwinBoolean(false)
+            let settableResult = AXUIElementIsAttributeSettable(
+                focusedElement,
+                kAXValueAttribute as CFString,
+                &settable
+            )
+            guard settableResult == .success, settable.boolValue else {
+                Log.info("[Paste] Accessibility 元素角色 \(role) 的 value 不可写，回退剪贴板方案")
+                return false
+            }
 
             let result = AXUIElementSetAttributeValue(
                 focusedElement,
-                kAXSelectedTextAttribute as CFString,
-                text as CFTypeRef
+                kAXValueAttribute as CFString,
+                plan.replacement as CFTypeRef
             )
             guard result == .success else {
-                print("[AccessibilityPaste] AXUIElementSetAttributeValue 失败: \(result.rawValue)")
+                Log.error("[Paste] Accessibility value 写入失败: \(result.rawValue)")
                 return false
             }
 
-            let after = (try? getValue(focusedElement)) ?? ""
-            if before == after, !before.isEmpty {
-                print("[AccessibilityPaste] 写入验证失败（值未变化），回退剪贴板方案")
+            let after = try getValue(focusedElement)
+            guard after == plan.replacement else {
+                Log.error("[Paste] Accessibility value 写入验证失败，回退剪贴板方案")
                 return false
             }
 
-            print("[AccessibilityPaste] 成功插入 \(text.count) 字符")
+            // 恢复插入点是 best-effort；文本已经验证写入，不能因光标恢复失败
+            // 再走一次剪贴板粘贴，否则会重复插入。
+            if let rangeValue = makeTextRangeValue(location: plan.caretLocation),
+               AXUIElementSetAttributeValue(
+                focusedElement,
+                kAXSelectedTextRangeAttribute as CFString,
+                rangeValue
+               ) != .success {
+                Log.info("[Paste] Accessibility 文本已写入，但插入点恢复失败")
+            }
+
+            Log.info("[Paste] Accessibility value 插入成功: \(text.count) 字符")
             return true
         } catch {
-            print("[AccessibilityPaste] 插入失败: \(error)")
+            Log.info("[Paste] Accessibility value 插入失败: \(error)")
             return false
         }
     }
 
     // MARK: - Private
+
+    private func copyElementAttribute(_ element: AXUIElement, _ attribute: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success else { return nil }
+        return value
+    }
+
+    private func getSelectedTextRange(_ element: AXUIElement) -> NSRange? {
+        guard let rawValue = copyElementAttribute(element, kAXSelectedTextRangeAttribute),
+              CFGetTypeID(rawValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        let value = unsafeDowncast(rawValue, to: AXValue.self)
+        guard AXValueGetType(value) == .cfRange else { return nil }
+        var range = CFRange()
+        guard AXValueGetValue(value, .cfRange, &range) else { return nil }
+        return NSRange(location: range.location, length: range.length)
+    }
+
+    private func makeTextRangeValue(location: Int) -> AXValue? {
+        var range = CFRange(location: location, length: 0)
+        return withUnsafeMutablePointer(to: &range) { pointer in
+            AXValueCreate(.cfRange, pointer)
+        }
+    }
 
     private func getFocusedElement() throws -> AXUIElement {
         let systemWide = AXUIElementCreateSystemWide()

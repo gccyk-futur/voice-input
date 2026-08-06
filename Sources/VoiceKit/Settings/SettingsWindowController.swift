@@ -82,14 +82,18 @@ final class SettingsWindowController: NSObject {
 // MARK: - NSWindowDelegate
 
 extension SettingsWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        print("[SettingsWindow] 窗口关闭 → 切回 accessory 策略，app 继续运行")
-        // 窗口关闭后切回 accessory，从 Dock/Switcher 消失
-        NSApp.setActivationPolicy(.accessory)
+    nonisolated func windowWillClose(_ notification: Notification) {
+        Task { @MainActor in
+            print("[SettingsWindow] 窗口关闭 → 切回 accessory 策略，app 继续运行")
+            // 窗口关闭后切回 accessory，从 Dock/Switcher 消失
+            NSApp.setActivationPolicy(.accessory)
+        }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        // 窗口被激活时确保策略是 .regular（双击唤醒时用到）
-        NSApp.setActivationPolicy(.regular)
+    nonisolated func windowDidBecomeKey(_ notification: Notification) {
+        Task { @MainActor in
+            // 窗口被激活时确保策略是 .regular（双击唤醒时用到）
+            NSApp.setActivationPolicy(.regular)
+        }
     }
 }

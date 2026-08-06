@@ -51,14 +51,16 @@ final class HistoryWindowController: NSObject {
 // MARK: - NSWindowDelegate
 
 extension HistoryWindowController: NSWindowDelegate {
-    func windowWillClose(_ notification: Notification) {
-        print("[HistoryWindow] 窗口关闭 → 切回 accessory 策略")
-        DispatchQueue.main.async {
+    nonisolated func windowWillClose(_ notification: Notification) {
+        Task { @MainActor in
+            print("[HistoryWindow] 窗口关闭 → 切回 accessory 策略")
             NSApp.setActivationPolicy(.accessory)
         }
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
+    nonisolated func windowDidBecomeKey(_ notification: Notification) {
+        Task { @MainActor in
+            NSApp.setActivationPolicy(.regular)
+        }
     }
 }

@@ -5,10 +5,27 @@ import Foundation
 ///
 /// 连接常驻，每次 start/stop 只收发 run-task / finish-task，不复重连。
 /// semantic_punctuation_enabled 自动加标点，结果用空格拼接而非换行。
-final class AlibabaASREngine: ASREngine, @unchecked Sendable {
+///
+/// 连接状态用 URLSessionWebSocketDelegate 的真实握手回调驱动（不再在 resume 后
+/// 乐观置位）；start 前会 ensureConnected，未连接时主动建连并带超时兜底。
+final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     let id = "aliyun"
     let displayName = "阿里云 Fun-ASR"
     let requiresForeground = false
+
+    var onFailure: (@Sendable (Error) -> Void)? {
+        get { stateLock.withLock { _onFailure } }
+        set { stateLock.withLock { _onFailure = newValue } }
+    }
+    private var _onFailure: (@Sendable (Error) -> Void)?
+
+    /// 连接状态变化回调（didOpen/didClose/重连时触发），供 coordinator 刷新 UI。
+    /// 参数：(是否已连接, 人类可读状态文字，如"已断开，2.4s 后重连")。
+    var onConnectionChange: (@Sendable (Bool, String) -> Void)? {
+        get { stateLock.withLock { _onConnectionChange } }
+        set { stateLock.withLock { _onConnectionChange = newValue } }
+    }
+    private var _onConnectionChange: (@Sendable (Bool, String) -> Void)?
 
     // MARK: - 状态锁 — 保护所有跨线程访问的 mutable 状态
 
@@ -25,9 +42,14 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private let autoStopTimeout: TimeInterval
     private let autoStopThreshold: Float
 
-    private let audioEngine = AVAudioEngine()
+    private let capture = AudioCapture()
+    /// 常驻 URLSession：整个引擎生命周期复用，避免每次重连新建 session 导致连接/线程泄漏。
+    /// delegate 为 self，必须在 super.init 之后创建，故用 IUO。
+    private var session: URLSession!
+    /// Access is serialized by stateLock. Delegate callbacks are additionally
+    /// checked against _connectionEpoch because cancelled URLSession tasks can
+    /// still deliver callbacks after a replacement task has started.
     private var webSocketTask: URLSessionWebSocketTask?
-    private var session: URLSession?
     private var taskId: String = ""
     private let sendQueue = DispatchQueue(label: "com.voicemate.aliyun.send")
 
@@ -36,7 +58,18 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     private var _currentPartial: String = ""
     private var _taskFinishedCont: CheckedContinuation<Void, Never>?
     private var _taskStartedCont: CheckedContinuation<Void, Error>?
+    private var _stopWaiters: [CheckedContinuation<Void, Never>] = []
+    private var _taskLifecycle = ASRTaskLifecycle()
+    private var _stopRequested = false
+    private var _finishSent = false
+    /// 当前 task 的音频发送排空组；task-finished 前必须确认所有已排队音频发送回调完成。
+    private var _audioSendDrain: AudioSendDrain?
+    /// 等待握手完成的 continuation（ensureConnected 注册，didOpen/超时 resume）。
+    private var _connectWait: (id: UUID, cont: CheckedContinuation<Void, Error>)?
     private var _isConnected = false
+    /// 是否已有一次重连在排队（防止 didClose 与接收循环双触发）。
+    private var _reconnectScheduled = false
+    private var _connectionEpoch = ConnectionEpoch()
     private var _onPartial: (@Sendable (String) -> Void)?
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
@@ -47,9 +80,11 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
     // 超时 Task 引用 — 用于取消
     private var _startedTimeoutTask: Task<Void, Never>?
     private var _stoppedTimeoutTask: Task<Void, Never>?
+    private var _connectTimeoutTask: Task<Void, Never>?
+    private var _handshakeTimeoutTask: Task<Void, Never>?
 
-    // 静音检测（仅在音频 tap 回调中访问，tap 串行化，无需锁）
-    private var silenceStart: Date?
+    /// session 活跃标记：接收循环据此在 finish 后退出，而非触发重连。
+    private var _sessionActive = false
 
     var wsConnected: Bool { stateLock.withLock { _isConnected } }
 
@@ -66,19 +101,36 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         self.autoStopEnabled = autoStopEnabled
         self.autoStopTimeout = autoStopTimeout
         self.autoStopThreshold = autoStopThreshold
+        super.init()
+        // session 在整个引擎生命周期复用；delegate 为 self（必须在 super.init 之后）
+        let config = URLSessionConfiguration.default
+        self.session = URLSession(configuration: config, delegate: self, delegateQueue: nil)
         connect()
     }
 
     deinit {
-        stateLock.withLock {
+        let task: URLSessionWebSocketTask? = stateLock.withLock {
             _receiveTask?.cancel()
             _startedTimeoutTask?.cancel()
             _stoppedTimeoutTask?.cancel()
+            _connectTimeoutTask?.cancel()
+            _handshakeTimeoutTask?.cancel()
             _taskStartedCont?.resume(throwing: AlibabaASRError.notConnected)
             _taskStartedCont = nil
             _taskFinishedCont?.resume()
             _taskFinishedCont = nil
+            _stopWaiters.forEach { $0.resume() }
+            _stopWaiters.removeAll()
+            _connectWait?.cont.resume(throwing: AlibabaASRError.notConnected)
+            _connectWait = nil
+            _connectionEpoch = ConnectionEpoch()
+            _reconnectScheduled = true
+            let task = webSocketTask
+            webSocketTask = nil
+            return task
         }
+        task?.cancel()
+        session?.invalidateAndCancel()
     }
 
     /// 重连最大退避时间（秒）
@@ -92,36 +144,62 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         req.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 60
 
-        // 取消已有接收循环，避免多个同时运行
-        stateLock.withLock {
-            _receiveTask?.cancel()
-            _receiveTask = nil
+        // 取消旧的接收循环和 WebSocket 任务，避免多个连接并存；session 复用不重建。
+        // Store the replacement and its epoch under one lock before resuming it,
+        // so a very fast didOpen callback cannot observe a half-installed task.
+        let newTask = session.webSocketTask(with: req)
+        let connectionEpoch: UUID
+        let oldTask: URLSessionWebSocketTask?
+        let oldReceiveTask: Task<Void, Never>?
+        let handshakeWatchdog: Task<Void, Never>
+        stateLock.lock()
+        oldReceiveTask = _receiveTask
+        _receiveTask = nil
+        oldTask = webSocketTask
+        webSocketTask = newTask
+        connectionEpoch = _connectionEpoch.begin()
+        _isConnected = false
+        _reconnectScheduled = false
+        _handshakeTimeoutTask?.cancel()
+        handshakeWatchdog = Task { [weak self] in
+            do {
+                try await Task.sleep(nanoseconds: 10_000_000_000)
+            } catch {
+                return
+            }
+            guard let self else { return }
+            let shouldReconnect = self.stateLock.withLock {
+                guard self._connectionEpoch.accepts(connectionEpoch) else { return false }
+                self._handshakeTimeoutTask = nil
+                return !self._isConnected
+            }
+            if shouldReconnect {
+                Log.info("[AlibabaASR] 握手超时，安排重连")
+                self.scheduleReconnect()
+            }
         }
+        _handshakeTimeoutTask = handshakeWatchdog
+        stateLock.unlock()
 
-        session = URLSession(configuration: .default)
-        webSocketTask = session?.webSocketTask(with: req)
-        webSocketTask?.resume()
-        stateLock.withLock {
-            _isConnected = true
-            _reconnectAttempt = 0
-        }
-        print("[AlibabaASR] WebSocket 已连接")
+        oldReceiveTask?.cancel()
+        oldTask?.cancel()
+        newTask.resume()
+        Log.info("[AlibabaASR] 正在连接 WebSocket…")
+        notifyConnectionChange(false, "连接中…")
 
-        // 统一接收循环：处理所有服务端事件
-        let task = Task.detached { [weak self] in
+        // 统一接收循环：只消费这个 epoch 对应的 WebSocket；旧循环退出时
+        // receiveLoopEnded 会丢弃其重连请求。
+        let receiveTask = Task.detached { [weak self] in
             guard let self else { return }
             while true {
-                // 检查是否被取消（防止旧接收循环与新连接并存）
                 if Task.isCancelled { break }
-
-                guard let ws = self.webSocketTask else { break }
 
                 let msg: URLSessionWebSocketTask.Message
                 do {
-                    msg = try await ws.receive()
+                    msg = try await newTask.receive()
                 } catch {
-                    // 对端关闭、网络断开、超时等 → 触发重连
-                    print("[AlibabaASR] 接收循环断开: \(error)")
+                    // 对端关闭、网络断开、超时等 → 退出循环，由下面决定是否重连
+                    Log.error("[AlibabaASR] 接收循环断开: \(error)")
                     break
                 }
 
@@ -131,32 +209,134 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
                           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                           let header = json["header"] as? [String: Any],
                           let event = header["event"] as? String else { continue }
-                    self.handle(event: event, header: header, json: json)
+                    self.handle(
+                        event: event,
+                        header: header,
+                        json: json,
+                        connectionEpoch: connectionEpoch
+                    )
                 case .data: break
                 @unknown default: break
                 }
             }
-            // 接收循环退出（断连 / 错误 / 对端关闭）→ 自动重连
-            guard !Task.isCancelled else { return }
-            self.stateLock.withLock {
-                self._isConnected = false
-                self._reconnectAttempt += 1
-            }
-            let delay = self.nextReconnectDelay()
-            let delayStr = String(format: "%.1f", delay)
-            print("[AlibabaASR] 将在 \(delayStr)s 后重连...")
-            try? await Task.sleep(for: .seconds(delay))
-            self.connect()
+            self.receiveLoopEnded(connectionEpoch: connectionEpoch)
         }
-        stateLock.withLock { _receiveTask = task }
+        let installed = stateLock.withLock { () -> Bool in
+            guard _connectionEpoch.accepts(connectionEpoch) else { return false }
+            _receiveTask = receiveTask
+            return true
+        }
+        if !installed {
+            receiveTask.cancel()
+        }
     }
 
-    /// 指数退避（1s → 2s → 4s → … → max 30s）+ 随机 jitter（±25%）
-    private func nextReconnectDelay() -> TimeInterval {
-        let attempt = stateLock.withLock { _reconnectAttempt }
-        let base = min(pow(2.0, Double(attempt)), Self.maxReconnectDelay)
-        let jitter = Double.random(in: -base * 0.25 ... base * 0.25)
-        return max(0.5, base + jitter)
+    /// Handles the end of one receive loop only if it is still the current
+    /// connection. A cancelled old loop must never schedule another reconnect.
+    private func receiveLoopEnded(connectionEpoch: UUID) {
+        let shouldReconnect = stateLock.withLock {
+            guard _connectionEpoch.accepts(connectionEpoch) else { return false }
+            if _sessionActive {
+                Log.info("[AlibabaASR] session 结束，不触发重连")
+                return false
+            }
+            return true
+        }
+        guard shouldReconnect else { return }
+        guard !Task.isCancelled else { return }
+        Log.error("[AlibabaASR] 连接异常断开，将重连")
+        scheduleReconnect()
+    }
+
+    private func currentWebSocketTask() -> URLSessionWebSocketTask? {
+        stateLock.withLock { webSocketTask }
+    }
+
+    /// 幂等地安排一次重连（指数退避 + jitter）。didClose 与接收循环都可能调用，
+    /// 用 _reconnectScheduled 保证同一轮只重连一次。
+    private func scheduleReconnect() {
+        let delay: TimeInterval = stateLock.withLock {
+            guard !_reconnectScheduled else { return -1.0 }
+            _reconnectScheduled = true
+            _isConnected = false
+            _reconnectAttempt += 1
+            let attempt = _reconnectAttempt
+            let base = min(pow(2.0, Double(attempt)), Self.maxReconnectDelay)
+            let jitter = Double.random(in: -base * 0.25 ... base * 0.25)
+            return max(0.5, base + jitter)
+        }
+        guard delay >= 0 else { return }
+        let delayStr = String(format: "%.1f", delay)
+        Log.info("[AlibabaASR] 将在 \(delayStr)s 后重连...")
+        notifyConnectionChange(false, "已断开，\(delayStr)s 后自动重连")
+        Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(delay))
+            } catch {
+                return
+            }
+            guard let self else { return }
+            let shouldConnect = self.stateLock.withLock {
+                self._reconnectScheduled && !self._isConnected
+            }
+            guard shouldConnect else { return }
+            self.connect()
+        }
+    }
+
+    /// 确保已连接。已连接直接返回；否则等待当前连接握手完成（带超时），超时抛错。
+    private func ensureConnected(timeout: TimeInterval) async throws {
+        // 快速路径
+        if stateLock.withLock({ _isConnected }) { return }
+        // 若既没连接也没有正在进行的连接（webSocketTask 为空），主动发起一次
+        let needConnect = stateLock.withLock { webSocketTask == nil }
+        if needConnect { connect() }
+
+        // 注册一个等待握手的 continuation；delegate 的 didOpen 会 resume 它。
+        let waitID = UUID()
+        let timeoutTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            guard let self else { return }
+            var cont: CheckedContinuation<Void, Error>?
+            self.stateLock.withLock {
+                if let wait = self._connectWait, wait.id == waitID {
+                    cont = wait.cont
+                    self._connectWait = nil
+                    self._connectTimeoutTask = nil
+                }
+            }
+            cont?.resume(throwing: AlibabaASRError.connectTimeout)
+        }
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            stateLock.withLock {
+                if self._isConnected {
+                    // 在拿到锁的瞬间已经连上了，直接返回
+                    cont.resume()
+                    timeoutTask.cancel()
+                } else {
+                    self._connectWait = (id: waitID, cont: cont)
+                    self._connectTimeoutTask = timeoutTask
+                }
+            }
+        }
+    }
+
+    /// 取出并 resume 当前等待连接的 continuation（didOpen/didClose 调用）。
+    private func resumeConnectWait(result: Result<Void, Error>) {
+        var cont: CheckedContinuation<Void, Error>?
+        stateLock.withLock {
+            if let wait = _connectWait {
+                cont = wait.cont
+                _connectWait = nil
+                _connectTimeoutTask?.cancel()
+                _connectTimeoutTask = nil
+            }
+        }
+        guard let cont else { return }
+        switch result {
+        case .success: cont.resume()
+        case .failure(let e): cont.resume(throwing: e)
+        }
     }
 
     // MARK: - ASREngine
@@ -165,15 +345,28 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
                onAutoStop: (@Sendable () -> Bool)?) async throws {
-        guard stateLock.withLock({ _isConnected }) else { throw AlibabaASRError.notConnected }
-        taskId = UUID().uuidString
-        stateLock.withLock {
+        // 没有麦克风时不要先向服务端创建一个必然 EmptyAudio 的 task。
+        try capture.ensureInputAvailable()
+        try await ensureConnected(timeout: 5)
+
+        let newTaskID = UUID().uuidString
+        let beginResult = stateLock.withLock {
+            let result = _taskLifecycle.begin(taskID: newTaskID)
+            guard result == .accepted else { return result }
+            taskId = newTaskID
             _finalText = ""
             _currentPartial = ""
+            _stopRequested = false
+            _finishSent = false
+            _audioSendDrain = AudioSendDrain()
+            return result
+        }
+        guard beginResult == .accepted else {
+            throw AlibabaASRError.busy
         }
 
         let runTask: [String: Any] = [
-            "header": ["action": "run-task", "task_id": taskId, "streaming": "duplex"],
+            "header": ["action": "run-task", "task_id": newTaskID, "streaming": "duplex"],
             "payload": [
                 "task_group": "audio", "task": "asr", "function": "recognition",
                 "model": model,
@@ -188,122 +381,286 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             ]
         ]
         let json = String(data: try JSONSerialization.data(withJSONObject: runTask), encoding: .utf8)!
-        try await webSocketTask?.send(.string(json))
+        do {
+            // continuation 必须先注册，再发送 run-task，避免服务端事件先到导致丢失。
+            try await sendRunTaskAndWait(json: json, taskID: newTaskID)
+            let stopWasRequested = stateLock.withLock {
+                _sessionActive = true
+                return _stopRequested
+            }
+            if stopWasRequested {
+                // cancel 可能发生在 task-started 到达、但 start 尚未恢复的窗口。
+                await finishTaskAndWait(taskID: newTaskID)
+                throw AlibabaASRError.cancelled
+            }
 
-        // 等待 task-started（带超时保底）
-        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
-            stateLock.withLock { _taskStartedCont = cont }
+            // 存储回调
+            stateLock.withLock {
+                _onPartial = onPartial
+                _onAudioLevel = onAudioLevel
+                _onAutoStop = onAutoStop
+            }
+            try await startAudioCapture()
+        } catch {
+            let taskWasStarted = stateLock.withLock { _sessionActive }
+            if taskWasStarted {
+                // 音频采集或取消失败：先正常结束服务端 task，再把错误抛给上层。
+                await finishTaskAndWait(taskID: newTaskID)
+            } else {
+                stateLock.withLock { _ = _taskLifecycle.startFailed(taskID: newTaskID) }
+            }
+            throw error
         }
-        // 已成功收到 task-started，取消超时任务
-        stateLock.withLock {
-            _startedTimeoutTask?.cancel()
-            _startedTimeoutTask = nil
-        }
-
-        // 存储回调
-        stateLock.withLock {
-            _onPartial = onPartial
-            _onAudioLevel = onAudioLevel
-            _onAutoStop = onAutoStop
-        }
-        self.silenceStart = nil
-        await startAudioCapture()
     }
 
     func stop() async throws -> String {
-        guard webSocketTask != nil else { return stateLock.withLock { _finalText } }
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        capture.stop()
 
+        let taskToFinish = stateLock.withLock { () -> String? in
+            switch _taskLifecycle.phase {
+            case .starting(let id), .running(let id), .finishing(let id):
+                _stopRequested = true
+                _ = _taskLifecycle.requestFinish(taskID: id)
+                return id
+            case .idle, .failed:
+                _sessionActive = false
+                return nil
+            }
+        }
+        guard let taskToFinish else {
+            return stateLock.withLock { _finalText }
+        }
+
+        await finishTaskAndWait(taskID: taskToFinish)
+        return stateLock.withLock { _finalText }
+    }
+
+    private func sendRunTaskAndWait(json: String, taskID: String) async throws {
+        guard let webSocketTask = currentWebSocketTask() else {
+            throw AlibabaASRError.notConnected
+        }
+
+        try await withTaskCancellationHandler(operation: {
+            try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                let installed = stateLock.withLock { () -> Bool in
+                    guard _taskStartedCont == nil else { return false }
+                    _taskStartedCont = cont
+                    _startedTimeoutTask = Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: 10_000_000_000)
+                        guard !Task.isCancelled else { return }
+                        self?.safeResumeStarted(.failure(AlibabaASRError.startTimeout))
+                    }
+                    return true
+                }
+                guard installed else {
+                    cont.resume(throwing: AlibabaASRError.busy)
+                    return
+                }
+                Task { [weak self] in
+                    do {
+                        try await webSocketTask.send(.string(json))
+                    } catch {
+                        self?.safeResumeStarted(.failure(error))
+                    }
+                }
+            }
+        }, onCancel: { [weak self] in
+            self?.requestStopForPendingStart(taskID: taskID)
+        })
+    }
+
+    private func finishTaskAndWait(taskID: String) async {
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            let shouldSend = stateLock.withLock { () -> Bool in
+                _stopWaiters.append(cont)
+                if _stoppedTimeoutTask == nil {
+                    _stoppedTimeoutTask = Task { [weak self] in
+                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        guard !Task.isCancelled else { return }
+                        self?.finishWaitTimedOut(taskID: taskID)
+                    }
+                }
+                guard !_finishSent else { return false }
+                // If stop arrived while run-task was still starting, the
+                // task-started handler will send finish-task after the server
+                // has accepted the task.
+                guard _sessionActive else { return false }
+                _finishSent = true
+                return true
+            }
+            if shouldSend {
+                sendFinishTaskOnce(taskID: taskID)
+            }
+        }
+    }
+
+    private func sendFinishTaskOnce(taskID: String) {
+        Task { [weak self] in
+            guard let self else { return }
+            do {
+                await self.waitForAudioDrain()
+                try await self.sendFinishTask(taskID: taskID)
+                Log.info("[AlibabaASR] finish-task sent")
+            } catch {
+                Log.error("[AlibabaASR] finish-task 发送失败: \(error)")
+                self.finishWaitTimedOut(taskID: taskID)
+            }
+        }
+    }
+
+    /// 等待当前 task 已经交给 URLSession 的全部音频帧完成回调。
+    /// 若发送失败，回调同样会 leave，因此不会永久阻塞 finish 流程。
+    private func waitForAudioDrain() async {
+        let drain = stateLock.withLock { _audioSendDrain }
+        guard let drain else { return }
+        await drain.closeAndWait()
+    }
+
+    private func sendFinishTask(taskID: String) async throws {
         let finishTask: [String: Any] = [
-            "header": ["action": "finish-task", "task_id": taskId, "streaming": "duplex"],
+            "header": ["action": "finish-task", "task_id": taskID, "streaming": "duplex"],
             "payload": ["input": [:] as [String: Any]]
         ]
         let json = String(data: try JSONSerialization.data(withJSONObject: finishTask), encoding: .utf8)!
-        try? await webSocketTask?.send(.string(json))
-        print("[AlibabaASR] finish-task sent")
-
-        // 等待接收循环唤醒（task-finished / task-failed / 超时 5s）
-        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-            stateLock.withLock { _taskFinishedCont = cont }
+        guard let webSocketTask = currentWebSocketTask() else {
+            throw AlibabaASRError.notConnected
         }
-        // 已收到 task-finished，取消超时任务
-        stateLock.withLock {
-            _stoppedTimeoutTask?.cancel()
-            _stoppedTimeoutTask = nil
-        }
-
-        return stateLock.withLock { _finalText }
+        try await webSocketTask.send(.string(json))
     }
 
     // MARK: - 音频
 
-    private func startAudioCapture() async {
-        // 清理旧的 tap（如果有）
-        audioEngine.inputNode.removeTap(onBus: 0)
-        if audioEngine.isRunning { audioEngine.stop() }
-        audioEngine.reset()
-
-        let inputNode = audioEngine.inputNode
-        let hardwareFormat = inputNode.outputFormat(forBus: 0)
+    private func startAudioCapture() async throws {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
-        guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else { return }
+        let silence: SilenceConfig? = autoStopEnabled
+            ? SilenceConfig(threshold: autoStopThreshold, timeout: autoStopTimeout, gracePeriod: 1.0)
+            : nil
 
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: hardwareFormat) {
-            [weak self, converter, targetFormat, hardwareFormat] buffer, _ in
-            guard let self else { return }
-            let ratio = targetFormat.sampleRate / hardwareFormat.sampleRate
-            let fc = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
-            guard fc > 0, let out = AVAudioPCMBuffer(pcmFormat: targetFormat, frameCapacity: fc) else { return }
-            let didProvide = ConverterFlag()
-            var convErr: NSError?
-            converter.convert(to: out, error: &convErr) { _, st in
-                guard !didProvide.value else { st.pointee = .noDataNow; return nil }
-                didProvide.value = true; st.pointee = .haveData; return buffer
-            }
-            guard convErr == nil, out.frameLength > 0 else { return }
-            let len = Int(out.frameLength)
-            guard let ch = out.int16ChannelData?.pointee else { return }
-
-            // 计算 RMS 电平（0.0~1.0）
-            var sum: Float = 0
-            for i in 0..<len { let s = Float(ch[i]); sum += s * s }
-            let rms = sqrt(sum / Float(len)) / 32768.0
-            let level = min(rms, 1.0)
-
-            // 在锁下读取回调引用，避免数据竞争
-            var levelCB: (@Sendable (Float) -> Void)?
-            var autoStopCB: (@Sendable () -> Bool)?
-            self.stateLock.withLock {
-                levelCB = self._onAudioLevel
-                autoStopCB = self._onAutoStop
-            }
-            levelCB?(level)
-
-            // 静音检测 → 自动停止
-            if self.autoStopEnabled && level < self.autoStopThreshold {
-                if self.silenceStart == nil { self.silenceStart = Date() }
-                if let start = self.silenceStart,
-                   Date().timeIntervalSince(start) >= self.autoStopTimeout {
-                    if autoStopCB?() == true {
-                        self.silenceStart = nil
+        // onBuffer 外的锁保护回调读取；闭包把 self 状态拷出来再用，避免长锁。
+        try capture.start(
+            targetFormat: targetFormat,
+            bufferSize: 1024,
+            silence: silence,
+            onLevel: { [weak self] level in
+                var cb: (@Sendable (Float) -> Void)?
+                self?.stateLock.withLock { cb = self?._onAudioLevel }
+                cb?(level)
+            },
+            onAutoStop: { [weak self] in
+                var cb: (@Sendable () -> Bool)?
+                self?.stateLock.withLock { cb = self?._onAutoStop }
+                return cb?() ?? false
+            },
+            onInterruption: { [weak self] error in self?.failSession(error) },
+            onBuffer: { [weak self] out in
+                guard let self else { return }
+                let len = Int(out.frameLength)
+                guard len > 0, let ch = out.int16ChannelData?.pointee else { return }
+                let bytes = Data(bytes: ch, count: len * 2)
+                let (webSocketTask, drain) = self.stateLock.withLock {
+                    (self.webSocketTask, self._audioSendDrain)
+                }
+                guard let webSocketTask, let drain else { return }
+                guard drain.begin() else { return }
+                self.sendQueue.async {
+                    webSocketTask.send(.data(bytes)) { _ in
+                        drain.end()
                     }
                 }
-            } else {
-                self.silenceStart = nil
             }
+        )
+        Log.info("[AlibabaASR] 音频引擎启动")
+    }
 
-            let bytes = Data(bytes: ch, count: len * 2)
-            self.sendQueue.async { self.webSocketTask?.send(.data(bytes)) { _ in } }
-        }
+    /// 触发连接状态变化回调（在锁外执行，避免持锁回调上层）。
+    private func notifyConnectionChange(_ connected: Bool, _ status: String) {
+        let cb = onConnectionChange
+        cb?(connected, status)
+    }
 
-        do {
-            audioEngine.prepare()
-            try audioEngine.start()
-            print("[AlibabaASR] 音频引擎启动")
-        } catch {
-            print("[AlibabaASR] 音频引擎启动失败: \(error)")
+    /// 录音中发生不可恢复的错误（连接断开、麦克风中断等）：停采集、解开会话等待者、
+    /// 通过 onFailure 通知上层结束会话。best-effort，不抛错。
+    private func failSession(_ error: Error) {
+        capture.stop()
+        var startedCont: CheckedContinuation<Void, Error>?
+        var finishedCont: CheckedContinuation<Void, Never>?
+        var stopWaiters: [CheckedContinuation<Void, Never>] = []
+        var failureCB: (@Sendable (Error) -> Void)?
+        var taskWasActive = false
+        stateLock.withLock {
+            switch _taskLifecycle.phase {
+            case .idle, .failed:
+                return
+            case .starting, .running, .finishing:
+                taskWasActive = true
+            }
+            guard taskWasActive else { return }
+            if case let .starting(taskID) = _taskLifecycle.phase {
+                _ = _taskLifecycle.taskFailed(taskID: taskID)
+            } else if case let .running(taskID) = _taskLifecycle.phase {
+                _ = _taskLifecycle.taskFailed(taskID: taskID)
+            } else if case let .finishing(taskID) = _taskLifecycle.phase {
+                _ = _taskLifecycle.taskFailed(taskID: taskID)
+            }
+            _sessionActive = false
+            _stopRequested = false
+            _finishSent = false
+            _audioSendDrain = nil
+            _startedTimeoutTask?.cancel()
+            _startedTimeoutTask = nil
+            _stoppedTimeoutTask?.cancel()
+            _stoppedTimeoutTask = nil
+            startedCont = _taskStartedCont
+            _taskStartedCont = nil
+            finishedCont = _taskFinishedCont
+            _taskFinishedCont = nil
+            stopWaiters = _stopWaiters
+            _stopWaiters.removeAll()
+            failureCB = _onFailure
         }
+        guard taskWasActive else { return }
+        startedCont?.resume(throwing: error)
+        finishedCont?.resume()
+        stopWaiters.forEach { $0.resume() }
+        failureCB?(error)
+    }
+
+    private func requestStopForPendingStart(taskID: String) {
+        stateLock.withLock {
+            guard taskId == taskID else { return }
+            guard case .starting = _taskLifecycle.phase else { return }
+            _stopRequested = true
+            _ = _taskLifecycle.requestFinish(taskID: taskID)
+        }
+    }
+
+    private func resolveFinishWaiters(taskID: String, succeeded: Bool) {
+        var waiters: [CheckedContinuation<Void, Never>] = []
+        stateLock.withLock {
+            guard self.taskId == taskID else { return }
+            if succeeded {
+                _ = _taskLifecycle.taskFinished(taskID: taskID)
+            } else {
+                _ = _taskLifecycle.taskFailed(taskID: taskID)
+            }
+            _sessionActive = false
+            _finishSent = false
+            _stopRequested = false
+            _audioSendDrain = nil
+            _stoppedTimeoutTask?.cancel()
+            _stoppedTimeoutTask = nil
+            waiters = _stopWaiters
+            _stopWaiters.removeAll()
+        }
+        waiters.forEach { $0.resume() }
+    }
+
+    private func finishWaitTimedOut(taskID: String) {
+        let isCurrentTask = stateLock.withLock { self.taskId == taskID }
+        guard isCurrentTask else { return }
+        resolveFinishWaiters(taskID: taskID, succeeded: false)
+        currentWebSocketTask()?.cancel(with: .goingAway, reason: nil)
+        scheduleReconnect()
     }
 
     // MARK: - 事件处理
@@ -350,6 +707,8 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
         stateLock.withLock {
             guard let cont = _taskStartedCont else { return }
             _taskStartedCont = nil
+            _startedTimeoutTask?.cancel()
+            _startedTimeoutTask = nil
             switch result {
             case .success: cont.resume()
             case .failure(let e): cont.resume(throwing: e)
@@ -359,17 +718,33 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
 
     /// 安全 resume task-finished continuation。
     private func safeResumeFinished() {
-        stateLock.withLock {
-            guard let cont = _taskFinishedCont else { return }
-            _taskFinishedCont = nil
-            cont.resume()
-        }
+        let taskID = stateLock.withLock { taskId }
+        finishWaitTimedOut(taskID: taskID)
     }
 
-    private func handle(event: String, header: [String: Any], json: [String: Any]) {
+    private func handle(
+        event: String,
+        header: [String: Any],
+        json: [String: Any],
+        connectionEpoch: UUID
+    ) {
+        guard stateLock.withLock({ _connectionEpoch.accepts(connectionEpoch) }) else { return }
         switch event {
         case "task-started":
+            let currentTaskID = header["task_id"] as? String ?? stateLock.withLock { taskId }
+            let shouldFinish = stateLock.withLock { () -> Bool in
+                guard currentTaskID == taskId else { return false }
+                guard _taskLifecycle.taskStarted(taskID: currentTaskID) == .accepted else {
+                    return false
+                }
+                _sessionActive = true
+                return _stopRequested
+            }
             safeResumeStarted(.success(()))
+            if shouldFinish {
+                stateLock.withLock { _finishSent = true }
+                sendFinishTaskOnce(taskID: currentTaskID)
+            }
 
         case "result-generated":
             guard let payload = json["payload"] as? [String: Any],
@@ -392,16 +767,96 @@ final class AlibabaASREngine: ASREngine, @unchecked Sendable {
             }
 
         case "task-failed":
+            let currentTaskID = header["task_id"] as? String ?? stateLock.withLock { taskId }
             let code = header["error_code"] as? String ?? "?"
             let msg = header["error_message"] as? String ?? ""
-            print("[AlibabaASR] 任务失败: \(code) - \(msg)")
-            safeResumeFinished()
+            let taskError = AlibabaASRError.taskFailed(code: code, message: msg)
+            Log.error("[AlibabaASR] 任务失败: \(code) - \(msg)")
+            var failureCB: (@Sendable (Error) -> Void)?
+            let shouldHandle = stateLock.withLock { () -> Bool in
+                guard currentTaskID == taskId else { return false }
+                switch _taskLifecycle.phase {
+                case .idle, .failed:
+                    return false
+                case .starting, .running, .finishing:
+                    break
+                }
+                _ = _taskLifecycle.taskFailed(taskID: currentTaskID)
+                _sessionActive = false
+                failureCB = _onFailure
+                return true
+            }
+            guard shouldHandle else { return }
+            capture.stop()
+            safeResumeStarted(.failure(taskError))
+            resolveFinishWaiters(taskID: currentTaskID, succeeded: false)
+            failureCB?(taskError)
+            currentWebSocketTask()?.cancel(with: .goingAway, reason: nil)
+            scheduleReconnect()
 
         case "task-finished":
-            print("[AlibabaASR] task-finished")
-            safeResumeFinished()
+            Log.info("[AlibabaASR] task-finished")
+            let currentTaskID = header["task_id"] as? String ?? stateLock.withLock { taskId }
+            resolveFinishWaiters(taskID: currentTaskID, succeeded: true)
 
         default: break
+        }
+    }
+}
+
+// MARK: - URLSessionWebSocketDelegate
+
+extension AlibabaASREngine: URLSessionWebSocketDelegate {
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didOpenWithProtocol protocol: String?) {
+        let isCurrent = stateLock.withLock {
+            guard self.webSocketTask === webSocketTask else { return false }
+            _ = _taskLifecycle.reconnectSucceeded()
+            _isConnected = true
+            _reconnectAttempt = 0
+            _reconnectScheduled = false
+            _connectTimeoutTask?.cancel()
+            _connectTimeoutTask = nil
+            _handshakeTimeoutTask?.cancel()
+            _handshakeTimeoutTask = nil
+            return true
+        }
+        guard isCurrent else { return }
+        Log.info("[AlibabaASR] WebSocket 已连接")
+        resumeConnectWait(result: .success(()))
+        notifyConnectionChange(true, "已连接")
+    }
+
+    func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
+                    didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        let isCurrent = stateLock.withLock {
+            guard self.webSocketTask === webSocketTask else { return false }
+            _isConnected = false
+            _handshakeTimeoutTask?.cancel()
+            _handshakeTimeoutTask = nil
+            return true
+        }
+        guard isCurrent else { return }
+        resumeConnectWait(result: .failure(AlibabaASRError.notConnected))
+        Log.info("[AlibabaASR] WebSocket 关闭 code=\(closeCode.rawValue)")
+        notifyConnectionChange(false, "已断开")
+        // 只要仍有 task 在途，断开就必须解开 start/stop 等待者；
+        // session 正常结束时生命周期已回到 idle，由 finish 流程处理。
+        let taskInFlight = stateLock.withLock { () -> Bool in
+            switch _taskLifecycle.phase {
+            case .idle, .failed:
+                return false
+            case .starting, .running, .finishing:
+                return true
+            }
+        }
+        if taskInFlight {
+            // 录音中连接掉了：让等待中的 start/stop 抛错并通知上层结束本次会话；
+            // 同时后台重连常驻连接，保证下次呼出能直接用（不会半成品——session 已 fail）
+            failSession(AlibabaASRError.notConnected)
+            scheduleReconnect()
+        } else {
+            scheduleReconnect()
         }
     }
 }
@@ -410,12 +865,22 @@ enum AlibabaASRError: LocalizedError {
     case invalidURL
     case noTaskStarted
     case notConnected
+    case busy
+    case cancelled
+    case connectTimeout
+    case startTimeout
+    case taskFailed(code: String, message: String)
 
     var errorDescription: String? {
         switch self {
         case .invalidURL: return "阿里云 ASR WebSocket URL 无效"
         case .noTaskStarted: return "阿里云 ASR 未收到 task-started"
         case .notConnected: return "阿里云 ASR 未连接"
+        case .busy: return "阿里云 ASR 上一个任务尚未结束，请稍后重试"
+        case .cancelled: return "阿里云 ASR 任务已取消"
+        case .connectTimeout: return "连接阿里云 ASR 超时，请检查网络后重试"
+        case .startTimeout: return "阿里云 ASR 启动超时，请重试"
+        case .taskFailed(_, let message): return "阿里云 ASR 任务失败：\(message)"
         }
     }
 }

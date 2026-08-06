@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 import Speech
+import AppKit
+import UniformTypeIdentifiers
 #if !APP_STORE
 import ApplicationServices
 #endif
@@ -21,6 +23,7 @@ struct SettingsView: View {
     @State private var selectedTab = 0
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
+    @State private var postEventRequestAttempted = false
 
     // 保存校验
     @State private var showValidationAlert = false
@@ -35,6 +38,8 @@ struct SettingsView: View {
 
     // 模型管理
     @State private var showModelManagement = false
+    @State private var showConfigImportAlert = false
+    @State private var configImportMessage = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -90,6 +95,11 @@ struct SettingsView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(validationMessage)
+        }
+        .alert("导入配置失败", isPresented: $showConfigImportAlert) {
+            Button("好", role: .cancel) {}
+        } message: {
+            Text(configImportMessage)
         }
         .sheet(isPresented: $showPromptPreview) {
             PromptPreviewSheet(systemPrompt: draft.llm.prompt.system,
@@ -174,6 +184,16 @@ struct SettingsView: View {
                     Text("阿里云 Fun-ASR").tag("aliyun")
                 }.labelsHidden().frame(width: 200)
             }
+#if APP_STORE
+            section("从官网版迁移") {
+                Text("App Store 版使用独立沙盒，不会自动读取官网版的配置。选择官网版的 config.json 后，配置会复制到本渠道的沙盒中。")
+                    .font(.caption2).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("导入官网版 config.json…") {
+                    importLegacyConfig()
+                }
+            }
+#endif
             Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
                 .font(.caption2).foregroundStyle(.tertiary)
 
@@ -282,6 +302,34 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, minHeight: 480, alignment: .topLeading)
     }
+
+#if APP_STORE
+    private func importLegacyConfig() {
+        let panel = NSOpenPanel()
+        panel.title = "选择官网版配置"
+        panel.message = "选择 ~/Library/Application Support/VoiceMate/config.json"
+        panel.prompt = "导入"
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        let legacyURL = ConfigImportPolicy.legacyConfigURL(
+            homeDirectory: FileManager.default.homeDirectoryForCurrentUser
+        )
+        panel.directoryURL = legacyURL.deletingLastPathComponent()
+        panel.nameFieldStringValue = ConfigImportPolicy.supportedFileName
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try ConfigStore.shared.importConfig(from: url)
+            draft = ConfigStore.shared.config
+            originalConfig = draft
+        } catch {
+            configImportMessage = error.localizedDescription
+            showConfigImportAlert = true
+        }
+    }
+#endif
 
     // MARK: - AI 润色
 
@@ -424,13 +472,38 @@ struct SettingsView: View {
                 status: speechStatus,
                 action: requestSpeechPermission
             )
+
+            // 合成键盘事件（App Store 版和官网版的剪贴板回退路径都需要）
+            permissionCard(
+                icon: "keyboard.fill",
+                name: "自动写回（键盘事件）",
+                why: "允许 VoiceKit 发送一次 ⌘V；App Store 版和官网版回退路径需要",
+                ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
+                status: postEventStatus,
+                action: requestPostEventPermission
+            )
+
+#if APP_STORE
+            GroupBox {
+                VStack(alignment: .leading, spacing: 6) {
+                    Label("App Store 版的输入方式", systemImage: "doc.on.clipboard")
+                        .font(.headline)
+                    Text("识别完成后会先尝试自动写回；如果目标应用未接受，文字会保留在剪贴板，请在目标输入框按 ⌘V。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(4)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+#endif
             
             // 辅助功能（仅官网版）
 #if !APP_STORE
             permissionCard(
-                icon: "keyboard.fill",
-                name: "辅助功能",
-                why: "识别完成后自动粘贴到输入框，无需手动复制。同时保证全局热键在任意 App 中都生效。",
+                icon: "rectangle.and.hand.point.up.left.fill",
+                name: "辅助功能（直接写入）",
+                why: "允许 VoiceKit 直接访问目标输入框写入文字；仅官网版使用。",
                 ifDenied: "不授权：需手动 ⌘V 粘贴；从官网下载的版本热键也可能受影响",
                 status: accessibilityStatus,
                 action: requestAccessibilityPermission
@@ -491,6 +564,12 @@ struct SettingsView: View {
         }
     }
 
+    private var postEventStatus: PermissionStatus {
+        _ = permissionRefreshID
+        if PasteService.shared.canPostEvents { return .granted }
+        return postEventRequestAttempted ? .denied : .notDetermined
+    }
+
     /// 未决定时触发系统授权弹窗（App Review 5.1.1(iv)：按钮用「继续」而非「去授权」）；
     /// 已被拒绝时系统弹窗不会再出现，改为打开对应系统设置页。
     /// 必须 Task.detached：权限回调在后台线程（TCC XPC 回复队列）触发，
@@ -520,6 +599,17 @@ struct SettingsView: View {
             }
             await MainActor.run { permissionRefreshID = UUID() }
         }
+    }
+
+    private func requestPostEventPermission() {
+        guard !PasteService.shared.canPostEvents else { return }
+        guard !postEventRequestAttempted else {
+            PasteService.shared.openPostEventSettings()
+            return
+        }
+        postEventRequestAttempted = true
+        _ = PasteService.shared.requestPostEventAccess()
+        permissionRefreshID = UUID()
     }
 
 #if !APP_STORE

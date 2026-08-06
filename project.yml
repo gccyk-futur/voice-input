@@ -16,6 +16,7 @@ settings:
     INFOPLIST_FILE: Sources/VoiceKit/Resources/Info.plist
     LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
     ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+    SWIFT_OBJC_BRIDGING_HEADER: Sources/VoiceKit/VoiceKit-Bridging-Header.h
   configs:
     Debug:
       ENABLE_HARDENED_RUNTIME: false
@@ -50,3 +51,21 @@ targets:
         NSSpeechRecognitionUsageDescription: "VoiceKit 需要使用语音识别将语音实时转为文字。"
         NSHumanReadableCopyright: "Copyright © 2026 VoiceKit. MIT License."
         LSApplicationCategoryType: public.app-category.utilities
+  VoiceKitTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/VoiceKitTests
+      - path: Sources/VoiceKit/ASR/ASRTaskLifecycle.swift
+      - path: Sources/VoiceKit/Paste/CmdVEventPlan.swift
+      - path: Sources/VoiceKit/Coordinator/RecordingFlowGate.swift
+      - path: Sources/VoiceKit/ASR/AudioSendDrain.swift
+      - path: Sources/VoiceKit/ASR/ConnectionEpoch.swift
+      - path: Sources/VoiceKit/Paste/TextInsertionPlan.swift
+      - path: Sources/VoiceKit/ASR/AudioTapFormatPolicy.swift
+      - path: Sources/VoiceKit/Paste/PasteDeliveryPolicy.swift
+      - path: Sources/VoiceKit/Config/ConfigImportPolicy.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: me.ckai.VoiceKitTests
+        GENERATE_INFOPLIST_FILE: true

@@ -21,6 +21,16 @@ final class AppCoordinator {
     var statusText: String = "按 ⌘⇧V 开始"
     var audioLevel: Float = 0
 
+    // MARK: - 状态栏展示用的实时状态（@Observable 存储属性，变更驱动 UI 刷新）
+    /// 当前选择的 ASR 引擎 id（"system" | "aliyun"）。
+    var asrEngineChoice: String = "system"
+    /// 阿里云是否已配置 apiKey/workspaceId（决定是否显示双引擎切换）。
+    var aliyunConfigured: Bool = false
+    /// 阿里云 WebSocket 是否已连接。
+    var wsConnected: Bool = false
+    /// 阿里云连接状态文字（"已连接" / "连接中…" / "已断开，2.4s 后自动重连"）。
+    var wsStatusText: String = "未连接"
+
     private let configStore = ConfigStore.shared
     private let historyStore = HistoryStore.shared
     private let pasteService = PasteService.shared
@@ -34,6 +44,19 @@ final class AppCoordinator {
     private var targetApp: NSRunningApplication?
     /// 收尾标记：自动粘贴流程进行中。此时面板关闭触发的 cancel 应被忽略，避免双重复位。
     private var finalizing = false
+    /// 引擎的 start/stop/finish 流程未完成时，禁止下一次 F2 重新进入同一引擎。
+    private var engineOperationInFlight = false
+    private var stopTask: Task<Void, Never>?
+    /// A runtime engine failure can arrive while stop/cancel is already
+    /// awaiting the engine. Let that teardown task consume the error instead
+    /// of racing it with an independent idle/reset transition.
+    private var pendingRuntimeFailure: Error?
+    /// 防止用户在 resolveASR 尚未完成时取消，旧的异步结果又启动幽灵会话。
+    private var recordingFlowGate = RecordingFlowGate()
+    private var resolvingASRTask: Task<Void, Never>?
+    private var engineStartTask: Task<Void, Never>?
+    /// 权限请求回调可能晚于用户取消返回；用 token 丢弃过期回调。
+    private var permissionRequestID: UUID?
 
     // MARK: - Display Sync (LLM 流式文字 → UI 解耦)
 
@@ -46,19 +69,39 @@ final class AppCoordinator {
 
     /// 菜单栏状态（供 StatusBarMenu 读取）
     var engineDisplayName: String {
-        configStore.config.asr.engine == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
+        asrEngineChoice == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
     }
     var llmEnabled: Bool { configStore.config.llm.enabled }
-    var wsConnected: Bool {
-        (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
-    }
 
     init() {
+        // 从当前配置初始化状态栏展示状态
+        let cfg = configStore.config
+        asrEngineChoice = cfg.asr.engine
+        aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
+
         hotkey.onActivate = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
         }
         hotkey.register(hotkeyString: configStore.config.general.hotkey)
         panel.setCoordinator(self)
+
+        // 配置变更（设置中保存、热重载）→ 同步状态栏展示状态
+        NotificationCenter.default.addObserver(
+            forName: ConfigStore.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshEngineStatus() }
+        }
+    }
+
+    /// 依据配置与当前引擎刷新状态栏展示状态（引擎选择、阿里云配置/连接状态）。
+    private func refreshEngineStatus() {
+        let cfg = configStore.config
+        asrEngineChoice = cfg.asr.engine
+        aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
+        wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
+        if !aliyunConfigured {
+            wsStatusText = "未连接"
+        }
     }
 
     // MARK: - 状态机
@@ -75,10 +118,16 @@ final class AppCoordinator {
     }
 
     func startRecording() {
-        guard sessionState == .idle else { return }
+        guard sessionState == .idle,
+              !engineOperationInFlight,
+              stopTask == nil,
+              permissionRequestID == nil else {
+            Log.info("[Coordinator] startRecording ignored: state=\(sessionState), engineOperationInFlight=\(engineOperationInFlight)")
+            return
+        }
         let micStatus = AVCaptureDevice.authorizationStatus(for: .audio)
         let speechStatus = SFSpeechRecognizer.authorizationStatus()
-        print("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
+        Log.info("[Coordinator] startRecording: micStatus=\(micStatus.rawValue), speechStatus=\(speechStatus.rawValue)")
 
         if micStatus == .denied || speechStatus == .denied {
             presentPermissionError(micDenied: micStatus == .denied, speechDenied: speechStatus == .denied)
@@ -100,6 +149,8 @@ final class AppCoordinator {
     /// 必须用 Task.detached：AVCaptureDevice / SFSpeechRecognizer
     /// 权限回调在后台线程触发，与 MainActor 隔离的 CheckedContinuation 冲突会在 Debug 构建崩溃。
     private func requestPendingPermissions(micNeeded: Bool, speechNeeded: Bool) {
+        let requestID = UUID()
+        permissionRequestID = requestID
         panel.show()
         Task.detached { [weak self] in
             guard let self else { return }
@@ -107,11 +158,13 @@ final class AppCoordinator {
                 let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                     AVCaptureDevice.requestAccess(for: .audio) { cont.resume(returning: $0) }
                 }
-                print("[Coordinator] microphone requestAccess result: \(granted)")
+                Log.info("[Coordinator] microphone requestAccess result: \(granted)")
                 guard granted else {
                     await MainActor.run { [weak self] in
-                        self?.panel.close()
-                        self?.presentPermissionError(micDenied: true, speechDenied: false)
+                        guard let self, self.permissionRequestID == requestID else { return }
+                        self.permissionRequestID = nil
+                        self.panel.close()
+                        self.presentPermissionError(micDenied: true, speechDenied: false)
                     }
                     return
                 }
@@ -120,35 +173,47 @@ final class AppCoordinator {
                 let granted = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
                     SFSpeechRecognizer.requestAuthorization { cont.resume(returning: $0 == .authorized) }
                 }
-                print("[Coordinator] speech requestAuthorization result: \(granted)")
+                Log.info("[Coordinator] speech requestAuthorization result: \(granted)")
                 guard granted else {
                     await MainActor.run { [weak self] in
-                        self?.panel.close()
-                        self?.presentPermissionError(micDenied: false, speechDenied: true)
+                        guard let self, self.permissionRequestID == requestID else { return }
+                        self.permissionRequestID = nil
+                        self.panel.close()
+                        self.presentPermissionError(micDenied: false, speechDenied: true)
                     }
                     return
                 }
             }
             // 全部通过，继续听写流程
             await MainActor.run { [weak self] in
-                self?.beginRecordingFlow()
+                guard let self, self.permissionRequestID == requestID else { return }
+                self.permissionRequestID = nil
+                self.beginRecordingFlow()
             }
         }
     }
 
     /// 已授权的正常听写启动流程。先解析引擎，Direct 启动。
     private func beginRecordingFlow() {
+        let generation = recordingFlowGate.begin()
         targetApp = hotkey.capturedTargetApp ?? NSWorkspace.shared.frontmostApplication
         hotkey.capturedTargetApp = nil
-        print("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil")")
+        Log.info("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil")")
         asrText = ""
         llmText = ""
         sessionState = .recording
         statusText = "聆听中…"
 
         let languageID = configStore.config.asr.system.language
-        Task { @MainActor in
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return }
             let engine = await self.resolveASR()
+            guard !Task.isCancelled,
+                  self.recordingFlowGate.accepts(generation),
+                  self.sessionState == .recording else {
+                return
+            }
+            self.resolvingASRTask = nil
             self.asrEngine = engine
             // 本地引擎：传入静音检测配置
             if let legacy = engine as? LegacyDictationEngine {
@@ -158,17 +223,19 @@ final class AppCoordinator {
                     timeout: cfg.silenceTimeout,
                     threshold: Float(cfg.silenceThreshold)
                 )
-                print("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
+                Log.info("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
             }
             panel.show(needsActivation: engine.requiresForeground)
             panel.makeKey()
-            print("[Coordinator] starting \(engine.displayName), needsActivation=\(engine.requiresForeground)")
-            startEngine(engine, languageID: languageID)
+            Log.info("[Coordinator] starting \(engine.displayName), needsActivation=\(engine.requiresForeground)")
+            startEngine(engine, languageID: languageID, generation: generation)
         }
+        resolvingASRTask = task
     }
 
     /// 启动 ASR 引擎并处理错误。
-    private func startEngine(_ engine: any ASREngine, languageID: String) {
+    private func startEngine(_ engine: any ASREngine, languageID: String, generation: UUID) {
+        engineOperationInFlight = true
         // 音波电平通知
         let onLevel: (@Sendable (Float) -> Void)? = { [weak self] level in
             Task { @MainActor in self?.audioLevel = level }
@@ -181,7 +248,29 @@ final class AppCoordinator {
             }
             return true
         }
-        Task {
+        // 飞行中失败（麦克风断开、云端连接中断等）：退回 idle 并提示，面板保持可见
+        engine.onFailure = { [weak self] error in
+            Task { @MainActor in
+                guard let self, self.sessionState != .idle else { return }
+                Log.error("[Coordinator] engine runtime failure: \(error)")
+                self.recordingFlowGate.invalidate()
+                self.resolvingASRTask?.cancel()
+                self.resolvingASRTask = nil
+                if self.stopTask != nil {
+                    // stop()/cancel() owns teardown now; it will surface the
+                    // error after its engine await has completed.
+                    self.pendingRuntimeFailure = error
+                    return
+                }
+                self.pendingRuntimeFailure = nil
+                self.engineOperationInFlight = false
+                self.sessionState = .idle
+                self.statusText = "听写中断：\(error.localizedDescription)"
+            }
+        }
+        let startTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.engineStartTask = nil }
             do {
                 try await engine.start(locale: Locale(identifier: languageID),
                     onPartial: { [weak self] partial in
@@ -190,44 +279,122 @@ final class AppCoordinator {
                     onAudioLevel: onLevel,
                     onAutoStop: onSilence
                 )
+
+                // 若 cancel/stop 已经发生，stopTask 会在这个 start 返回后负责清理；
+                // 若没有 stopTask，则由这里处理迟到的成功，避免 idle 状态下继续录音。
+                let shouldKeepRunning = self.recordingFlowGate.accepts(generation)
+                    && self.sessionState == .recording
+                    && self.asrEngine?.id == engine.id
+                    && self.stopTask == nil
+                guard shouldKeepRunning else {
+                    if self.stopTask == nil {
+                        _ = try? await engine.stop()
+                    }
+                    return
+                }
+                self.engineOperationInFlight = false
             } catch {
-                print("[Coordinator] engine.start failed: \(error)")
-                await MainActor.run {
-                    self.sessionState = .idle
-                    if let ae = error as? ASRError {
-                        switch ae {
-                        case .microphoneNotAuthorized:
-                            self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
-                            self.pasteService.openMicrophoneSettings()
-                        case .speechNotAuthorized:
-                            self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
-                            self.pasteService.openSpeechSettings()
-                        default:
-                            self.statusText = "听写启动失败：\(error.localizedDescription)"
-                        }
-                    } else {
+                Log.error("[Coordinator] engine.start failed: \(error)")
+                // 若 cancel 正在等待 engine.stop()，由 cancel 的收尾统一复位，
+                // 避免 start 的失败回调抢先 reset 并放开下一次 F2。
+                guard self.stopTask == nil else { return }
+                self.recordingFlowGate.invalidate()
+                self.engineOperationInFlight = false
+                self.sessionState = .idle
+                if let ae = error as? ASRError {
+                    switch ae {
+                    case .microphoneNotAuthorized:
+                        self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
+                        self.pasteService.openMicrophoneSettings()
+                    case .speechNotAuthorized:
+                        self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
+                        self.pasteService.openSpeechSettings()
+                    case .noInputDevice:
+                        // 关闭录音面板，只保留弹窗提示，避免"面板+弹窗"同时出现
+                        self.panel.close()
+                        self.statusText = "未检测到麦克风：请连接麦克风或在 系统设置→声音→输入 中选择输入设备"
+                        self.presentErrorAlert(
+                            title: "未检测到麦克风",
+                            message: "请连接麦克风或在 系统设置→声音→输入 中选择一个输入设备，然后重试。"
+                        )
+                    default:
                         self.statusText = "听写启动失败：\(error.localizedDescription)"
                     }
+                } else if let aliyunErr = error as? AlibabaASRError {
+                    self.statusText = "听写启动失败：\(aliyunErr.localizedDescription)"
+                } else {
+                    self.statusText = "听写启动失败：\(error.localizedDescription)"
                 }
             }
         }
+        engineStartTask = startTask
     }
 
     /// 双通道抢占前台：NSApp.activate（AppKit）+ clickToActivate（CGEvent 模拟点击），
     /// 持续 3s 覆盖 DictationTranscriber 初始化全过程。对抗 iTerm2 等 reclaim 行为。
     func stopAndProcess() {
-        print("[Coordinator] stopAndProcess() called, sessionState=\(sessionState), engine=\(asrEngine != nil)")
-        guard let engine = asrEngine else { return }
+        Log.info("[Coordinator] stopAndProcess() called, sessionState=\(sessionState), engine=\(asrEngine != nil)")
+        guard stopTask == nil else { return }
+        // F2 may arrive while resolveASR is still suspended (for example while
+        // a cloud engine is being constructed). Treat that press as a real
+        // cancellation instead of leaving the coordinator stuck in .recording
+        // with a late engine that can start a ghost session.
+        guard let engine = asrEngine else {
+            guard resolvingASRTask != nil else { return }
+            Log.info("[Coordinator] stop requested while resolving ASR; cancel pending resolution")
+            cancel()
+            return
+        }
+        engineOperationInFlight = true
         sessionState = .transcribing
         statusText = "转写中…"
-        Task {
+        let pendingStart = engineStartTask
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await pendingStart?.value
             let final = (try? await engine.stop()) ?? self.asrText
+            guard !Task.isCancelled else {
+                await MainActor.run {
+                    self.engineOperationInFlight = false
+                    self.stopTask = nil
+                }
+                return
+            }
+            let runtimeFailure = await MainActor.run { () -> Error? in
+                let failure = self.pendingRuntimeFailure
+                self.pendingRuntimeFailure = nil
+                return failure
+            }
+            if let runtimeFailure {
+                await MainActor.run {
+                    self.engineOperationInFlight = false
+                    self.stopTask = nil
+                    self.reset()
+                    self.statusText = "听写中断：\(runtimeFailure.localizedDescription)"
+                }
+                return
+            }
             await self.handleFinal(asr: final)
+            await MainActor.run {
+                self.engineOperationInFlight = false
+                self.stopTask = nil
+            }
         }
+        stopTask = task
     }
 
     private func handleFinal(asr final: String) async {
         asrText = final
+        // 未识别到任何内容：不进入润色/粘贴流程，直接关闭复位。
+        // 既避免"空粘贴"打断用户，也避免空字符串写入/覆盖剪贴板。
+        if final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Log.info("[Coordinator] ASR 结果为空，跳过润色/粘贴")
+            await MainActor.run {
+                self.reset()
+                self.statusText = "未识别到内容"
+            }
+            return
+        }
         let cfg = configStore.config
         if cfg.llm.enabled, let llm = resolveLLM() {
             llmEngine = llm
@@ -238,15 +405,15 @@ final class AppCoordinator {
             startDisplaySync()
             let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
-            print("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
-            print("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
+            Log.info("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
+            Log.info("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
                     llmBuffer += chunk
                 }
                 stopDisplaySync()
                 llmText = llmBuffer
-                print("[LLM] 润色成功, \(llmBuffer.count) 字符")
+                Log.info("[LLM] 润色成功, \(llmBuffer.count) 字符")
                 // 累加 token 统计
                 let total = llm.lastPromptTokens + llm.lastCompletionTokens
                 if total > 0, !cfg.llm.selectedModelID.isEmpty {
@@ -254,7 +421,7 @@ final class AppCoordinator {
                 }
             } catch {
                 stopDisplaySync()
-                print("[LLM] 润色失败: \(error)")
+                Log.error("[LLM] 润色失败: \(error)")
                 llmText = final
             }
             sessionState = .ready
@@ -279,7 +446,59 @@ final class AppCoordinator {
         // 先关闭面板
         panel.close()
 
-        print("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
+        Log.info("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
+        Log.info("[Paste] 文本内容: \(text.debugDescription.prefix(120))")
+
+        // 没有可用目标时只能保留剪贴板，不能声称已经写回。
+        guard let target, !target.isTerminated else {
+            pasteService.writeClipboardOnly(text)
+            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板")
+            return
+        }
+
+        let targetPID = target.processIdentifier
+
+        // .nonactivatingPanel 不会把焦点交还给目标 App。遵循 AppKit 的
+        // cooperative activation：当前 App 先让出激活权，再请求目标激活。
+        NSApp.yieldActivation(to: target)
+        let activationRequested = target.activate()
+        Log.info("[Paste] target activation requested name=\(target.localizedName ?? "unknown"), pid=\(targetPID), allowed=\(activationRequested)")
+
+        // activate() 是异步请求；下一次主循环再读取焦点并投递 Cmd+V，避免
+        // 在目标 App 尚未完成激活时发送事件。
+        DispatchQueue.main.async { [weak self] in
+            self?.deliverPaste(
+                text: text,
+                useLLM: useLLM,
+                target: target,
+                targetPID: targetPID,
+                activationRequested: activationRequested
+            )
+        }
+    }
+
+    private func deliverPaste(
+        text: String,
+        useLLM: Bool,
+        target: NSRunningApplication,
+        targetPID: pid_t,
+        activationRequested: Bool
+    ) {
+        Log.info("[Paste] target active=\(target.isActive), activationAllowed=\(activationRequested)")
+
+#if APP_STORE
+        // Keep the channel build on the same automatic delivery path as the
+        // direct build. If automatic delivery is not selected, retain the
+        // clipboard and clearly ask the user to paste manually.
+        switch PasteDeliveryPolicy.mode(isAppStore: true) {
+        case .clipboardOnly:
+            pasteService.writeClipboardOnly(text)
+            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板（请手动 ⌘V）")
+            return
+        case .automatic:
+            break
+        }
+#endif
 
 #if !APP_STORE
         // 官网版策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）
@@ -287,35 +506,58 @@ final class AppCoordinator {
         if axService.isTrusted {
             let inserted = axService.insertText(text)
             if inserted {
-                print("[Paste] Accessibility 直插成功")
+                Log.info("[Paste] Accessibility 直插成功")
                 finalizeAndRecord(useLLM: useLLM, statusText: nil)
                 return
             }
-            print("[Paste] Accessibility 直插失败，回退剪贴板方案")
+            // 直插失败（目标元素不支持设置选中文本等）→ 回退剪贴板+⌘V。
+            Log.info("[Paste] Accessibility 直插失败（属性不可写等），回退剪贴板方案")
         } else {
-            print("[Paste] 辅助功能未授权，使用剪贴板方案")
+            // 辅助功能能力真实不可用 → 不假装粘贴：只写剪贴板 + 诚实提示。
+            // 此时 ⌘V 投递同样会被拦，做了也是假成功。
+            Log.error("[Paste] 辅助功能未授权，仅复制到剪贴板并提示用户")
+            pasteService.writeClipboardOnly(text)
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: "已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）"
+            )
+            return
         }
 #endif
 
-        // 剪贴板 + Cmd+V
-        guard let target else {
+        let preflightGranted = pasteService.canPostEvents
+        let requestGranted = preflightGranted ? false : pasteService.requestPostEventAccess()
+        let postEventDecision = PasteDeliveryPolicy.postEventDecision(
+            preflightGranted: preflightGranted,
+            requestGranted: requestGranted
+        )
+        Log.info("[Paste] PostEvent access preflight=\(preflightGranted), request=\(requestGranted), decision=\(postEventDecision)")
+
+        guard postEventDecision == .automatic else {
             pasteService.writeClipboardOnly(text)
-            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板")
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: "已复制到剪贴板，请按 ⌘V；授权键盘事件后可自动写回"
+            )
             return
         }
 
-        let targetPID = target.processIdentifier
-        // .nonactivatingPanel 保证了目标 App 始终在前台，无需 activate+轮询
-        pasteService.writeClipboardOnly(text)
+        // 剪贴板 + Cmd+V。paste() 内部会保存原剪贴板 → 写入文字 → ⌘V →
+        // 延迟恢复，不要在此预先写入，否则快照到的将是我们自己写入的内容。
         let pasteOK = pasteService.paste(text, to: targetPID)
-        print("[Paste] 剪贴板粘贴 result=\(pasteOK)")
+        Log.info("[Paste] Cmd+V event dispatched=\(pasteOK); insertion remains unverified")
 
-        let msg: String? = pasteOK ? nil : "文字已复制到剪贴板（请手动 ⌘V）"
-        finalizeAndRecord(useLLM: useLLM, statusText: msg)
+        // PostEvent 权限已授权且事件成功派发时不再弹出误导性的“请按 ⌘V”。
+        // 事件创建失败时仍保留诚实的剪贴板兜底提示。
+        finalizeAndRecord(
+            useLLM: useLLM,
+            statusText: pasteOK ? nil : "自动写回失败，文字仍在剪贴板，请按 ⌘V"
+        )
     }
 
     private func finalizeAndRecord(useLLM: Bool, statusText: String?) {
-        if let msg = statusText { self.statusText = msg }
+        let transientStatus = statusText
+        if let msg = transientStatus { self.statusText = msg }
 #if !APP_STORE
         // 引导用户授权辅助功能（授权后可享丝滑直插体验）
         if !AccessibilityPasteService.shared.isTrusted {
@@ -330,16 +572,65 @@ final class AppCoordinator {
         ))
         reset()
         finalizing = false
+
+        // reset() restores the idle prompt and closes the panel. Keep an
+        // explicit fallback message visible briefly so clipboard-only paths
+        // are not silent and cannot be mistaken for successful insertion.
+        if let transientStatus {
+            self.statusText = transientStatus
+            panel.show()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                guard let self,
+                      self.sessionState == .idle,
+                      self.statusText == transientStatus else { return }
+                self.panel.close()
+                self.statusText = "按 ⌘⇧V 开始"
+            }
+        }
     }
 
     func cancel() {
-        print("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
-        if sessionState == .idle { return }
+        Log.info("[Coordinator] cancel() called, sessionState=\(sessionState), finalizing=\(finalizing)")
         if finalizing { return }
-        let alreadyStopping = (sessionState == .transcribing || sessionState == .polishing)
-        if let engine = asrEngine, !alreadyStopping {
-            Task { try? await engine.stop() }
+        // 上一次 stop/finish 尚未完成时，重复 F2 只忽略，不能启动新的云端 task。
+        if stopTask != nil { return }
+
+        let pendingStart = engineStartTask
+        recordingFlowGate.invalidate()
+        resolvingASRTask?.cancel()
+        resolvingASRTask = nil
+        permissionRequestID = nil
+
+        if let engine = asrEngine,
+           sessionState != .idle,
+           (engineOperationInFlight || sessionState == .recording) {
+            engineOperationInFlight = true
+            sessionState = .transcribing
+            statusText = "正在停止…"
+            stopDisplaySync()
+            let previousTarget = targetApp
+            let task = Task { [weak self] in
+                guard let self else { return }
+                await pendingStart?.value
+                _ = try? await engine.stop()
+                await MainActor.run {
+                    let runtimeFailure = self.pendingRuntimeFailure
+                    self.pendingRuntimeFailure = nil
+                    self.engineOperationInFlight = false
+                    self.stopTask = nil
+                    self.reset()
+                    if let runtimeFailure {
+                        self.statusText = "听写中断：\(runtimeFailure.localizedDescription)"
+                    }
+                    previousTarget?.activate()
+                    self.targetApp = nil
+                }
+            }
+            stopTask = task
+            return
         }
+
+        // idle 态（如启动失败后）也必须关面板，否则 Esc/关闭按钮无法收起悬浮窗。
         stopDisplaySync()
         reset()
         // 归还焦点给之前的应用
@@ -379,6 +670,13 @@ final class AppCoordinator {
     }
 
     private func reset() {
+        recordingFlowGate.invalidate()
+        resolvingASRTask?.cancel()
+        resolvingASRTask = nil
+        engineStartTask?.cancel()
+        engineStartTask = nil
+        permissionRequestID = nil
+        pendingRuntimeFailure = nil
         stopDisplaySync()
         if asrEngine?.id != "aliyun" {
             invalidateASREngine()
@@ -406,6 +704,18 @@ final class AppCoordinator {
         panel.show()
     }
 
+    /// 弹出模态错误提示（如未检测到麦克风）。app 为 .accessory 策略，
+    /// 弹窗先轻量激活以确保 alert 可见。
+    private func presentErrorAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     // MARK: - 引擎解析（可插拔）
 
     /// 选择 ASR 引擎：遵从用户设置。
@@ -413,7 +723,7 @@ final class AppCoordinator {
     /// - "dictation"：DictationTranscriber（原生连续听写，需前台）
     /// - "aliyun"：阿里云 Fun-ASR WebSocket（在线，高精度带标点）
     func resolveASR() async -> any ASREngine {
-        print("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
+        Log.info("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
         switch configStore.config.asr.engine {
         case "dictation":
             if #available(macOS 26, *) {
@@ -426,22 +736,15 @@ final class AppCoordinator {
             fallthrough
         case "aliyun":
             // 复用常驻连接
-            if let existing = asrEngine, existing.id == "aliyun" {
+            if let existing = asrEngine as? AlibabaASREngine {
+                wireAliyunCallbacks(existing)
                 return existing
             }
             let cfg = configStore.config.asr.aliyun
             if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
-                return AlibabaASREngine(
-                    apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
-                    semanticPunctuation: cfg.semanticPunctuation,
-                    speechNoiseThreshold: cfg.speechNoiseThreshold,
-                    maxSentenceSilence: cfg.maxSentenceSilence,
-                    autoStopEnabled: cfg.autoStopEnabled,
-                    autoStopTimeout: cfg.autoStopTimeout,
-                    autoStopThreshold: Float(cfg.autoStopThreshold)
-                )
+                return makeAliyunEngine(cfg: cfg)
             }
-            print("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
+            Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
             // 自动回退：把配置写回 system，下次就不用再判断了
             var corrected = configStore.config
             corrected.asr.engine = "system"
@@ -462,11 +765,8 @@ final class AppCoordinator {
         }
     }
 
-    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
-    func prewarmAliyunEngine() async {
-        if asrEngine?.id == "aliyun" { return } // 已有引擎，无需重建
-        let cfg = configStore.config.asr.aliyun
-        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
+    /// 创建阿里云引擎并挂接连接状态/失败回调。
+    private func makeAliyunEngine(cfg: ASRAliyunConfig) -> AlibabaASREngine {
         let engine = AlibabaASREngine(
             apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
             semanticPunctuation: cfg.semanticPunctuation,
@@ -476,8 +776,31 @@ final class AppCoordinator {
             autoStopTimeout: cfg.autoStopTimeout,
             autoStopThreshold: Float(cfg.autoStopThreshold)
         )
+        wireAliyunCallbacks(engine)
+        return engine
+    }
+
+    /// 给阿里云引擎挂接连接状态变化 / 运行时失败回调（幂等）。
+    private func wireAliyunCallbacks(_ engine: AlibabaASREngine) {
+        engine.onConnectionChange = { [weak self] connected, status in
+            Task { @MainActor in
+                self?.wsConnected = connected
+                self?.wsStatusText = status
+            }
+        }
+        // 初始同步一次当前状态
+        wsConnected = engine.wsConnected
+        wsStatusText = engine.wsConnected ? "已连接" : "未连接"
+    }
+
+    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
+    func prewarmAliyunEngine() async {
+        if asrEngine is AlibabaASREngine { return } // 已有引擎，无需重建
+        let cfg = configStore.config.asr.aliyun
+        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
+        let engine = makeAliyunEngine(cfg: cfg)
         self.asrEngine = engine
-        print("[Coordinator] 阿里云引擎预建连完成")
+        Log.info("[Coordinator] 阿里云引擎预建连完成")
     }
 
     func resolveLLM() -> (any LLMEngine)? {

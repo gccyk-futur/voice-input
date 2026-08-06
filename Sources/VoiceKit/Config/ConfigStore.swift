@@ -1,6 +1,7 @@
 import Foundation
 
-/// 配置存储：全量写入 ~/Library/Application Support/VoiceMate/config.json。
+/// 配置存储：全量写入应用支持目录下的 VoiceMate/config.json。
+/// 官网版对应 ~/Library/Application Support；App Store 版对应其沙盒容器。
 /// 为免去 Keychain 访问在开发/运行时反复弹密码的麻烦，API Key 直接以明文存于 config.json
 /// （本地个人工具，风险可接受）。后续若需更高安全，可改回 Keychain。
 @MainActor
@@ -24,8 +25,7 @@ final class ConfigStore {
     // MARK: - 读取 / 写入（直接落盘，不碰 Keychain）
 
     static func read(fileURL: URL) -> AppConfig {
-        guard let data = try? Data(contentsOf: fileURL),
-              var decoded = try? JSONDecoder().decode(AppConfig.self, from: data) else {
+        guard var decoded = try? decode(fileURL: fileURL) else {
             print("[ConfigStore] 读取 config.json 失败，使用默认配置")
             return AppConfig()
         }
@@ -33,6 +33,26 @@ final class ConfigStore {
         decoded.llm.migrateFromLegacy()
         print("[ConfigStore] config loaded, asr.engine=\(decoded.asr.engine), llm.models=\(decoded.llm.models.count)")
         return decoded
+    }
+
+    private static func decode(fileURL: URL) throws -> AppConfig {
+        let data = try Data(contentsOf: fileURL)
+        return try JSONDecoder().decode(AppConfig.self, from: data)
+    }
+
+    /// Import a configuration selected by the user through an NSOpenPanel.
+    /// The App Store build cannot silently read the direct-distribution path.
+    func importConfig(from url: URL) throws {
+        guard ConfigImportPolicy.isSupportedImportURL(url) else {
+            throw ConfigImportError.unsupportedFile
+        }
+        let hasSecurityScope = url.startAccessingSecurityScopedResource()
+        defer {
+            if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+        }
+        var imported = try Self.decode(fileURL: url)
+        imported.llm.migrateFromLegacy()
+        update(imported)
     }
 
     func save() {
@@ -116,5 +136,16 @@ final class ConfigStore {
         }
         source.setCancelHandler { close(fd) }
         source.resume()
+    }
+}
+
+enum ConfigImportError: LocalizedError {
+    case unsupportedFile
+
+    var errorDescription: String? {
+        switch self {
+        case .unsupportedFile:
+            return "请选择官网版的 config.json 文件"
+        }
     }
 }

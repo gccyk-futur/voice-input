@@ -12,7 +12,6 @@ struct StatusBarMenuView: View {
     @State private var hoveredItemID: String?
 
     private let popoverMinWidth: CGFloat = 260
-    private let popoverMaxHeight: CGFloat = 460
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -22,6 +21,8 @@ struct StatusBarMenuView: View {
                     .foregroundStyle(.tint)
                 Text("VoiceKit").font(.headline)
                 Spacer()
+                Text("\(channelName) · v\(versionString)")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if coordinator.sessionState != .idle {
                     Circle()
                         .fill(statusColor)
@@ -63,8 +64,6 @@ struct StatusBarMenuView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            Spacer(minLength: 0)
-
             // ── 底部操作区 ──
             Divider().padding(.horizontal, 10)
             HStack(spacing: 0) {
@@ -83,8 +82,8 @@ struct StatusBarMenuView: View {
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
         }
-        .frame(width: popoverMinWidth)
-        .frame(maxHeight: popoverMaxHeight)
+        .frame(width: popoverMinWidth, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .task { reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
@@ -95,8 +94,8 @@ struct StatusBarMenuView: View {
     // MARK: - 引擎
 
     private var engineSection: some View {
-        let aliyunConfigured = !config.asr.aliyun.apiKey.isEmpty && !config.asr.aliyun.workspaceId.isEmpty
-
+        // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
+        // 不再依赖本地 config 快照——首次在设置中填好阿里云后无需重启即可切换。
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("语音引擎").font(.caption).foregroundStyle(.secondary)
@@ -105,34 +104,36 @@ struct StatusBarMenuView: View {
 
             // 未配置阿里云 → 只显示「系统听写」，提供配置入口
             // 已配置阿里云 → 显示双引擎 Picker，可选切换
-            if aliyunConfigured {
-                Picker("", selection: Binding(
-                    get: { config.asr.engine },
-                    set: { newValue in
-                        var cfg = config
-                        cfg.asr.engine = newValue
-                        config = cfg
-                        ConfigStore.shared.update(cfg)
-                        coordinator.invalidateASREngine()
-                        // 切到阿里云后主动预建连，确保状态灯正常
-                        if newValue == "aliyun" {
-                            Task { await coordinator.prewarmAliyunEngine() }
+            if coordinator.aliyunConfigured {
+                HStack(spacing: 6) {
+                    Picker("", selection: Binding(
+                        get: { coordinator.asrEngineChoice },
+                        set: { newValue in
+                            var cfg = ConfigStore.shared.config
+                            cfg.asr.engine = newValue
+                            config = cfg
+                            ConfigStore.shared.update(cfg)
+                            coordinator.invalidateASREngine()
+                            // 切到阿里云后主动预建连，确保状态灯正常
+                            if newValue == "aliyun" {
+                                Task { await coordinator.prewarmAliyunEngine() }
+                            }
                         }
+                    )) {
+                        Text("系统听写").tag("system")
+                        Text("阿里云 Fun-ASR").tag("aliyun")
                     }
-                )) {
-                    Text("系统听写").tag("system")
-                    Text("阿里云 Fun-ASR").tag("aliyun")
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .pickerStyle(.segmented)
 
-                if config.asr.engine == "aliyun" {
-                    HStack(spacing: 4) {
+                    // Keep the connection indicator on the same row as the
+                    // picker so switching engines never changes section
+                    // height or leaves a stale popover gap.
+                    if coordinator.asrEngineChoice == "aliyun" {
                         Circle()
                             .fill(coordinator.wsConnected ? Color.green : Color.red)
                             .frame(width: 5, height: 5)
-                        Text(coordinator.wsConnected ? "已连接" : "未连接")
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .help(coordinator.wsStatusText)
                     }
                 }
             } else {
@@ -324,5 +325,22 @@ struct StatusBarMenuView: View {
     private func reloadHistory() {
         historyItems = HistoryStore.shared.items
     }
-}
 
+    // MARK: - 版本 / 渠道
+
+    /// 当前分发渠道：App Store 版（沙盒）或官网版。
+    private var channelName: String {
+#if APP_STORE
+        "App Store"
+#else
+        "官网版"
+#endif
+    }
+
+    /// 版本号（如 1.0.0 · 30）。
+    private var versionString: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
+    }
+}

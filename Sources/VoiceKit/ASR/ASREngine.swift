@@ -9,6 +9,11 @@ protocol ASREngine: AnyObject, Sendable {
     /// DictationTranscriber 需要 app 在前台；SFSpeechRecognizer 不需要。
     var requiresForeground: Bool { get }
 
+    /// 录音过程中发生的运行时错误（设备断开、云端连接中断等）。
+    /// start() 抛出的是"起飞失败"；本回调覆盖"飞行中失败"。由 coordinator 设置，
+    /// 触发后应把会话退回 idle 并提示用户。
+    var onFailure: (@Sendable (Error) -> Void)? { get set }
+
     /// 开始识别。
     /// - Parameters:
     ///   - onPartial: 实时中间结果回调
@@ -19,4 +24,39 @@ protocol ASREngine: AnyObject, Sendable {
                onAudioLevel: (@Sendable (Float) -> Void)?,
                onAutoStop: (@Sendable () -> Bool)?) async throws
     func stop() async throws -> String
+}
+
+/// ASR 相关错误：引擎启动/运行失败的统一错误类型。
+enum ASRError: LocalizedError {
+    case speechNotAuthorized
+    case microphoneNotAuthorized
+    /// 系统没有可用的音频输入设备（如 Mac mini 未接麦克风，且无默认输入设备）。
+    case noInputDevice
+    case noAudioFormat
+    case converterInit
+    /// AVAudioEngine 安装 tap / 启动失败，带底层原因（常来自 NSException 桥接）。
+    case audioEngineStartFailed(String)
+    case noSpeechAsset(original: String)
+    case speechNotAvailable(locale: String)
+
+    var errorDescription: String? {
+        switch self {
+        case .speechNotAuthorized:
+            return "未授权语音识别，请在系统设置→隐私与安全性→语音识别 中允许"
+        case .microphoneNotAuthorized:
+            return "未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许"
+        case .noInputDevice:
+            return "未检测到麦克风，请连接麦克风或在系统设置→声音→输入中选择一个输入设备"
+        case .noAudioFormat:
+            return "无可用的音频格式"
+        case .converterInit:
+            return "音频转换器初始化失败，请检查麦克风的采样率设置或尝试更换输入设备"
+        case .audioEngineStartFailed(let reason):
+            return "音频引擎启动失败：\(reason)"
+        case .noSpeechAsset(let original):
+            return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
+        case .speechNotAvailable(let locale):
+            return "当前设备不支持语言（\(locale)）的语音识别"
+        }
+    }
 }

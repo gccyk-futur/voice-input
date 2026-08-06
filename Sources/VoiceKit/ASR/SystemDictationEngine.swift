@@ -10,7 +10,9 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let displayName = "系统听写"
     let requiresForeground = true
 
-    private let audioEngine = AVAudioEngine()
+    var onFailure: (@Sendable (Error) -> Void)?
+
+    private let capture = AudioCapture()
     private var analyzer: SpeechAnalyzer?
     private var transcriber: DictationTranscriber?
     private var inputBuilder: AsyncStream<AnalyzerInput>.Continuation?
@@ -73,37 +75,25 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         // ③ 准备完毕后再启动输入流消费
         try await analyzer.start(inputSequence: inputSequence)
 
-        let inputNode = audioEngine.inputNode
-        let hardwareFormat = inputNode.outputFormat(forBus: 0)
-        guard let converter = AVAudioConverter(from: hardwareFormat, to: analyzerFormat) else {
-            throw ASRError.converterInit
-        }
-
-        inputNode.installTap(onBus: 0, bufferSize: 4096, format: hardwareFormat) { [converter, analyzerFormat, hardwareFormat, inputBuilder] buffer, _ in
-            let ratio = analyzerFormat.sampleRate / hardwareFormat.sampleRate
-            let frameCount = AVAudioFrameCount((Double(buffer.frameLength) * ratio).rounded(.up))
-            guard frameCount > 0,
-                  let outBuffer = AVAudioPCMBuffer(pcmFormat: analyzerFormat, frameCapacity: frameCount) else { return }
-            let didProvide = ConverterFlag()
-            var convError: NSError?
-            converter.convert(to: outBuffer, error: &convError) { _, status in
-                guard !didProvide.value else { status.pointee = .noDataNow; return nil }
-                didProvide.value = true
-                status.pointee = .haveData
-                return buffer
-            }
-            guard convError == nil, outBuffer.frameLength > 0 else { return }
-            inputBuilder.yield(AnalyzerInput(buffer: outBuffer))
-        }
-
-        audioEngine.prepare()
+        // ④ 启动麦克风采集；失败时回滚 analyzer，避免输入流无人消费 + 状态泄漏
         do {
-            try audioEngine.start()
+            try capture.start(
+                targetFormat: analyzerFormat,
+                bufferSize: 4096,
+                silence: nil,
+                onLevel: onAudioLevel,
+                onAutoStop: nil,
+                onInterruption: { [weak self] error in self?.onFailure?(error) },
+                onBuffer: { outBuffer in
+                    inputBuilder.yield(AnalyzerInput(buffer: outBuffer))
+                }
+            )
         } catch {
-            // 启动失败：移除已安装的 tap、停掉引擎，避免下次 start 时
-            // "input node already has a tap" 再次抛错造成反复崩溃。
-            inputNode.removeTap(onBus: 0)
-            audioEngine.stop()
+            inputBuilder.finish()
+            self.inputBuilder = nil
+            try? await analyzer.finalizeAndFinishThroughEndOfInput()
+            self.analyzer = nil
+            self.transcriber = nil
             throw error
         }
 
@@ -152,7 +142,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
             } catch {
                 // 流结束或中止，忽略
             }
-            print("[SystemDictation] result stream ended, segments=\(segments.count), finalized=\(finalizedCount)")
+            Log.info("[SystemDictation] result stream ended, segments=\(segments.count), finalized=\(finalizedCount)")
         }
     }
 
@@ -195,8 +185,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     }
 
     func stop() async throws -> String {
-        audioEngine.inputNode.removeTap(onBus: 0)
-        audioEngine.stop()
+        capture.stop()
         // 先 finalize Analyzer 让 transcriber 产出最终结果，再结束输入流。
         if let analyzer {
             try? await analyzer.finalizeAndFinishThroughEndOfInput()
@@ -208,25 +197,5 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
         analyzer = nil
         transcriber = nil
         return finalText
-    }
-}
-
-enum ASRError: LocalizedError {
-    case speechNotAuthorized
-    case microphoneNotAuthorized
-    case noAudioFormat
-    case converterInit
-    case noSpeechAsset(original: String)
-    case speechNotAvailable(locale: String)
-
-    var errorDescription: String? {
-        switch self {
-        case .speechNotAuthorized: return "未授权语音识别，请在系统设置→隐私与安全性→语音识别 中允许"
-        case .microphoneNotAuthorized: return "未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许"
-        case .noAudioFormat: return "无可用的音频格式"
-        case .converterInit: return "音频转换器初始化失败"
-        case .noSpeechAsset(let original): return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
-        case .speechNotAvailable(let locale): return "当前设备不支持语言（\(locale)）的语音识别"
-        }
     }
 }
