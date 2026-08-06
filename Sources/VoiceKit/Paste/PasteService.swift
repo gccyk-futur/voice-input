@@ -41,13 +41,13 @@ final class PasteService {
         savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: NSPasteboard.general.changeCount)
         Log.info("[Paste] 已快照剪贴板: \(savedItems.count) items")
 
-        let sent = simulateCmdVviaPostToPid(pid: pid)
-        Log.info("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
+        let sent = simulateCmdV()
+        Log.info("[Paste] 系统级 ⌘V → target pid=\(pid), sent=\(sent)")
 
         // 恢复策略：无论 ⌘V 是否成功，都延迟还原——
-        // - 成功 → 2s 后还原（目标 app 已处理完粘贴）
+        // - 成功 → 1s 后还原（⌘V 的剪贴板读取通常在数百 ms 内完成；够快便于连续听写）
         // - 失败 → 8s 后还原（给用户手动 ⌘V 的时间，然后归还剪贴板）
-        scheduleRestore(delay: sent ? 2.0 : 8.0)
+        scheduleRestore(delay: sent ? 1.0 : 8.0)
         return sent
     }
 
@@ -112,9 +112,16 @@ final class PasteService {
 
     // MARK: - Cmd+V 模拟
 
-    /// 返回 true 表示事件已创建并投递。
+    /// 系统会话级投递 ⌘V。返回 true 表示事件已创建并投递。
+    ///
+    /// 为什么不用 postToPid：给目标进程单独投"带 .maskCommand 标志的合成键"，
+    /// 只投了键事件、没投修饰键的真实生命周期，目标 app 会一直认为 Command 仍按下
+    /// → 出现"粘贴后 shift+回车 失灵 / 整键盘像被锁"（需乱按才恢复）。
+    /// 系统会话级投递（.cgAnnotatedSessionEventTap）让系统按真实键盘处理修饰键
+    /// 按下/释放，目标 app 收到的是完整一致的修饰键状态。
+    /// 前置条件：面板已关闭、目标 App 已在前台为 key window（confirmPaste 负责）。
     @discardableResult
-    private func simulateCmdVviaPostToPid(pid: pid_t) -> Bool {
+    private func simulateCmdV() -> Bool {
         let source = CGEventSource(stateID: .combinedSessionState)
         guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
               let up   = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
@@ -123,16 +130,9 @@ final class PasteService {
         }
         down.flags = .maskCommand
         up.flags = .maskCommand
-        down.postToPid(pid)
-        usleep(10_000)
-        up.postToPid(pid)
-        // 防止目标 app 因 keyUp 投递延迟而一直认为 Command 仍按下（粘性修饰键），
-        // 显式补一个 Command 释放事件。社区对粘性修饰键的通用规避（OpenTabletDriver 等）。
-        // 我们从未投递过 Command 按下，目标无对应状态时该 keyUp 会被忽略，无副作用。
-        usleep(10_000)
-        if let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: 55, keyDown: false) {
-            cmdUp.postToPid(pid)
-        }
+        down.post(tap: .cgAnnotatedSessionEventTap)
+        usleep(50_000)
+        up.post(tap: .cgAnnotatedSessionEventTap)
         return true
     }
 
