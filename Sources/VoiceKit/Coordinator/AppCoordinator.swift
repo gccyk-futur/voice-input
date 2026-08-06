@@ -21,6 +21,14 @@ final class AppCoordinator {
     var statusText: String = "按 ⌘⇧V 开始"
     var audioLevel: Float = 0
 
+    // MARK: - 状态栏展示用的实时状态（@Observable 存储属性，变更驱动 UI 刷新）
+    /// 当前选择的 ASR 引擎 id（"system" | "aliyun"）。
+    var asrEngineChoice: String = "system"
+    /// 阿里云是否已配置 apiKey/workspaceId（决定是否显示双引擎切换）。
+    var aliyunConfigured: Bool = false
+    /// 阿里云 WebSocket 是否已连接。
+    var wsConnected: Bool = false
+
     private let configStore = ConfigStore.shared
     private let historyStore = HistoryStore.shared
     private let pasteService = PasteService.shared
@@ -46,19 +54,36 @@ final class AppCoordinator {
 
     /// 菜单栏状态（供 StatusBarMenu 读取）
     var engineDisplayName: String {
-        configStore.config.asr.engine == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
+        asrEngineChoice == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
     }
     var llmEnabled: Bool { configStore.config.llm.enabled }
-    var wsConnected: Bool {
-        (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
-    }
 
     init() {
+        // 从当前配置初始化状态栏展示状态
+        let cfg = configStore.config
+        asrEngineChoice = cfg.asr.engine
+        aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
+
         hotkey.onActivate = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
         }
         hotkey.register(hotkeyString: configStore.config.general.hotkey)
         panel.setCoordinator(self)
+
+        // 配置变更（设置中保存、热重载）→ 同步状态栏展示状态
+        NotificationCenter.default.addObserver(
+            forName: ConfigStore.didChange, object: nil, queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in self?.refreshEngineStatus() }
+        }
+    }
+
+    /// 依据配置与当前引擎刷新状态栏展示状态（引擎选择、阿里云配置/连接状态）。
+    private func refreshEngineStatus() {
+        let cfg = configStore.config
+        asrEngineChoice = cfg.asr.engine
+        aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
+        wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
     }
 
     // MARK: - 状态机
@@ -213,6 +238,10 @@ final class AppCoordinator {
                             self.pasteService.openSpeechSettings()
                         case .noInputDevice:
                             self.statusText = "未检测到麦克风：请连接麦克风或在 系统设置→声音→输入 中选择输入设备"
+                            self.presentErrorAlert(
+                                title: "未检测到麦克风",
+                                message: "请连接麦克风或在 系统设置→声音→输入 中选择一个输入设备，然后重试。"
+                            )
                         default:
                             self.statusText = "听写启动失败：\(error.localizedDescription)"
                         }
@@ -241,6 +270,16 @@ final class AppCoordinator {
 
     private func handleFinal(asr final: String) async {
         asrText = final
+        // 未识别到任何内容：不进入润色/粘贴流程，直接关闭复位。
+        // 既避免"空粘贴"打断用户，也避免空字符串写入/覆盖剪贴板。
+        if final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            Log.info("[Coordinator] ASR 结果为空，跳过润色/粘贴")
+            await MainActor.run {
+                self.reset()
+                self.statusText = "未识别到内容"
+            }
+            return
+        }
         let cfg = configStore.config
         if cfg.llm.enabled, let llm = resolveLLM() {
             llmEngine = llm
@@ -422,6 +461,18 @@ final class AppCoordinator {
         panel.show()
     }
 
+    /// 弹出模态错误提示（如未检测到麦克风）。app 为 .accessory 策略，
+    /// 弹窗先轻量激活以确保 alert 可见。
+    private func presentErrorAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "好")
+        NSApp.activate(ignoringOtherApps: true)
+        alert.runModal()
+    }
+
     // MARK: - 引擎解析（可插拔）
 
     /// 选择 ASR 引擎：遵从用户设置。
@@ -442,20 +493,13 @@ final class AppCoordinator {
             fallthrough
         case "aliyun":
             // 复用常驻连接
-            if let existing = asrEngine, existing.id == "aliyun" {
+            if let existing = asrEngine as? AlibabaASREngine {
+                wireAliyunCallbacks(existing)
                 return existing
             }
             let cfg = configStore.config.asr.aliyun
             if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
-                return AlibabaASREngine(
-                    apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
-                    semanticPunctuation: cfg.semanticPunctuation,
-                    speechNoiseThreshold: cfg.speechNoiseThreshold,
-                    maxSentenceSilence: cfg.maxSentenceSilence,
-                    autoStopEnabled: cfg.autoStopEnabled,
-                    autoStopTimeout: cfg.autoStopTimeout,
-                    autoStopThreshold: Float(cfg.autoStopThreshold)
-                )
+                return makeAliyunEngine(cfg: cfg)
             }
             Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
             // 自动回退：把配置写回 system，下次就不用再判断了
@@ -478,11 +522,8 @@ final class AppCoordinator {
         }
     }
 
-    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
-    func prewarmAliyunEngine() async {
-        if asrEngine?.id == "aliyun" { return } // 已有引擎，无需重建
-        let cfg = configStore.config.asr.aliyun
-        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
+    /// 创建阿里云引擎并挂接连接状态/失败回调。
+    private func makeAliyunEngine(cfg: ASRAliyunConfig) -> AlibabaASREngine {
         let engine = AlibabaASREngine(
             apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
             semanticPunctuation: cfg.semanticPunctuation,
@@ -492,6 +533,25 @@ final class AppCoordinator {
             autoStopTimeout: cfg.autoStopTimeout,
             autoStopThreshold: Float(cfg.autoStopThreshold)
         )
+        wireAliyunCallbacks(engine)
+        return engine
+    }
+
+    /// 给阿里云引擎挂接连接状态变化 / 运行时失败回调（幂等）。
+    private func wireAliyunCallbacks(_ engine: AlibabaASREngine) {
+        engine.onConnectionChange = { [weak self] connected in
+            Task { @MainActor in self?.wsConnected = connected }
+        }
+        // 初始同步一次当前状态
+        wsConnected = engine.wsConnected
+    }
+
+    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
+    func prewarmAliyunEngine() async {
+        if asrEngine is AlibabaASREngine { return } // 已有引擎，无需重建
+        let cfg = configStore.config.asr.aliyun
+        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
+        let engine = makeAliyunEngine(cfg: cfg)
         self.asrEngine = engine
         Log.info("[Coordinator] 阿里云引擎预建连完成")
     }

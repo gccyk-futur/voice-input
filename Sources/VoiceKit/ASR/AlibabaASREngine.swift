@@ -19,6 +19,13 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     }
     private var _onFailure: (@Sendable (Error) -> Void)?
 
+    /// 连接状态变化回调（didOpen/didClose/重连时触发），供 coordinator 刷新 UI 状态灯。
+    var onConnectionChange: (@Sendable (Bool) -> Void)? {
+        get { stateLock.withLock { _onConnectionChange } }
+        set { stateLock.withLock { _onConnectionChange = newValue } }
+    }
+    private var _onConnectionChange: (@Sendable (Bool) -> Void)?
+
     // MARK: - 状态锁 — 保护所有跨线程访问的 mutable 状态
 
     private let stateLock = NSLock()
@@ -405,6 +412,12 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         Log.info("[AlibabaASR] 音频引擎启动")
     }
 
+    /// 触发连接状态变化回调（在锁外执行，避免持锁回调上层）。
+    private func notifyConnectionChange(_ connected: Bool) {
+        let cb = onConnectionChange
+        cb?(connected)
+    }
+
     /// 录音中发生不可恢复的错误（连接断开、麦克风中断等）：停采集、解开会话等待者、
     /// 通过 onFailure 通知上层结束会话。best-effort，不抛错。
     private func failSession(_ error: Error) {
@@ -540,6 +553,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         }
         Log.info("[AlibabaASR] WebSocket 已连接")
         resumeConnectWait(result: .success(()))
+        notifyConnectionChange(true)
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,

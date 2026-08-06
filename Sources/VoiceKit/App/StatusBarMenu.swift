@@ -20,7 +20,11 @@ struct StatusBarMenuView: View {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
-                Text("VoiceKit").font(.headline)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("VoiceKit").font(.headline)
+                    Text("\(channelName) · v\(versionString)")
+                        .font(.caption2).foregroundStyle(.tertiary)
+                }
                 Spacer()
                 if coordinator.sessionState != .idle {
                     Circle()
@@ -95,8 +99,8 @@ struct StatusBarMenuView: View {
     // MARK: - 引擎
 
     private var engineSection: some View {
-        let aliyunConfigured = !config.asr.aliyun.apiKey.isEmpty && !config.asr.aliyun.workspaceId.isEmpty
-
+        // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
+        // 不再依赖本地 config 快照——首次在设置中填好阿里云后无需重启即可切换。
         return VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("语音引擎").font(.caption).foregroundStyle(.secondary)
@@ -105,11 +109,11 @@ struct StatusBarMenuView: View {
 
             // 未配置阿里云 → 只显示「系统听写」，提供配置入口
             // 已配置阿里云 → 显示双引擎 Picker，可选切换
-            if aliyunConfigured {
+            if coordinator.aliyunConfigured {
                 Picker("", selection: Binding(
-                    get: { config.asr.engine },
+                    get: { coordinator.asrEngineChoice },
                     set: { newValue in
-                        var cfg = config
+                        var cfg = ConfigStore.shared.config
                         cfg.asr.engine = newValue
                         config = cfg
                         ConfigStore.shared.update(cfg)
@@ -126,7 +130,7 @@ struct StatusBarMenuView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
 
-                if config.asr.engine == "aliyun" {
+                if coordinator.asrEngineChoice == "aliyun" {
                     HStack(spacing: 4) {
                         Circle()
                             .fill(coordinator.wsConnected ? Color.green : Color.red)
@@ -323,6 +327,24 @@ struct StatusBarMenuView: View {
 
     private func reloadHistory() {
         historyItems = HistoryStore.shared.items
+    }
+
+    // MARK: - 版本 / 渠道
+
+    /// 当前分发渠道：App Store 版（沙盒）或官网版。
+    private var channelName: String {
+#if APP_STORE
+        "App Store"
+#else
+        "官网版"
+#endif
+    }
+
+    /// 版本号（如 1.0.0 · 30）。
+    private var versionString: String {
+        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 }
 

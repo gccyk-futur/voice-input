@@ -85,7 +85,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         popover.animates = true
     }
 
-    @objc private func togglePopover() {
+    /// 状态栏按钮 action。AppKit 经由 target/action 回调本方法，可能落在
+    /// @MainActor @objc 隔离 thunk 上触发崩溃（macOS 26 / Swift 6 的
+    /// swift_task_isMainExecutorImpl EXC_BAD_ACCESS）。
+    /// 规避：nonisolated 入口，显式 Task { @MainActor } hop 后再执行。
+    @objc nonisolated private func togglePopover() {
+        Task { @MainActor [weak self] in
+            self?.performTogglePopover()
+        }
+    }
+
+    @MainActor
+    private func performTogglePopover() {
         guard let button = statusItem?.button else { return }
         if popover.isShown {
             popover.close()
