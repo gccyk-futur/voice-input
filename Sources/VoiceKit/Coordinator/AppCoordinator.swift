@@ -339,6 +339,7 @@ final class AppCoordinator {
         panel.close()
 
         Log.info("[Paste] confirmPaste target=\(target?.localizedName ?? "nil"), textLen=\(text.count)")
+        Log.info("[Paste] 文本内容: \(text.debugDescription.prefix(120))")
 
 #if !APP_STORE
         // 官网版策略1：Accessibility API 直插（主力方案，不动剪贴板、不切换焦点）

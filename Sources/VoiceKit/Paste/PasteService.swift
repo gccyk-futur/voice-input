@@ -23,8 +23,10 @@ final class PasteService {
     /// 只写剪贴板（无目标 App / 仅复制场景）：写入后仍延迟还原，
     /// 保证"临时用一下、用完还给用户"。
     func writeClipboardOnly(_ text: String) {
-        saveForRestore()
+        let savedItems = snapshotCurrentClipboard()
         writeClipboard(text)
+        // 关键：countAfterWrite 必须在写入之后记录（早于写入会导致还原恒被跳过）
+        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: NSPasteboard.general.changeCount)
         // 给用户留手动 ⌘V 的时间，之后再还原
         scheduleRestore(delay: 8.0)
     }
@@ -32,9 +34,12 @@ final class PasteService {
     @discardableResult
     func paste(_ text: String, to pid: pid_t) -> Bool {
         // ① 在碰剪贴板之前，先快照用户原始内容
-        saveForRestore()
+        let savedItems = snapshotCurrentClipboard()
         // ② 写入我们的文字供 ⌘V 使用
         writeClipboard(text)
+        // ③ 写入后记录 changeCount，作为"用户是否又复制了新内容"的基准
+        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: NSPasteboard.general.changeCount)
+        Log.info("[Paste] 已快照剪贴板: \(savedItems.count) items")
 
         let sent = simulateCmdVviaPostToPid(pid: pid)
         Log.info("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
@@ -53,14 +58,6 @@ final class PasteService {
     /// 关键：绝不直接保存 `pasteboardItems` 原对象写回——它们是惰性的，
     /// 写回时 AppKit 会回调取数据，可能引用同一剪贴板造成主线程阻塞/死锁
     /// （正是此前"剪切板不还原 + 假死"的根因）。
-    private func saveForRestore() {
-        let savedItems = snapshotCurrentClipboard()
-        let countAfterWrite = NSPasteboard.general.changeCount
-        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
-        Log.info("[Paste] 已快照剪贴板: \(savedItems.count) items")
-    }
-
-    /// 立即读取当前剪贴板全部数据，重建为带真实数据的 item。
     private func snapshotCurrentClipboard() -> [NSPasteboardItem] {
         let pb = NSPasteboard.general
         guard let items = pb.pasteboardItems else { return [] }
@@ -129,6 +126,13 @@ final class PasteService {
         down.postToPid(pid)
         usleep(10_000)
         up.postToPid(pid)
+        // 防止目标 app 因 keyUp 投递延迟而一直认为 Command 仍按下（粘性修饰键），
+        // 显式补一个 Command 释放事件。社区对粘性修饰键的通用规避（OpenTabletDriver 等）。
+        // 我们从未投递过 Command 按下，目标无对应状态时该 keyUp 会被忽略，无副作用。
+        usleep(10_000)
+        if let cmdUp = CGEvent(keyboardEventSource: source, virtualKey: 55, keyDown: false) {
+            cmdUp.postToPid(pid)
+        }
         return true
     }
 
