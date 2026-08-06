@@ -20,25 +20,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 启动
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+    /// AppKit 回调入口。所有 @MainActor @objc / NSApplicationDelegate 回调在
+    /// macOS 26 / Swift 6 下可能命中隔离 thunk 崩溃（swift_task_isMainExecutorImpl
+    /// EXC_BAD_ACCESS，见 togglePopover / applicationShouldHandleReopen 的崩溃日志）。
+    /// 统一用 nonisolated 入口 + MainActor.assumeIsolated（这些回调必在主线程执行）。
+    nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
+        MainActor.assumeIsolated {
+            NSApp.setActivationPolicy(.accessory)
 
-        setupStatusItem()
-        setupPopover()
-        startMonitoring()
-        observeSystemEvents()
+            self.setupStatusItem()
+            self.setupPopover()
+            self.startMonitoring()
+            self.observeSystemEvents()
 
-        let coordinator = AppCoordinator.shared
-        syncLoginItem()
+            let coordinator = AppCoordinator.shared
+            self.syncLoginItem()
 
-        Task { @MainActor in
-            if ConfigStore.shared.config.asr.engine == "aliyun" {
-                await coordinator.prewarmAliyunEngine()
+            Task { @MainActor in
+                if ConfigStore.shared.config.asr.engine == "aliyun" {
+                    await coordinator.prewarmAliyunEngine()
+                }
             }
-        }
 
-        if ConfigStore.shared.config.general.showSettingsOnLaunch {
-            SettingsWindowController.shared.show()
+            if ConfigStore.shared.config.general.showSettingsOnLaunch {
+                SettingsWindowController.shared.show()
+            }
         }
     }
 
@@ -142,36 +148,42 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// 延迟 0.5s 后再检查——系统事件触发时菜单栏可能还没完成重排
-    @objc private func handleSystemEvent() {
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+    @objc nonisolated private func handleSystemEvent() {
+        // 同样绕开 @MainActor @objc 隔离 thunk（见类注释）
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000)
             self?.checkAndRestoreStatusItem()
         }
     }
 
     // MARK: - 退出确认
 
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let alert = NSAlert()
-        alert.messageText = "退出 VoiceKit？"
-        alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
-        alert.addButton(withTitle: "退出")
-        alert.addButton(withTitle: "取消")
-        alert.alertStyle = .warning
+    nonisolated func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        MainActor.assumeIsolated {
+            let alert = NSAlert()
+            alert.messageText = "退出 VoiceKit？"
+            alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
+            alert.addButton(withTitle: "退出")
+            alert.addButton(withTitle: "取消")
+            alert.alertStyle = .warning
 
-        switch alert.runModal() {
-        case .alertFirstButtonReturn:
-            return .terminateNow
-        default:
-            return .terminateCancel
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                return .terminateNow
+            default:
+                return .terminateCancel
+            }
         }
     }
 
     // MARK: - 双击唤醒
 
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        print("[AppDelegate] applicationShouldHandleReopen → 显示设置窗口")
-        SettingsWindowController.shared.show()
-        return true
+    nonisolated func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        MainActor.assumeIsolated {
+            Log.info("[AppDelegate] applicationShouldHandleReopen → 显示设置窗口")
+            SettingsWindowController.shared.show()
+            return true
+        }
     }
 
     // MARK: - 登录项

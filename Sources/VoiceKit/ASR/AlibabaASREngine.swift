@@ -19,12 +19,13 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     }
     private var _onFailure: (@Sendable (Error) -> Void)?
 
-    /// 连接状态变化回调（didOpen/didClose/重连时触发），供 coordinator 刷新 UI 状态灯。
-    var onConnectionChange: (@Sendable (Bool) -> Void)? {
+    /// 连接状态变化回调（didOpen/didClose/重连时触发），供 coordinator 刷新 UI。
+    /// 参数：(是否已连接, 人类可读状态文字，如"已断开，2.4s 后重连")。
+    var onConnectionChange: (@Sendable (Bool, String) -> Void)? {
         get { stateLock.withLock { _onConnectionChange } }
         set { stateLock.withLock { _onConnectionChange = newValue } }
     }
-    private var _onConnectionChange: (@Sendable (Bool) -> Void)?
+    private var _onConnectionChange: (@Sendable (Bool, String) -> Void)?
 
     // MARK: - 状态锁 — 保护所有跨线程访问的 mutable 状态
 
@@ -135,6 +136,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         webSocketTask = session.webSocketTask(with: req)
         webSocketTask?.resume()
         Log.info("[AlibabaASR] 正在连接 WebSocket…")
+        notifyConnectionChange(false, "连接中…")
 
         // 握手看门狗：10s 内没收到 didOpen → 认为连接失败，安排重连。
         // 与 ensureConnected 的超时互不干扰（后者只让当次 start 快速失败返回）。
@@ -208,6 +210,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         guard delay >= 0 else { return }
         let delayStr = String(format: "%.1f", delay)
         Log.info("[AlibabaASR] 将在 \(delayStr)s 后重连...")
+        notifyConnectionChange(false, "已断开，\(delayStr)s 后自动重连")
         Task { [weak self] in
             try? await Task.sleep(for: .seconds(delay))
             self?.connect()
@@ -413,9 +416,9 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     }
 
     /// 触发连接状态变化回调（在锁外执行，避免持锁回调上层）。
-    private func notifyConnectionChange(_ connected: Bool) {
+    private func notifyConnectionChange(_ connected: Bool, _ status: String) {
         let cb = onConnectionChange
-        cb?(connected)
+        cb?(connected, status)
     }
 
     /// 录音中发生不可恢复的错误（连接断开、麦克风中断等）：停采集、解开会话等待者、
@@ -553,7 +556,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         }
         Log.info("[AlibabaASR] WebSocket 已连接")
         resumeConnectWait(result: .success(()))
-        notifyConnectionChange(true)
+        notifyConnectionChange(true, "已连接")
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
@@ -561,6 +564,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         stateLock.withLock { _isConnected = false }
         resumeConnectWait(result: .failure(AlibabaASRError.notConnected))
         Log.info("[AlibabaASR] WebSocket 关闭 code=\(closeCode.rawValue)")
+        notifyConnectionChange(false, "已断开")
         // 只有活跃 session 之外的断开才重连；session 正常结束由 finish 流程处理
         let active = stateLock.withLock { _sessionActive }
         if active {

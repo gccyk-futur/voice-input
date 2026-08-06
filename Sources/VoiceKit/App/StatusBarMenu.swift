@@ -20,12 +20,10 @@ struct StatusBarMenuView: View {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("VoiceKit").font(.headline)
-                    Text("\(channelName) · v\(versionString)")
-                        .font(.caption2).foregroundStyle(.tertiary)
-                }
+                Text("VoiceKit").font(.headline)
                 Spacer()
+                Text("\(channelName) · v\(versionString)")
+                    .font(.caption2).foregroundStyle(.tertiary)
                 if coordinator.sessionState != .idle {
                     Circle()
                         .fill(statusColor)
@@ -135,8 +133,10 @@ struct StatusBarMenuView: View {
                         Circle()
                             .fill(coordinator.wsConnected ? Color.green : Color.red)
                             .frame(width: 5, height: 5)
-                        Text(coordinator.wsConnected ? "已连接" : "未连接")
+                        Text(coordinator.wsStatusText)
                             .font(.caption2).foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
                     }
                 }
             } else {

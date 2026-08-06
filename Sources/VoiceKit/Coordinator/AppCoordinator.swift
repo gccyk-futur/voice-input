@@ -28,6 +28,8 @@ final class AppCoordinator {
     var aliyunConfigured: Bool = false
     /// 阿里云 WebSocket 是否已连接。
     var wsConnected: Bool = false
+    /// 阿里云连接状态文字（"已连接" / "连接中…" / "已断开，2.4s 后自动重连"）。
+    var wsStatusText: String = "未连接"
 
     private let configStore = ConfigStore.shared
     private let historyStore = HistoryStore.shared
@@ -84,6 +86,9 @@ final class AppCoordinator {
         asrEngineChoice = cfg.asr.engine
         aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
         wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
+        if !aliyunConfigured {
+            wsStatusText = "未连接"
+        }
     }
 
     // MARK: - 状态机
@@ -237,6 +242,8 @@ final class AppCoordinator {
                             self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
                             self.pasteService.openSpeechSettings()
                         case .noInputDevice:
+                            // 关闭录音面板，只保留弹窗提示，避免"面板+弹窗"同时出现
+                            self.panel.close()
                             self.statusText = "未检测到麦克风：请连接麦克风或在 系统设置→声音→输入 中选择输入设备"
                             self.presentErrorAlert(
                                 title: "未检测到麦克风",
@@ -539,11 +546,15 @@ final class AppCoordinator {
 
     /// 给阿里云引擎挂接连接状态变化 / 运行时失败回调（幂等）。
     private func wireAliyunCallbacks(_ engine: AlibabaASREngine) {
-        engine.onConnectionChange = { [weak self] connected in
-            Task { @MainActor in self?.wsConnected = connected }
+        engine.onConnectionChange = { [weak self] connected, status in
+            Task { @MainActor in
+                self?.wsConnected = connected
+                self?.wsStatusText = status
+            }
         }
         // 初始同步一次当前状态
         wsConnected = engine.wsConnected
+        wsStatusText = engine.wsConnected ? "已连接" : "未连接"
     }
 
     /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
