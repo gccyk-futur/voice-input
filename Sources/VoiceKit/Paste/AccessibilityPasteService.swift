@@ -21,8 +21,27 @@ final class AccessibilityPasteService {
         "AXTextArea",
     ]
 
-    /// 检查辅助功能权限
-    var isTrusted: Bool { AXIsProcessTrusted() }
+    /// 检查辅助功能权限——用真实能力探测，而非信任 TCC 状态值。
+    ///
+    /// AXIsProcessTrusted() 在残留/不匹配的 TCC 条目下会误报 true
+    /// （表现为"系统列表里有但没 enable"，见 macOS TCC 已知问题）。
+    /// 用 CGEvent.tapCreate 探测：权限实际不可用时返回 nil。
+    /// - Returns: true 仅当权限真实可用。
+    var isTrusted: Bool {
+        guard AXIsProcessTrusted() else { return false }
+        guard let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .headInsertEventTap,
+            options: .defaultTap,
+            eventsOfInterest: 1 << CGEventType.keyDown.rawValue,
+            callback: { _, _, _, _ in nil },
+            userInfo: nil
+        ) else {
+            Log.info("[AccessibilityPaste] AXIsProcessTrusted=true 但能力探测失败（TCC 条目不匹配），按未授权处理")
+            return false
+        }
+        return true
+    }
 
     func openAccessibilitySettings() {
         let urlString = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"

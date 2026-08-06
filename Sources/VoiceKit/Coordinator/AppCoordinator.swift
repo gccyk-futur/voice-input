@@ -350,9 +350,18 @@ final class AppCoordinator {
                 finalizeAndRecord(useLLM: useLLM, statusText: nil)
                 return
             }
-            Log.error("[Paste] Accessibility 直插失败，回退剪贴板方案")
+            // 直插失败（目标焦点元素角色不支持等）→ 回退剪贴板+⌘V（有权限，⌘V 可投递）
+            Log.info("[Paste] Accessibility 直插失败（角色不支持等），回退剪贴板方案")
         } else {
-            Log.info("[Paste] 辅助功能未授权，使用剪贴板方案")
+            // 辅助功能能力真实不可用 → 不假装粘贴：只写剪贴板 + 诚实提示。
+            // 此时 ⌘V 投递同样会被拦，做了也是假成功。
+            Log.error("[Paste] 辅助功能未授权，仅复制到剪贴板并提示用户")
+            pasteService.writeClipboardOnly(text)
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: "已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）"
+            )
+            return
         }
 #endif
 

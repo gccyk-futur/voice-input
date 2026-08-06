@@ -23,10 +23,8 @@ final class PasteService {
     /// 只写剪贴板（无目标 App / 仅复制场景）：写入后仍延迟还原，
     /// 保证"临时用一下、用完还给用户"。
     func writeClipboardOnly(_ text: String) {
-        let savedItems = NSPasteboard.general.pasteboardItems ?? []
+        saveForRestore()
         writeClipboard(text)
-        let countAfterWrite = NSPasteboard.general.changeCount
-        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
         // 给用户留手动 ⌘V 的时间，之后再还原
         scheduleRestore(delay: 8.0)
     }
@@ -34,12 +32,9 @@ final class PasteService {
     @discardableResult
     func paste(_ text: String, to pid: pid_t) -> Bool {
         // ① 在碰剪贴板之前，先快照用户原始内容
-        let savedItems = NSPasteboard.general.pasteboardItems ?? []
+        saveForRestore()
         // ② 写入我们的文字供 ⌘V 使用
         writeClipboard(text)
-        // ③ 记录写入后的 changeCount，作为"用户是否又复制了新内容"的基准
-        let countAfterWrite = NSPasteboard.general.changeCount
-        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
 
         let sent = simulateCmdVviaPostToPid(pid: pid)
         Log.info("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
@@ -47,15 +42,38 @@ final class PasteService {
         // 恢复策略：无论 ⌘V 是否成功，都延迟还原——
         // - 成功 → 2s 后还原（目标 app 已处理完粘贴）
         // - 失败 → 8s 后还原（给用户手动 ⌘V 的时间，然后归还剪贴板）
-        if sent {
-            scheduleRestore(delay: 2.0)
-        } else {
-            scheduleRestore(delay: 8.0)
-        }
+        scheduleRestore(delay: sent ? 2.0 : 8.0)
         return sent
     }
 
     // MARK: - 剪贴板保存与恢复
+
+    /// 快照当前剪贴板（写入我们文字之前调用）：
+    /// 立即把所有 item 的每种类型的数据读出来，重建为全新 NSPasteboardItem。
+    /// 关键：绝不直接保存 `pasteboardItems` 原对象写回——它们是惰性的，
+    /// 写回时 AppKit 会回调取数据，可能引用同一剪贴板造成主线程阻塞/死锁
+    /// （正是此前"剪切板不还原 + 假死"的根因）。
+    private func saveForRestore() {
+        let savedItems = snapshotCurrentClipboard()
+        let countAfterWrite = NSPasteboard.general.changeCount
+        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
+        Log.info("[Paste] 已快照剪贴板: \(savedItems.count) items")
+    }
+
+    /// 立即读取当前剪贴板全部数据，重建为带真实数据的 item。
+    private func snapshotCurrentClipboard() -> [NSPasteboardItem] {
+        let pb = NSPasteboard.general
+        guard let items = pb.pasteboardItems else { return [] }
+        return items.compactMap { src -> NSPasteboardItem? in
+            let dst = NSPasteboardItem()
+            for type in src.types {
+                if let data = src.data(forType: type) {
+                    dst.setData(data, forType: type)
+                }
+            }
+            return dst.types.isEmpty ? nil : dst
+        }
+    }
 
     /// 恢复剪贴板（如果用户在此期间没有手动复制新内容）。
     func restoreClipboard() {
@@ -66,12 +84,12 @@ final class PasteService {
         let pb = NSPasteboard.general
         // changeCount 相对"我们写入后"又前进了 → 用户在此期间手动复制了内容，尊重它不覆盖
         guard pb.changeCount == saved.changeCountAfterWrite else {
-            Log.info("[Paste] 剪贴板已被用户更新，跳过恢复")
+            Log.info("[Paste] 剪贴板已被用户更新，跳过恢复（changeCount=\(pb.changeCount) != \(saved.changeCountAfterWrite)）")
             return
         }
         pb.clearContents()
-        pb.writeObjects(saved.items)
-        Log.info("[Paste] 剪贴板已恢复")
+        let ok = pb.writeObjects(saved.items)
+        Log.info("[Paste] 剪贴板已恢复 ok=\(ok), items=\(saved.items.count)")
     }
 
     /// 延迟恢复（避免过早恢复导致目标 app 粘贴失败）。
@@ -83,6 +101,7 @@ final class PasteService {
             }
         }
         restoreWork = work
+        Log.info("[Paste] 计划 \(String(format: "%.1f", delay))s 后还原剪贴板")
         DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
