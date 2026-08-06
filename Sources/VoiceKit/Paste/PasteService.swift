@@ -112,27 +112,43 @@ final class PasteService {
 
     // MARK: - Cmd+V 模拟
 
-    /// 系统会话级投递 ⌘V。返回 true 表示事件已创建并投递。
+    /// HID 级投递 ⌘V（enigo 键盘库的做法）。返回 true 表示事件已创建并投递。
     ///
-    /// 为什么不用 postToPid：给目标进程单独投"带 .maskCommand 标志的合成键"，
-    /// 只投了键事件、没投修饰键的真实生命周期，目标 app 会一直认为 Command 仍按下
-    /// → 出现"粘贴后 shift+回车 失灵 / 整键盘像被锁"（需乱按才恢复）。
-    /// 系统会话级投递（.cgAnnotatedSessionEventTap）让系统按真实键盘处理修饰键
-    /// 按下/释放，目标 app 收到的是完整一致的修饰键状态。
-    /// 前置条件：面板已关闭、目标 App 已在前台为 key window（confirmPaste 负责）。
+    /// 之前"flag 式"投递（只投 V 的 down/up、带 .maskCommand）从没投 Command 自己的
+    /// keyDown/keyUp，系统/目标 app 一直认为 Command 仍按住 → 粘贴后键盘被锁
+    /// （shift+回车 失灵 / 全键失效，乱按才恢复）。且用 .combinedSessionState 源会
+    /// 污染共享键盘状态。
+    ///
+    /// 正确做法：
+    /// 1. .privateState 源：合成键不从 HID/会话继承或污染修饰键状态；
+    /// 2. 完整修饰键生命周期：Cmd down → V down → V up → Cmd up；
+    /// 3. 修饰键同时设高层 flag(.maskCommand) 与设备掩码 NX_DEVICELCMDKEYMASK(0x8)，
+    ///    Cmd up 时清空——系统才认这是完整的 Command 按下/释放。
+    /// 前置条件：面板已关闭、目标 App 已激活为 key window（confirmPaste 负责）。
     @discardableResult
     private func simulateCmdV() -> Bool {
-        let source = CGEventSource(stateID: .combinedSessionState)
-        guard let down = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: true),
-              let up   = CGEvent(keyboardEventSource: source, virtualKey: vKeyCode, keyDown: false) else {
+        let source = CGEventSource(stateID: .privateState)
+        let vKey: CGKeyCode = 9          // kVK_ANSI_V（QWERTY 物理键；中文拼音 IME 亦为 QWERTY 布局）
+        let cmdKey: CGKeyCode = 55       // kVK_Command
+        guard let cmdDown = CGEvent(keyboardEventSource: source, virtualKey: cmdKey, keyDown: true),
+              let vDown   = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true),
+              let vUp     = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: false),
+              let cmdUp   = CGEvent(keyboardEventSource: source, virtualKey: cmdKey, keyDown: false) else {
             print("[Paste] CGEvent 创建失败")
             return false
         }
-        down.flags = .maskCommand
-        up.flags = .maskCommand
-        down.post(tap: .cgAnnotatedSessionEventTap)
-        usleep(50_000)
-        up.post(tap: .cgAnnotatedSessionEventTap)
+        let cmdFlags: CGEventFlags = [.maskCommand, CGEventFlags(rawValue: 0x00000008)] // NX_DEVICELCMDKEYMASK
+        cmdDown.flags = cmdFlags
+        vDown.flags = cmdFlags
+        vUp.flags = cmdFlags
+        cmdUp.flags = [] // 释放修饰键：清空标志
+        cmdDown.post(tap: .cghidEventTap)
+        usleep(20_000)
+        vDown.post(tap: .cghidEventTap)
+        usleep(20_000)
+        vUp.post(tap: .cghidEventTap)
+        usleep(20_000)
+        cmdUp.post(tap: .cghidEventTap)
         return true
     }
 
