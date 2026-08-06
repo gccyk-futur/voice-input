@@ -20,31 +20,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 启动
 
-    /// AppKit 回调入口。所有 @MainActor @objc / NSApplicationDelegate 回调在
-    /// macOS 26 / Swift 6 下可能命中隔离 thunk 崩溃（swift_task_isMainExecutorImpl
-    /// EXC_BAD_ACCESS，见 togglePopover / applicationShouldHandleReopen 的崩溃日志）。
-    /// 统一用 nonisolated 入口 + MainActor.assumeIsolated（这些回调必在主线程执行）。
-    nonisolated func applicationDidFinishLaunching(_ notification: Notification) {
-        MainActor.assumeIsolated {
-            NSApp.setActivationPolicy(.accessory)
+    /// 启动回调由 SwiftUI 在正确的 MainActor 上下文调用（历史上从未崩过），
+    /// 保持 @MainActor 原样，不再用 assumeIsolated 包裹（见 #89197：assumeIsolated
+    /// 自身的 precondition 在 macOS 26 上也可能崩，避免在启动早期触碰它）。
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
 
-            self.setupStatusItem()
-            self.setupPopover()
-            self.startMonitoring()
-            self.observeSystemEvents()
+        setupStatusItem()
+        setupPopover()
+        startMonitoring()
+        observeSystemEvents()
 
-            let coordinator = AppCoordinator.shared
-            self.syncLoginItem()
+        let coordinator = AppCoordinator.shared
+        syncLoginItem()
 
-            Task { @MainActor in
-                if ConfigStore.shared.config.asr.engine == "aliyun" {
-                    await coordinator.prewarmAliyunEngine()
-                }
+        Task { @MainActor in
+            if ConfigStore.shared.config.asr.engine == "aliyun" {
+                await coordinator.prewarmAliyunEngine()
             }
+        }
 
-            if ConfigStore.shared.config.general.showSettingsOnLaunch {
-                SettingsWindowController.shared.show()
-            }
+        if ConfigStore.shared.config.general.showSettingsOnLaunch {
+            SettingsWindowController.shared.show()
         }
     }
 
@@ -158,32 +155,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - 退出确认
 
-    nonisolated func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        MainActor.assumeIsolated {
-            let alert = NSAlert()
-            alert.messageText = "退出 VoiceKit？"
-            alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
-            alert.addButton(withTitle: "退出")
-            alert.addButton(withTitle: "取消")
-            alert.alertStyle = .warning
+    /// 退出确认路径从未出现在崩溃日志中，保持类级 @MainActor 原样。
+    /// 不强行 nonisolated：NSAlert 在 macOS 26 SDK 上是 @MainActor 隔离类型，
+    /// 避免为未崩溃的路径引入假设。
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let alert = NSAlert()
+        alert.messageText = "退出 VoiceKit？"
+        alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
+        alert.addButton(withTitle: "退出")
+        alert.addButton(withTitle: "取消")
+        alert.alertStyle = .warning
 
-            switch alert.runModal() {
-            case .alertFirstButtonReturn:
-                return .terminateNow
-            default:
-                return .terminateCancel
-            }
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            return .terminateNow
+        default:
+            return .terminateCancel
         }
     }
 
     // MARK: - 双击唤醒
 
+    /// 用 Task{@MainActor} 延后调度，避免同步的 assumeIsolated precondition。
+    /// #89197 的崩溃发生在方法体执行前，nonisolated 入口 + 延后调度可完全绕开。
     nonisolated func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
-        MainActor.assumeIsolated {
-            Log.info("[AppDelegate] applicationShouldHandleReopen → 显示设置窗口")
+        Log.info("[AppDelegate] applicationShouldHandleReopen → 显示设置窗口")
+        Task { @MainActor in
             SettingsWindowController.shared.show()
-            return true
         }
+        return true
     }
 
     // MARK: - 登录项

@@ -20,8 +20,15 @@ final class PasteService {
     private var savedClipboard: SavedClipboard?
     private var restoreWork: DispatchWorkItem?
 
+    /// 只写剪贴板（无目标 App / 仅复制场景）：写入后仍延迟还原，
+    /// 保证"临时用一下、用完还给用户"。
     func writeClipboardOnly(_ text: String) {
+        let savedItems = NSPasteboard.general.pasteboardItems ?? []
         writeClipboard(text)
+        let countAfterWrite = NSPasteboard.general.changeCount
+        savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: countAfterWrite)
+        // 给用户留手动 ⌘V 的时间，之后再还原
+        scheduleRestore(delay: 8.0)
     }
 
     @discardableResult
@@ -37,12 +44,13 @@ final class PasteService {
         let sent = simulateCmdVviaPostToPid(pid: pid)
         Log.info("[Paste] postToPid ⌘V → pid=\(pid), sent=\(sent)")
 
-        // 恢复策略：
-        // - 发送成功 → 延迟 2s 恢复（给目标 app 处理粘贴的时间）
-        // - 发送失败 → 不恢复，把文字留在剪贴板供用户手动 ⌘V
-        //   （调用方会提示"文字已复制到剪贴板"）
+        // 恢复策略：无论 ⌘V 是否成功，都延迟还原——
+        // - 成功 → 2s 后还原（目标 app 已处理完粘贴）
+        // - 失败 → 8s 后还原（给用户手动 ⌘V 的时间，然后归还剪贴板）
         if sent {
             scheduleRestore(delay: 2.0)
+        } else {
+            scheduleRestore(delay: 8.0)
         }
         return sent
     }
