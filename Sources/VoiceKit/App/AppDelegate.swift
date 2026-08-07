@@ -121,6 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.close()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            // 外观在窗口层应用（popover 的窗口在 show 后才存在）
+            popover.contentViewController?.view.window?.appearance = VoiceKitAppearance.current.nsAppearance
             // 确保 popover 成为 key window，否则文本选择等交互失效
             popover.contentViewController?.view.window?.makeKey()
         }

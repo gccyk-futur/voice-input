@@ -5,14 +5,12 @@ import AppKit
 /// 使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
 struct StatusBarMenuView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
-    @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var config = ConfigStore.shared.config
     @State private var historyItems: [HistoryItem] = []
     @State private var coordinator = AppCoordinator.shared
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
     @State private var hoveredItemID: String?
-    @Environment(\.colorScheme) private var systemColorScheme
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -20,10 +18,6 @@ struct StatusBarMenuView: View {
 
     private var typography: VoiceKitTypography {
         VoiceKitTypography(scale: textScale)
-    }
-
-    private var appearance: VoiceKitAppearance {
-        VoiceKitAppearance.restored(from: appearanceRawValue)
     }
 
     private var popoverMinWidth: CGFloat {
@@ -59,8 +53,8 @@ struct StatusBarMenuView: View {
 
             Divider().padding(.horizontal, 10)
 
-            // ── AI 润色开关 ──
-            llmToggleSection
+            // ── AI 服务 ──
+            llmSection
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
 
@@ -102,7 +96,6 @@ struct StatusBarMenuView: View {
         .frame(width: popoverMinWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .voiceKitTextScale(textScale)
-        .preferredColorScheme(appearance.resolved(against: systemColorScheme))
         .task { reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
@@ -177,33 +170,29 @@ struct StatusBarMenuView: View {
         }
     }
 
-    // MARK: - AI 润色
+    // MARK: - AI 服务
 
-    private var llmToggleSection: some View {
-        VStack(alignment: .leading, spacing: 4) {
+    private var llmSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 润色").font(typography.sectionTitle)
-                    HStack(spacing: 4) {
-                        Text(llmEngineLabel)
-                            .font(typography.callout)
-                        Text(config.llm.enabled ? "已开启" : "已关闭")
-                            .font(typography.callout).foregroundStyle(.secondary)
-                    }
+                    Text("AI 服务").font(typography.sectionTitle)
+                    Text(config.llm.enabled ? "已开启" : "已关闭")
+                        .font(typography.callout).foregroundStyle(.secondary)
                 }
                 Spacer()
                 Toggle("", isOn: Binding(
                     get: { config.llm.enabled },
                     set: { v in
                         guard v else {
-                            // 关闭润色 → 直接允许
+                            // 关闭 → 直接允许
                             var cfg = config
                             cfg.llm.enabled = false
                             config = cfg
                             ConfigStore.shared.update(cfg)
                             return
                         }
-                        // 开启润色 → 检查配置是否完整
+                        // 开启 → 检查配置是否完整
                         var cfg = config
                         guard let model = cfg.llm.selectedModel else {
                             showToast("请先在设置中添加模型")
@@ -231,11 +220,41 @@ struct StatusBarMenuView: View {
                 .toggleStyle(.switch)
                 .labelsHidden()
             }
-        }
-    }
 
-    private var llmEngineLabel: String {
-        config.llm.selectedModel?.name ?? ""
+            // 快捷选择模型（与设置 → 模型管理同步）
+            if !config.llm.models.isEmpty {
+                Picker("模型", selection: Binding(
+                    get: { config.llm.selectedModelID },
+                    set: { v in
+                        var cfg = config
+                        cfg.llm.selectedModelID = v
+                        config = cfg
+                        ConfigStore.shared.update(cfg)
+                    }
+                )) {
+                    ForEach(config.llm.models) { model in
+                        Text(model.name).tag(model.id)
+                    }
+                }
+            }
+
+            // 快捷选择提示词（多套时才显示）
+            if config.llm.prompts.count > 1 {
+                Picker("提示词", selection: Binding(
+                    get: { config.llm.selectedPromptID },
+                    set: { v in
+                        var cfg = config
+                        cfg.llm.selectedPromptID = v
+                        config = cfg
+                        ConfigStore.shared.update(cfg)
+                    }
+                )) {
+                    ForEach(config.llm.prompts) { preset in
+                        Text(preset.name).tag(preset.id)
+                    }
+                }
+            }
+        }
     }
 
     // MARK: - 历史记录（内联展开）

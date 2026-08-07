@@ -29,8 +29,9 @@ final class ConfigStore {
             print("[ConfigStore] 读取 config.json 失败，使用默认配置")
             return AppConfig()
         }
-        // 迁移：旧版单模型配置 → 多模型数组
+        // 迁移：旧版单模型配置 → 多模型数组；旧版单条提示词 → 多预设
         decoded.llm.migrateFromLegacy()
+        decoded.llm.migratePromptsFromLegacy()
         print("[ConfigStore] config loaded, asr.engine=\(decoded.asr.engine), llm.models=\(decoded.llm.models.count)")
         return decoded
     }
@@ -52,6 +53,7 @@ final class ConfigStore {
         }
         var imported = try Self.decode(fileURL: url)
         imported.llm.migrateFromLegacy()
+        imported.llm.migratePromptsFromLegacy()
         update(imported)
     }
 

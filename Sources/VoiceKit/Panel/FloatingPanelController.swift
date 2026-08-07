@@ -8,6 +8,7 @@ final class FloatingPanelController {
     private var panel: NSPanel?
     private weak var coordinator: AppCoordinator?
     private var keyMonitor: Any?
+    private var appearanceApplier: AppearanceApplier?
     /// 必须持有强引用：NSWindow.delegate 是 weak 的，PanelDelegate 若无强引用会被立即释放，
     /// 导致 windowWillClose 从不触发（关闭面板不会调用 cancel）。
     private var panelDelegate: PanelDelegate?
@@ -112,6 +113,7 @@ final class FloatingPanelController {
             hosting.bottomAnchor.constraint(equalTo: effect.bottomAnchor)
         ])
 
+        appearanceApplier = AppearanceApplier(window: panel)
         self.panel = panel
     }
 

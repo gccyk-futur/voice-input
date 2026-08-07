@@ -5,12 +5,10 @@ import SwiftUI
 @MainActor
 struct HistoryView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
-    @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var items: [HistoryItem] = HistoryStore.shared.items
     @State private var selectedID: HistoryItem.ID?
     @State private var searchText = ""
     @State private var showClearConfirm = false
-    @Environment(\.colorScheme) private var systemColorScheme
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -18,10 +16,6 @@ struct HistoryView: View {
 
     private var typography: VoiceKitTypography {
         VoiceKitTypography(scale: textScale)
-    }
-
-    private var appearance: VoiceKitAppearance {
-        VoiceKitAppearance.restored(from: appearanceRawValue)
     }
 
     /// 搜索过滤：匹配识别原文或润色结果，大小写不敏感
@@ -73,7 +67,6 @@ struct HistoryView: View {
             }
         }
         .voiceKitTextScale(textScale)
-        .preferredColorScheme(appearance.resolved(against: systemColorScheme))
         .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
             Button("清空", role: .destructive, action: clearAll)
             Button("取消", role: .cancel) {}

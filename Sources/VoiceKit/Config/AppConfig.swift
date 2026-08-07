@@ -70,6 +70,8 @@ struct LLMConfig: Codable, Equatable {
     var selectedModelID: String = ""
     var models: [LLMModelDef] = []
     var prompt: LLMPromptConfig = .init()
+    var prompts: [LLMPromptPreset] = []
+    var selectedPromptID: String = ""
 
     // Legacy fields（仅用于迁移，v2 不再主动写入）
     var engine: String = "ollama"
@@ -78,6 +80,19 @@ struct LLMConfig: Codable, Equatable {
 
     var selectedModel: LLMModelDef? {
         models.first { $0.id == selectedModelID } ?? models.first
+    }
+
+    var selectedPrompt: LLMPromptPreset? {
+        prompts.first { $0.id == selectedPromptID } ?? prompts.first
+    }
+
+    /// 运行时统一读取入口：选中的提示词预设；无预设时回退到 legacy 单条 prompt 字段。
+    /// ASR/润色流程只读这里，不感知多预设结构。
+    var activePrompt: LLMPromptConfig {
+        if let p = selectedPrompt {
+            return LLMPromptConfig(system: p.system, user: p.user)
+        }
+        return prompt
     }
 
     /// 从旧版单模型配置迁移到多模型数组（仅首次执行）。
@@ -109,6 +124,14 @@ struct LLMConfig: Codable, Equatable {
             selectedModelID = m.id
         }
     }
+
+    /// 从旧版单条提示词迁移到多预设（仅首次执行，旧字段保留不删）。
+    mutating func migratePromptsFromLegacy() {
+        guard prompts.isEmpty else { return }
+        let preset = LLMPromptPreset(name: "默认", system: prompt.system, user: prompt.user)
+        prompts = [preset]
+        selectedPromptID = preset.id
+    }
 }
 struct LLMOllamaConfig: Codable, Equatable {
     var baseUrl: String = "http://localhost:11434"
@@ -130,4 +153,12 @@ struct LLMOpenAIConfig: Codable, Equatable {
 struct LLMPromptConfig: Codable, Equatable {
     var system: String = "你是一个专业的文字润色助手，请将口语改写为书面语。"
     var user: String = "请将以下口语内容改写成正式书面中文：\n1. 去掉'嗯、啊、那个、就是说、其实'等口头禅\n2. 修正错别字和语法错误\n3. 保持原意不变\n4. 只输出改写后的文本，不要任何解释或前缀\n\n口语内容：{{input}}\n\n改写结果："
+}
+
+/// 提示词预设：用户可维护多套提示词并在设置/状态栏菜单中快速切换。
+struct LLMPromptPreset: Codable, Identifiable, Equatable {
+    var id: String = UUID().uuidString
+    var name: String = "默认"
+    var system: String = ""
+    var user: String = ""
 }

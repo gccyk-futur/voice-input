@@ -23,7 +23,6 @@ struct SettingsView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var selectedPane = SettingsPane.general
-    @Environment(\.colorScheme) private var systemColorScheme
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
     @State private var postEventRequestAttempted = false
@@ -39,8 +38,17 @@ struct SettingsView: View {
     // LLM 润色测试
     @State private var showLLMTest = false
 
-    // 模型管理
-    @State private var showModelManagement = false
+    // 模型管理（内联列表）
+    @State private var editingModel: LLMModelDef?
+    @State private var showModelDeleteConfirm = false
+    @State private var modelToDelete: LLMModelDef?
+    @State private var modelTestResults: [String: ModelTestResult] = [:]
+    @State private var isTestingModels = false
+    @State private var testedModelCount = 0
+
+    // 提示词
+    @State private var showPromptDeleteConfirm = false
+
     @State private var showDiscardAlert = false
 
     var body: some View {
@@ -69,21 +77,39 @@ struct SettingsView: View {
                     .background(.orange.opacity(0.08))
                 }
 
-                paneHeader
-                    .padding(.horizontal, 26)
-                    .padding(.top, 20)
+                // 内容列限宽居中，标题与分组卡片左缘对齐（系统设置的版式）
+                VStack(alignment: .leading, spacing: 0) {
+                    paneHeader
+                        .padding(.leading, 20)
+                        .padding(.top, 16)
 
-                Form {
-                    paneContent
+                    Form {
+                        paneContent
+                    }
+                    .formStyle(.grouped)
                 }
-                .formStyle(.grouped)
+                .frame(maxWidth: 640)
+                .frame(maxWidth: .infinity)
+
+                Divider()
+
+                // 带显式保存的偏好设置窗口惯例：操作按钮固定在右下角
+                HStack(spacing: 10) {
+                    Spacer()
+                    Button("关闭") { closeSettings() }
+                        .keyboardShortcut(.cancelAction)
+                    Button("保存") { save() }
+                        .disabled(!hasChanges)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
             }
             .font(typography.body)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 580)
         .voiceKitTextScale(selectedTextScale)
-        .preferredColorScheme(selectedAppearance.resolved(against: systemColorScheme))
         .toolbar(removing: .sidebarToggle)
         .onAppear {
             selectedPane = SettingsPane.restored(from: selectedPaneRawValue)
@@ -92,15 +118,6 @@ struct SettingsView: View {
         .onChange(of: selectedPane) { _, newPane in
             selectedPaneRawValue = newPane.rawValue
             onTabChange(newPane.index)
-        }
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button("关闭") { closeSettings() }
-                    .keyboardShortcut(.cancelAction)
-                Button("保存") { save() }
-                    .disabled(!hasChanges)
-                    .keyboardShortcut(.defaultAction)
-            }
         }
         .alert("保存失败", isPresented: $showValidationAlert) {
             Button("好", role: .cancel) {}
@@ -114,20 +131,47 @@ struct SettingsView: View {
             Text("关闭后，尚未保存的设置将不会生效。")
         }
         .sheet(isPresented: $showPromptPreview) {
-            PromptPreviewSheet(systemPrompt: draft.llm.prompt.system,
-                               userTemplate: draft.llm.prompt.user,
+            PromptPreviewSheet(systemPrompt: draft.llm.activePrompt.system,
+                               userTemplate: draft.llm.activePrompt.user,
                                language: draft.asr.system.language,
                                engine: draft.llm.selectedModel?.engine ?? "openai")
         }
         .sheet(isPresented: $showLLMTest) {
             LLMTestSheet(llmConfig: draft.llm, language: draft.asr.system.language)
         }
-        .sheet(isPresented: $showModelManagement) {
-            ModelManagementSheet(
-                models: $draft.llm.models,
-                selectedModelID: $draft.llm.selectedModelID,
-                temperature: draft.llm.temperature
+        .sheet(item: $editingModel) { model in
+            ModelEditorSheet(
+                model: model,
+                onSave: { saved in
+                    if let idx = draft.llm.models.firstIndex(where: { $0.id == saved.id }) {
+                        draft.llm.models[idx] = saved
+                    } else {
+                        draft.llm.models.append(saved)
+                        if draft.llm.selectedModelID.isEmpty { draft.llm.selectedModelID = saved.id }
+                    }
+                    editingModel = nil
+                },
+                onCancel: { editingModel = nil }
             )
+        }
+        .alert("删除模型？", isPresented: $showModelDeleteConfirm) {
+            Button("删除", role: .destructive) {
+                if let m = modelToDelete {
+                    draft.llm.models.removeAll { $0.id == m.id }
+                    if draft.llm.selectedModelID == m.id {
+                        draft.llm.selectedModelID = draft.llm.models.first?.id ?? ""
+                    }
+                }
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
+        }
+        .alert("删除提示词？", isPresented: $showPromptDeleteConfirm) {
+            Button("删除", role: .destructive) { deleteSelectedPrompt() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("确定要删除「\(draft.llm.selectedPrompt?.name ?? "")」吗？删除后将切换到第一个提示词。")
         }
     }
 
@@ -137,10 +181,6 @@ struct SettingsView: View {
 
     private var typography: VoiceKitTypography {
         VoiceKitTypography(scale: selectedTextScale)
-    }
-
-    private var selectedAppearance: VoiceKitAppearance {
-        VoiceKitAppearance.restored(from: appearanceRawValue)
     }
 
     @ViewBuilder
@@ -411,22 +451,30 @@ struct SettingsView: View {
 
     private var modelTab: some View {
         Group {
-            Section {
-                HStack(spacing: 8) {
-                    Picker("当前模型", selection: $draft.llm.selectedModelID) {
-                        if draft.llm.models.isEmpty { Text("未配置模型").tag("") }
-                        ForEach(draft.llm.models) { model in
-                            Text(model.name).tag(model.id)
-                        }
-                    }
-                    Button("编辑模型列表") { showModelManagement = true }
-                        .buttonStyle(.bordered)
-                }
-            } footer: {
+            Section("模型") {
                 if draft.llm.models.isEmpty {
-                    Text("还没有模型。你可以添加云端 API 或本地 Ollama 模型。")
-                } else if let model = draft.llm.selectedModel {
-                    Text("引擎：\(model.engine)  ·  模型：\(model.model)")
+                    Text("还没有模型。点击下方「添加模型」配置云端 API 或本地 Ollama 模型。")
+                        .font(typography.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(draft.llm.models) { model in
+                        modelRow(model)
+                    }
+                }
+                HStack(spacing: 8) {
+                    Button("添加模型") { editingModel = Self.makeNewModel() }
+                    if !draft.llm.models.isEmpty {
+                        Button("批量测试") { runModelBatchTest() }
+                            .disabled(isTestingModels)
+                    }
+                    if isTestingModels {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                            .frame(width: 14, height: 14)
+                        Text("(\(testedModelCount)/\(draft.llm.models.count))")
+                            .font(typography.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
 
@@ -455,6 +503,119 @@ struct SettingsView: View {
         }
     }
 
+    /// 列表行：点击选中当前模型，行内编辑/删除/单测结果
+    private func modelRow(_ model: LLMModelDef) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                draft.llm.selectedModelID = model.id
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: model.id == draft.llm.selectedModelID ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(model.id == draft.llm.selectedModelID ? Color.accentColor : VoiceKitSemanticColor.secondaryText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.name.isEmpty ? "未命名模型" : model.name)
+                            .font(typography.body)
+                            .foregroundStyle(.primary)
+                        Text("\(Self.engineDisplayName(model.engine)) · \(model.model) · Token \(model.totalTokens) · 使用 \(model.usageCount) 次")
+                            .font(typography.metadata)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("选择模型 \(model.name)")
+
+            Spacer(minLength: 4)
+
+            if let result = modelTestResults[model.id] {
+                if result.success {
+                    Text("\(result.latencyMs ?? 0)ms")
+                        .font(typography.callout)
+                        .foregroundStyle(VoiceKitSemanticColor.success)
+                } else {
+                    Text(result.error ?? "失败")
+                        .font(typography.callout)
+                        .foregroundStyle(VoiceKitSemanticColor.failure)
+                        .lineLimit(1)
+                }
+            }
+
+            Button("编辑") { editingModel = model }
+                .buttonStyle(.borderless)
+            Button(role: .destructive) {
+                modelToDelete = model
+                showModelDeleteConfirm = true
+            } label: {
+                Image(systemName: "trash")
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("删除模型 \(model.name)")
+        }
+        .padding(.vertical, 2)
+    }
+
+    private static func engineDisplayName(_ engine: String) -> String {
+#if APP_STORE
+        engine == "openai" ? "云端 API" : "Ollama"
+#else
+        engine == "openai" ? "OpenAI" : "Ollama"
+#endif
+    }
+
+    private static func makeNewModel() -> LLMModelDef {
+#if APP_STORE
+        LLMModelDef(name: "", engine: "openai", baseUrl: "", apiKey: "", model: "")
+#else
+        LLMModelDef(name: "", engine: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini")
+#endif
+    }
+
+    private func runModelBatchTest() {
+        guard !isTestingModels else { return }
+        isTestingModels = true
+        testedModelCount = 0
+        modelTestResults = [:]
+        let models = draft.llm.models
+        let temperature = draft.llm.temperature
+
+        Task {
+            for model in models {
+                let start = Date()
+                let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
+                do {
+                    var acc = ""
+                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
+                    for try await chunk in stream { acc += chunk }
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
+                    await MainActor.run {
+                        modelTestResults[model.id] = ModelTestResult(success: true, latencyMs: elapsed, tokensUsed: tokens, error: nil)
+                        testedModelCount += 1
+                        if tokens > 0 {
+                            ConfigStore.shared.addLLMTokenUsage(modelID: model.id, tokens: tokens)
+                        }
+                    }
+                } catch {
+                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
+                    await MainActor.run {
+                        modelTestResults[model.id] = ModelTestResult(success: false, latencyMs: elapsed, tokensUsed: 0, error: error.localizedDescription)
+                        testedModelCount += 1
+                    }
+                }
+            }
+            await MainActor.run { isTestingModels = false }
+        }
+    }
+
+    struct ModelTestResult {
+        var success: Bool
+        var latencyMs: Int?
+        var tokensUsed: Int
+        var error: String?
+    }
+
     private var thinkingBinding: Binding<Bool> {
         Binding(
             get: {
@@ -481,9 +642,26 @@ struct SettingsView: View {
     private var promptTab: some View {
         Group {
             Section {
-                TextEditor(text: $draft.llm.prompt.system)
+                Picker("当前提示词", selection: $draft.llm.selectedPromptID) {
+                    ForEach(draft.llm.prompts) { preset in
+                        Text(preset.name).tag(preset.id)
+                    }
+                }
+                TextField("名称", text: promptNameBinding)
+                HStack(spacing: 8) {
+                    Button("新建（复制当前）") { addPromptPreset() }
+                    if draft.llm.prompts.count > 1 {
+                        Button("删除当前", role: .destructive) { showPromptDeleteConfirm = true }
+                    }
+                }
+            } footer: {
+                Text("可维护多套提示词并在这里或状态栏菜单快速切换。「新建」会复制当前提示词作为起点。")
+            }
+
+            Section {
+                TextEditor(text: promptSystemBinding)
                     .font(typography.body)
-                    .frame(minHeight: 120)
+                    .frame(minHeight: 100)
                     .scrollContentBackground(.hidden)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -493,9 +671,9 @@ struct SettingsView: View {
             }
 
             Section {
-                TextEditor(text: $draft.llm.prompt.user)
+                TextEditor(text: promptUserBinding)
                     .font(typography.body)
-                    .frame(minHeight: 120)
+                    .frame(minHeight: 140)
                     .scrollContentBackground(.hidden)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
@@ -513,6 +691,52 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - 提示词预设操作
+
+    private var selectedPromptIndex: Int? {
+        draft.llm.prompts.firstIndex { $0.id == draft.llm.selectedPromptID }
+            ?? draft.llm.prompts.indices.first
+    }
+
+    private var promptNameBinding: Binding<String> {
+        Binding(
+            get: { selectedPromptIndex.map { draft.llm.prompts[$0].name } ?? "" },
+            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].name = v } }
+        )
+    }
+
+    private var promptSystemBinding: Binding<String> {
+        Binding(
+            get: { selectedPromptIndex.map { draft.llm.prompts[$0].system } ?? "" },
+            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].system = v } }
+        )
+    }
+
+    private var promptUserBinding: Binding<String> {
+        Binding(
+            get: { selectedPromptIndex.map { draft.llm.prompts[$0].user } ?? "" },
+            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].user = v } }
+        )
+    }
+
+    /// 以当前提示词为模板复制一份新的
+    private func addPromptPreset() {
+        let base = selectedPromptIndex.map { draft.llm.prompts[$0] }
+        let new = LLMPromptPreset(
+            name: "提示词 \(draft.llm.prompts.count + 1)",
+            system: base?.system ?? "",
+            user: base?.user ?? ""
+        )
+        draft.llm.prompts.append(new)
+        draft.llm.selectedPromptID = new.id
+    }
+
+    private func deleteSelectedPrompt() {
+        guard draft.llm.prompts.count > 1, let i = selectedPromptIndex else { return }
+        draft.llm.prompts.remove(at: i)
+        draft.llm.selectedPromptID = draft.llm.prompts.first?.id ?? ""
     }
 
     // MARK: - 权限
@@ -1098,7 +1322,7 @@ private struct LLMTestSheet: View {
         }
 
         Task {
-            let tmpl = PromptTemplate(system: llmConfig.prompt.system, user: llmConfig.prompt.user)
+            let tmpl = PromptTemplate(system: llmConfig.activePrompt.system, user: llmConfig.activePrompt.user)
             let (sys, usr) = tmpl.render(input: text, language: language, engine: model.engine)
             let engine = AppCoordinator.buildLLMEngine(from: model, temperature: llmConfig.temperature)
 
@@ -1182,219 +1406,6 @@ private struct LLMConnectivityTest: View {
                 status = ok ? .success : .failure("无法连接，请检查 URL 和网络")
             }
         }
-    }
-}
-
-// MARK: - 模型管理 Sheet（Table + 批量测试）
-
-private struct ModelManagementSheet: View {
-    @Binding var models: [LLMModelDef]
-    @Binding var selectedModelID: String
-    let temperature: Double
-
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.voiceKitTextScale) private var textScale
-    @State private var editingModel: LLMModelDef?
-    @State private var showDeleteConfirm = false
-    @State private var modelToDelete: LLMModelDef?
-
-    // 批量测试
-    @State private var testingResults: [String: TestRowResult] = [:]
-    @State private var isTesting = false
-    @State private var testedCount = 0
-
-    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
-
-    struct TestRowResult {
-        var success: Bool
-        var latencyMs: Int?
-        var tokensUsed: Int
-        var error: String?
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("管理模型").font(typography.sectionTitle)
-
-            if models.isEmpty {
-                ContentUnavailableView("暂无模型",
-                                       systemImage: "cube",
-                                       description: Text("点击下方「添加模型」配置云端 API 或本地 Ollama 模型"))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                Table(of: ModelRow.self) {
-                    TableColumn("名称", value: \.name).width(min: 80)
-                    TableColumn("引擎") { row in
-#if APP_STORE
-                        Text(row.engine == "openai" ? "云端 API" : "Ollama")
-                            .foregroundStyle(.secondary)
-#else
-                        Text(row.engine == "openai" ? "OpenAI" : "Ollama")
-                            .foregroundStyle(.secondary)
-#endif
-                    }.width(60)
-                    TableColumn("模型", value: \.modelName).width(min: 100)
-                    TableColumn("Token") { row in
-                        Text("\(row.totalTokens)").foregroundStyle(.secondary)
-                    }.width(50)
-                    TableColumn("次数") { row in
-                        Text("\(row.usageCount)").foregroundStyle(.secondary)
-                    }
-                    TableColumn("测试") { row in
-                        if let result = testingResults[row.id] {
-                            if result.success {
-                                Text("\(result.latencyMs ?? 0)ms")
-                                    .foregroundStyle(.green)
-                            } else {
-                                Text(result.error ?? "失败")
-                                    .foregroundStyle(.red)
-                                    .lineLimit(1)
-                            }
-                        } else {
-                            Text("-").foregroundStyle(.tertiary)
-                        }
-                    }
-                    TableColumn("") { row in
-                        HStack(spacing: 8) {
-                            if row.id == selectedModelID {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(.tint)
-                            }
-                            Button("编辑") {
-                                if let m = models.first(where: { $0.id == row.id }) {
-                                    editingModel = m
-                                }
-                            }
-                            .buttonStyle(.plain).font(typography.metadata).foregroundStyle(.tint)
-                            Button("删除") {
-                                if let m = models.first(where: { $0.id == row.id }) {
-                                    modelToDelete = m
-                                    showDeleteConfirm = true
-                                }
-                            }
-                            .buttonStyle(.plain).font(typography.metadata).foregroundStyle(.red)
-                        }
-                    }
-                } rows: {
-                    ForEach(models) { model in
-                        TableRow(ModelRow(
-                            id: model.id,
-                            name: model.name,
-                            engine: model.engine,
-                            modelName: model.model,
-                            totalTokens: model.totalTokens,
-                            usageCount: model.usageCount
-                        ))
-                    }
-                }
-                .frame(minHeight: 200)
-
-                if isTesting {
-                    HStack {
-                        ProgressView().scaleEffect(0.6)
-                        Text("测试中… (\(testedCount)/\(models.count))")
-                            .font(typography.callout).foregroundStyle(.secondary)
-                    }
-                }
-            }
-
-            HStack {
-                Button(action: {
-#if APP_STORE
-                    editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "", apiKey: "", model: "")
-#else
-                    editingModel = LLMModelDef(name: "", engine: "openai", baseUrl: "https://api.openai.com/v1", apiKey: "", model: "gpt-4o-mini")
-#endif
-                }) {
-                    Label("添加模型", systemImage: "plus")
-                }
-                .buttonStyle(.bordered)
-
-                Button(action: { runBatchTest() }) {
-                    Label("批量测试", systemImage: "gauge.with.dots.needle.33percent")
-                }
-                .buttonStyle(.bordered)
-                .disabled(models.isEmpty || isTesting)
-
-                Spacer()
-                Button("完成") { dismiss() }
-                    .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(width: 800, height: 500)
-        .sheet(item: $editingModel) { model in
-            ModelEditorSheet(
-                model: model,
-                onSave: { saved in
-                    if let idx = models.firstIndex(where: { $0.id == saved.id }) {
-                        models[idx] = saved
-                    } else {
-                        models.append(saved)
-                        if selectedModelID.isEmpty { selectedModelID = saved.id }
-                    }
-                    editingModel = nil
-                },
-                onCancel: { editingModel = nil }
-            )
-        }
-        .alert("删除模型？", isPresented: $showDeleteConfirm) {
-            Button("删除", role: .destructive) {
-                if let m = modelToDelete {
-                    models.removeAll { $0.id == m.id }
-                    if selectedModelID == m.id {
-                        selectedModelID = models.first?.id ?? ""
-                    }
-                }
-            }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
-        }
-    }
-
-    private func runBatchTest() {
-        guard !isTesting else { return }
-        isTesting = true
-        testedCount = 0
-        testingResults = [:]
-
-        Task {
-            for model in models {
-                let start = Date()
-                let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
-                do {
-                    var acc = ""
-                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
-                    for try await chunk in stream { acc += chunk }
-                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
-                    let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
-                    await MainActor.run {
-                        testingResults[model.id] = TestRowResult(success: true, latencyMs: elapsed, tokensUsed: tokens)
-                        testedCount += 1
-                        if tokens > 0 {
-                            ConfigStore.shared.addLLMTokenUsage(modelID: model.id, tokens: tokens)
-                        }
-                    }
-                } catch {
-                    let elapsed = Int(Date().timeIntervalSince(start) * 1000)
-                    await MainActor.run {
-                        testingResults[model.id] = TestRowResult(success: false, latencyMs: elapsed, tokensUsed: 0, error: error.localizedDescription)
-                        testedCount += 1
-                    }
-                }
-            }
-            await MainActor.run { isTesting = false }
-        }
-    }
-
-    struct ModelRow: Identifiable {
-        let id: String
-        let name: String
-        let engine: String
-        let modelName: String
-        let totalTokens: Int
-        let usageCount: Int
     }
 }
 

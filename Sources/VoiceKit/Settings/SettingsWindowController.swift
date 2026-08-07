@@ -9,6 +9,7 @@ final class SettingsWindowController: NSObject {
     static let shared = SettingsWindowController()
 
     private(set) var window: NSWindow?
+    private var appearanceApplier: AppearanceApplier?
 
     func show() {
         if let win = window, win.isVisible {
@@ -32,12 +33,25 @@ final class SettingsWindowController: NSObject {
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.minSize = NSSize(width: 720, height: 480)
+        // 外观在窗口层应用：侧栏与 detail 同步渲染，跟随系统时系统切换自动生效
+        appearanceApplier = AppearanceApplier(window: win)
         // 关闭窗口时不退出 app，只是隐藏
         win.delegate = self
 
         win.setContentSize(NSSize(width: 820, height: 580))
 
         showWindow(win)
+        removeSidebarToggle(from: win)
+    }
+
+    /// macOS 26 上 SwiftUI 的 .toolbar(removing: .sidebarToggle) 不生效，
+    /// 直接从 NSToolbar 移除 NavigationSplitView 的侧栏折叠按钮。
+    private func removeSidebarToggle(from win: NSWindow) {
+        guard let toolbar = win.toolbar else { return }
+        for (index, item) in toolbar.items.enumerated().reversed()
+        where item.itemIdentifier.rawValue.lowercased().contains("togglesidebar") {
+            toolbar.removeItem(at: index)
+        }
     }
 
     /// 显示窗口：切到 .regular 让 app 出现在 Dock/Switcher
@@ -82,6 +96,8 @@ extension SettingsWindowController: NSWindowDelegate {
         Task { @MainActor in
             // 窗口被激活时确保策略是 .regular（双击唤醒时用到）
             NSApp.setActivationPolicy(.regular)
+            // toolbar 项目可能延迟出现，激活时再清一次侧栏折叠按钮
+            if let win = self.window { self.removeSidebarToggle(from: win) }
         }
     }
 }

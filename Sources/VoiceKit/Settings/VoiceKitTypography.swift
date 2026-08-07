@@ -34,27 +34,6 @@ struct VoiceKitTypography {
     }
 }
 
-extension VoiceKitAppearance {
-    var colorScheme: ColorScheme? {
-        switch self {
-        case .system: return nil
-        case .light: return .light
-        case .dark: return .dark
-        }
-    }
-
-    /// 「跟随系统」不能把 nil 传给 preferredColorScheme：从深色切回跟随系统时，
-    /// nil 不会触发 NavigationSplitView detail / NSPanel 内容树的重渲染，
-    /// 导致侧栏已恢复浅色、内容区仍残留深色。这里总是解析成具体的浅色/深色。
-    func resolved(against system: ColorScheme) -> ColorScheme {
-        switch self {
-        case .light: return .light
-        case .dark: return .dark
-        case .system: return system
-        }
-    }
-}
-
 private struct VoiceKitTextScaleKey: EnvironmentKey {
     static let defaultValue = VoiceKitTextScale.system
 }

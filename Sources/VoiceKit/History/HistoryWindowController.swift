@@ -8,6 +8,7 @@ final class HistoryWindowController: NSObject {
     static let shared = HistoryWindowController()
 
     private(set) var window: NSWindow?
+    private var appearanceApplier: AppearanceApplier?
 
     func show() {
         if let win = window, win.isVisible {
@@ -27,6 +28,7 @@ final class HistoryWindowController: NSObject {
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         win.delegate = self
+        appearanceApplier = AppearanceApplier(window: win)
         window = win
 
         showWindow(win)

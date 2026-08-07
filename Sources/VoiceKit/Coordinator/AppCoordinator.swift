@@ -388,7 +388,7 @@ final class AppCoordinator {
             llmText = ""
             llmBuffer = ""
             startDisplaySync()
-            let tmpl = PromptTemplate(system: cfg.llm.prompt.system, user: cfg.llm.prompt.user)
+            let tmpl = PromptTemplate(system: cfg.llm.activePrompt.system, user: cfg.llm.activePrompt.user)
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
             Log.info("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
             Log.info("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
