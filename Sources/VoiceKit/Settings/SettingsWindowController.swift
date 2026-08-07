@@ -2,22 +2,13 @@ import AppKit
 import SwiftUI
 
 /// 设置窗口控制器：复用单个窗口实例。
-/// - 切换标签时自动调整窗口高度（带动画）
+/// - 使用稳定的侧边栏导航，切换页面不改变窗口尺寸
 /// - 关闭窗口时切回 .accessory 策略
 @MainActor
 final class SettingsWindowController: NSObject {
     static let shared = SettingsWindowController()
 
     private(set) var window: NSWindow?
-
-    /// 各标签的理想窗口高度
-    private static let tabHeights: [CGFloat] = [
-        500,  // 常规
-        500,  // 语音识别
-        500,  // AI 润色
-        500,  // 权限
-        500,  // 关于
-    ]
 
     func show() {
         if let win = window, win.isVisible {
@@ -27,22 +18,24 @@ final class SettingsWindowController: NSObject {
         }
 
         let win = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 560, height: 500),
+            contentRect: NSRect(x: 0, y: 0, width: 820, height: 580),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,
             defer: false
         )
         win.title = "VoiceKit 设置"
+        // 先登记窗口，再安装 SwiftUI 内容，确保 rootView 的 onAppear
+        // 恢复上次面板时能够立即更新窗口标题。
+        window = win
         win.contentView = NSHostingView(rootView: SettingsView(onDone: { [weak self] in self?.close() },
-                                                               onTabChange: { [weak self] tab in self?.resizeToTab(tab) }))
+                                                               onTabChange: { [weak self] tab in self?.updateTitle(for: tab) }))
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        win.minSize = NSSize(width: 720, height: 480)
         // 关闭窗口时不退出 app，只是隐藏
         win.delegate = self
-        window = win
 
-        // 强制内容区域为初始标签的高度（NSHostingView 的 intrinsic size 会撑大窗口）
-        win.setContentSize(NSSize(width: 560, height: Self.tabHeights[0]))
+        win.setContentSize(NSSize(width: 820, height: 580))
 
         showWindow(win)
     }
@@ -66,16 +59,11 @@ final class SettingsWindowController: NSObject {
         }
     }
 
-    /// 切换标签时调整窗口高度（带动画）
-    private func resizeToTab(_ tab: Int) {
-        guard let win = window, tab < Self.tabHeights.count else { return }
-        var size = win.contentRect(forFrameRect: win.frame).size
-        size.height = Self.tabHeights[tab]
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.2
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            win.animator().setContentSize(size)
-        }
+    private func updateTitle(for tab: Int) {
+        // 页面标题由右侧内容区展示，窗口标题保持稳定，符合 macOS 设置窗口
+        // 的导航模型，也避免切换侧边栏时出现重复标题。
+        guard let win = window else { return }
+        win.title = "VoiceKit 设置"
     }
 }
 

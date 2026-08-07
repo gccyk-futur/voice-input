@@ -4,6 +4,8 @@ import AppKit
 /// 状态栏弹出面板：Surge 风格，支持引擎切换、润色开关、历史记录行内复制。
 /// 使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
 struct StatusBarMenuView: View {
+    @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
+    @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var config = ConfigStore.shared.config
     @State private var historyItems: [HistoryItem] = []
     @State private var coordinator = AppCoordinator.shared
@@ -11,7 +13,21 @@ struct StatusBarMenuView: View {
     @State private var toastWork: DispatchWorkItem?
     @State private var hoveredItemID: String?
 
-    private let popoverMinWidth: CGFloat = 260
+    private var textScale: VoiceKitTextScale {
+        VoiceKitTextScale.restored(from: textScaleRawValue)
+    }
+
+    private var typography: VoiceKitTypography {
+        VoiceKitTypography(scale: textScale)
+    }
+
+    private var appearance: VoiceKitAppearance {
+        VoiceKitAppearance.restored(from: appearanceRawValue)
+    }
+
+    private var popoverMinWidth: CGFloat {
+        320 * textScale.multiplier
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -19,47 +35,47 @@ struct StatusBarMenuView: View {
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
-                Text("VoiceKit").font(.headline)
+                Text("VoiceKit").font(typography.sectionTitle)
                 Spacer()
                 Text("\(channelName) · v\(versionString)")
-                    .font(.caption2).foregroundStyle(.tertiary)
+                    .font(typography.metadata).foregroundStyle(.secondary)
                 if coordinator.sessionState != .idle {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 6, height: 6)
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 16)
             .padding(.top, 12)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
 
             Divider().padding(.horizontal, 10)
 
             // ── 引擎切换 ──
             engineSection
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
 
             Divider().padding(.horizontal, 10)
 
             // ── AI 润色开关 ──
             llmToggleSection
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
 
             Divider().padding(.horizontal, 10)
 
             // ── 历史记录 ──
             historySection
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 10)
 
             // ── Toast 提示 ──
             if let msg = toastMessage {
                 Text(msg)
-                    .font(.caption2)
+                    .font(typography.callout)
                     .foregroundStyle(.orange)
-                    .padding(.horizontal, 14)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 4)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -84,6 +100,8 @@ struct StatusBarMenuView: View {
         }
         .frame(width: popoverMinWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
+        .voiceKitTextScale(textScale)
+        .preferredColorScheme(appearance.colorScheme)
         .task { reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
@@ -97,15 +115,14 @@ struct StatusBarMenuView: View {
         // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
         // 不再依赖本地 config 快照——首次在设置中填好阿里云后无需重启即可切换。
         return VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("语音引擎").font(.caption).foregroundStyle(.secondary)
-                Spacer()
-            }
+            Text("语音引擎")
+                .font(typography.sectionTitle)
+                .foregroundStyle(.primary)
 
             // 未配置阿里云 → 只显示「系统听写」，提供配置入口
             // 已配置阿里云 → 显示双引擎 Picker，可选切换
             if coordinator.aliyunConfigured {
-                HStack(spacing: 6) {
+                HStack(alignment: .center, spacing: 8) {
                     Picker("", selection: Binding(
                         get: { coordinator.asrEngineChoice },
                         set: { newValue in
@@ -125,28 +142,33 @@ struct StatusBarMenuView: View {
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
+                    .frame(maxWidth: .infinity)
 
-                    // Keep the connection indicator on the same row as the
-                    // picker so switching engines never changes section
-                    // height or leaves a stale popover gap.
                     if coordinator.asrEngineChoice == "aliyun" {
                         Circle()
                             .fill(coordinator.wsConnected ? Color.green : Color.red)
                             .frame(width: 5, height: 5)
+                        Text(coordinator.wsConnected ? "已连接" : "未连接")
+                            .font(typography.metadata)
+                            .foregroundStyle(coordinator.wsConnected ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.failure)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .accessibilityLabel("阿里云连接状态")
+                            .accessibilityValue(coordinator.wsConnected ? "已连接" : "未连接")
                             .help(coordinator.wsStatusText)
                     }
                 }
             } else {
                 // 仅显示系统听写 + 配置阿里云的入口
                 HStack {
-                    Text("系统听写").font(.body)
+                    Text("系统听写").font(typography.body)
                     Spacer()
                     Button("配置阿里云引擎 →") {
                         SettingsWindowController.shared.show()
                         dismissMenuBarExtra()
                     }
                     .buttonStyle(.plain)
-                    .font(.caption)
+                    .font(typography.callout)
                     .foregroundStyle(.tint)
                 }
                 .padding(.vertical, 2)
@@ -160,12 +182,12 @@ struct StatusBarMenuView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 润色").font(.body)
+                    Text("AI 润色").font(typography.sectionTitle)
                     HStack(spacing: 4) {
                         Text(llmEngineLabel)
-                            .font(.caption2)
+                            .font(typography.callout)
                         Text(config.llm.enabled ? "已开启" : "已关闭")
-                            .font(.caption2).foregroundStyle(.secondary)
+                            .font(typography.callout).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -219,18 +241,20 @@ struct StatusBarMenuView: View {
 
     private var historySection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            // 标题行：左侧 caption，右侧计数字
+            // 标题行：左侧分组标题，右侧保留数量
             HStack {
-                Text("历史记录").font(.caption).foregroundStyle(.secondary)
+                Text("历史记录")
+                    .font(typography.sectionTitle)
+                    .foregroundStyle(.primary)
                 Spacer()
                 if !historyItems.isEmpty {
                     Text("已记录 \(historyItems.count)/\(config.general.maxHistoryCount) 条")
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(typography.metadata).foregroundStyle(.secondary)
                 }
             }
             if historyItems.isEmpty {
                 Text("暂无记录")
-                    .font(.body).foregroundStyle(.tertiary)
+                    .font(typography.body).foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 6)
             } else {
@@ -238,11 +262,11 @@ struct StatusBarMenuView: View {
                     Button(action: { copyItem(item) }) {
                         HStack(spacing: 4) {
                             Text("\(idx + 1).")
-                                .font(.callout)
-                                .foregroundStyle(.tertiary)
+                                .font(typography.callout)
+                                .foregroundStyle(.secondary)
                                 .frame(width: 18, alignment: .leading)
                             Text(item.llmResult ?? item.asrResult)
-                                .font(.callout)
+                                .font(typography.callout)
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             Spacer(minLength: 0)
@@ -255,6 +279,7 @@ struct StatusBarMenuView: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("复制历史记录")
                     .onHover { hovering in
                         hoveredItemID = hovering ? item.id : nil
                     }
@@ -284,8 +309,8 @@ struct StatusBarMenuView: View {
         }) {
             HStack(spacing: 4) {
                 Image(systemName: systemImage)
-                    .font(.caption)
-                Text(title).font(.caption)
+                    .font(typography.callout)
+                Text(title).font(typography.callout)
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 4)
@@ -315,9 +340,9 @@ struct StatusBarMenuView: View {
 
     private var statusColor: Color {
         switch coordinator.sessionState {
-        case .recording: return .red
-        case .transcribing, .polishing: return .orange
-        case .ready: return .green
+        case .recording: return VoiceKitSemanticColor.failure
+        case .transcribing, .polishing: return VoiceKitSemanticColor.warning
+        case .ready: return VoiceKitSemanticColor.success
         default: return .gray
         }
     }

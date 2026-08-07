@@ -4,9 +4,19 @@ import SwiftUI
 /// 实时跟随 HistoryStore（store 变更会发 VoiceMateHistoryDidChange 通知）。
 @MainActor
 struct HistoryView: View {
+    @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
+    @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var items: [HistoryItem] = HistoryStore.shared.items
     @State private var selectedID: HistoryItem.ID?
     @State private var showClearConfirm = false
+
+    private var textScale: VoiceKitTextScale {
+        VoiceKitTextScale.restored(from: textScaleRawValue)
+    }
+
+    private var appearance: VoiceKitAppearance {
+        VoiceKitAppearance.restored(from: appearanceRawValue)
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -44,6 +54,8 @@ struct HistoryView: View {
             }
         }
         .frame(width: 560, height: 520)
+        .voiceKitTextScale(textScale)
+        .preferredColorScheme(appearance.colorScheme)
         .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
             Button("清空", role: .destructive, action: clearAll)
             Button("取消", role: .cancel) {}
@@ -82,6 +94,12 @@ private struct HistoryRow: View {
     let onFavorite: () -> Void
     let onDelete: () -> Void
 
+    @Environment(\.voiceKitTextScale) private var textScale
+
+    private var typography: VoiceKitTypography {
+        VoiceKitTypography(scale: textScale)
+    }
+
     private var timeLabel: String {
         if let d = ISO8601DateFormatter().date(from: item.timestamp) {
             let f = DateFormatter()
@@ -100,32 +118,35 @@ private struct HistoryRow: View {
                         .foregroundStyle(item.favorite ? .yellow : .secondary)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel(item.favorite ? "取消收藏" : "收藏")
 
-                Text(timeLabel).font(.caption).foregroundStyle(.secondary)
+                Text(timeLabel).font(typography.callout).foregroundStyle(.secondary)
 
-                Text(item.engine).font(.caption2)
+                Text(item.engine).font(typography.metadata)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
                     .background(.quaternary, in: Capsule())
 
                 if item.llmEngine != nil {
-                    Text("已润色").font(.caption2).foregroundStyle(.tint)
+                    Text("已润色").font(typography.metadata).foregroundStyle(.tint)
                 }
 
                 Spacer()
 
                 Button(action: onCopy) { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("复制")
                     .help("复制")
                 Button(action: onDelete) { Image(systemName: "trash") }
                     .buttonStyle(.plain)
+                    .accessibilityLabel("删除")
                     .help("删除")
                     .foregroundStyle(.red)
             }
 
             Text(item.llmResult ?? item.asrResult)
                 .lineLimit(3)
-                .font(.callout)
+                .font(typography.body)
                 .textSelection(.enabled)
         }
         .padding(.vertical, 4)

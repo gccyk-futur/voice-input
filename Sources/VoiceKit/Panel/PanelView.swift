@@ -1,15 +1,29 @@
 import SwiftUI
 
 struct PanelView: View {
+    @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
+    @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @Environment(AppCoordinator.self) private var coordinator
+
+    private var textScale: VoiceKitTextScale {
+        VoiceKitTextScale.restored(from: textScaleRawValue)
+    }
+
+    private var typography: VoiceKitTypography {
+        VoiceKitTypography(scale: textScale)
+    }
+
+    private var appearance: VoiceKitAppearance {
+        VoiceKitAppearance.restored(from: appearanceRawValue)
+    }
 
     private var statusColor: Color {
         switch coordinator.sessionState {
-        case .recording: return .red
-        case .preparing: return .orange
-        case .failed: return .red
-        case .transcribing, .polishing: return .orange
-        case .ready: return .green
+        case .recording: return VoiceKitSemanticColor.failure
+        case .preparing: return VoiceKitSemanticColor.warning
+        case .failed: return VoiceKitSemanticColor.failure
+        case .transcribing, .polishing: return VoiceKitSemanticColor.warning
+        case .ready: return VoiceKitSemanticColor.success
         default: return .gray
         }
     }
@@ -21,10 +35,10 @@ struct PanelView: View {
                 Circle().fill(statusColor).frame(width: 8, height: 8)
                 HStack(spacing: 4) {
                     Text(statusLabel)
-                        .font(.caption).foregroundStyle(.secondary)
+                        .font(typography.callout).foregroundStyle(.secondary)
                     if showHint {
                         Text("请开始讲话")
-                            .font(.caption).foregroundStyle(.tertiary)
+                            .font(typography.callout).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()
@@ -40,6 +54,7 @@ struct PanelView: View {
                     Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("取消听写")
                 .help("取消 (Esc)")
             }
 
@@ -91,20 +106,20 @@ struct PanelView: View {
             // ── 底部栏 ──
             HStack(spacing: 0) {
                 Text("Esc 退出")
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
+                    .font(typography.metadata)
+                    .foregroundStyle(.secondary)
                 
                 Spacer()
 
                 HStack(spacing: 4) {
                     Text(coordinator.engineDisplayName)
-                        .font(.caption2)
+                        .font(typography.metadata)
                     Text("·")
-                        .font(.caption2)
+                        .font(typography.metadata)
                     Text(coordinator.llmEnabled ? "AI 润色" : "未润色")
-                        .font(.caption2)
+                        .font(typography.metadata)
                 }
-                .foregroundStyle(.tertiary)
+                .foregroundStyle(.secondary)
 
                 if coordinator.sessionState == .ready {
                     Button("粘贴") { coordinator.confirmPaste() }
@@ -115,6 +130,8 @@ struct PanelView: View {
         }
         .padding(14)
         .frame(minWidth: 480, minHeight: 120, maxHeight: 500)
+        .voiceKitTextScale(textScale)
+        .preferredColorScheme(appearance.colorScheme)
     }
 
     /// 状态栏主文案（优先用 coordinator.statusText，兜底根据 sessionState 推断）
