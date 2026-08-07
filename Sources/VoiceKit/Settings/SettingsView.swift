@@ -1070,11 +1070,12 @@ struct SettingsView: View {
 #if !APP_STORE
     private var accessibilityStatus: VoiceKitPermissionState {
         _ = permissionRefreshID
+        // 只信 AXIsProcessTrusted：曾经用「读取系统焦点元素」做兜底探测，
+        // 但 App 查看自己的设置页时 VoiceKit 必定是前台 App，
+        // 而读取自身 AX 树不需要辅助功能授权 → 探测恒成功，误报「已授权」。
+        // 注意：AXIsProcessTrusted 的结果是进程级缓存，授权/撤销后需重启 App 才会刷新，
+        // 这正是下方 restartRow 提示存在的原因。
         if PasteService.shared.isTrusted { return .granted }
-        let elem = AXUIElementCreateSystemWide()
-        var focused: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(elem, kAXFocusedUIElementAttribute as CFString, &focused)
-        if result == .success { return .granted }
         return .notDetermined
     }
 
