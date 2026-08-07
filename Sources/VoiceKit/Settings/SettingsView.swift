@@ -23,6 +23,7 @@ struct SettingsView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var selectedPane = SettingsPane.general
+    @Environment(\.colorScheme) private var systemColorScheme
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
     @State private var postEventRequestAttempted = false
@@ -54,36 +55,36 @@ struct SettingsView: View {
             .navigationTitle("设置")
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } detail: {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    if hasChanges {
-                        HStack(spacing: 6) {
-                            Image(systemName: "pencil.circle.fill")
-                            Text("有未保存的变更")
-                        }
-                        .font(typography.callout)
-                        .foregroundStyle(.orange)
-                        .padding(.vertical, 8)
-                        .padding(.horizontal, 14)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(.orange.opacity(0.08))
+            VStack(spacing: 0) {
+                if hasChanges {
+                    HStack(spacing: 6) {
+                        Image(systemName: "pencil.circle.fill")
+                        Text("有未保存的变更")
                     }
+                    .font(typography.callout)
+                    .foregroundStyle(.orange)
+                    .padding(.vertical, 8)
+                    .padding(.horizontal, 14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(.orange.opacity(0.08))
+                }
 
-                    paneHeader
+                paneHeader
+                    .padding(.horizontal, 26)
+                    .padding(.top, 20)
 
+                Form {
                     paneContent
                 }
-                .padding(.horizontal, 30)
-                .padding(.top, 24)
-                .padding(.bottom, 30)
-                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .formStyle(.grouped)
             }
             .font(typography.body)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
         .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 580)
         .voiceKitTextScale(selectedTextScale)
-        .preferredColorScheme(selectedAppearance.colorScheme)
+        .preferredColorScheme(selectedAppearance.resolved(against: systemColorScheme))
+        .toolbar(removing: .sidebarToggle)
         .onAppear {
             selectedPane = SettingsPane.restored(from: selectedPaneRawValue)
             onTabChange(selectedPane.index)
@@ -190,82 +191,74 @@ struct SettingsView: View {
     // MARK: - 常规
 
     private var generalTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            section("全局热键") {
-                HotkeyRecorder(hotkeyString: $draft.general.hotkey).frame(width: 280, height: 24)
-            }
-            Toggle("登录时启动", isOn: $draft.general.launchAtStartup)
-            Toggle("启动时显示设置窗口", isOn: $draft.general.showSettingsOnLaunch)
-            HStack {
-                Text("保留历史").font(typography.callout).foregroundStyle(.secondary)
-                Picker("", selection: $draft.general.maxHistoryCount) {
-                    Text("20 条").tag(20); Text("50 条").tag(50)
-                    Text("100 条").tag(100); Text("200 条").tag(200)
-                }.labelsHidden().frame(width: 140)
+        Group {
+            Section("全局热键") {
+                HotkeyRecorder(hotkeyString: $draft.general.hotkey)
+                    .frame(height: 26)
             }
 
-            section("界面") {
+            Section("启动") {
+                Toggle("登录时启动", isOn: $draft.general.launchAtStartup)
+                Toggle("启动时显示设置窗口", isOn: $draft.general.showSettingsOnLaunch)
+            }
+
+            Section {
+                Picker("保留历史", selection: $draft.general.maxHistoryCount) {
+                    Text("20 条").tag(20); Text("50 条").tag(50)
+                    Text("100 条").tag(100); Text("200 条").tag(200)
+                }
+            }
+
+            Section {
                 Picker("外观", selection: $appearanceRawValue) {
                     ForEach(VoiceKitAppearance.allCases, id: \.rawValue) { appearance in
                         Text(appearance.title).tag(appearance.rawValue)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 360)
-
                 Picker("文字大小", selection: $textScaleRawValue) {
                     ForEach(VoiceKitTextScale.allCases, id: \.rawValue) { scale in
                         Text(scale.title).tag(scale.rawValue)
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(maxWidth: 360)
+            } header: {
+                Text("界面")
+            } footer: {
                 Text("默认使用 macOS 系统字体；较大和更大只调整 VoiceKit 的界面文字，不改变系统设置。")
-                    .font(typography.callout)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
-            Text("声音").font(typography.sectionTitle)
-            Toggle("播放提示音", isOn: $draft.general.sound.enabled)
-            if draft.general.sound.enabled {
-                HStack {
-                    Text("开始录音").font(typography.callout).foregroundStyle(.secondary)
-                    Picker("", selection: $draft.general.sound.startSound) {
+            Section("声音") {
+                Toggle("播放提示音", isOn: $draft.general.sound.enabled)
+                if draft.general.sound.enabled {
+                    Picker("开始录音", selection: $draft.general.sound.startSound) {
                         ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
-                    }.labelsHidden().frame(width: 140)
-                }
-                HStack {
-                    Text("识别完成").font(typography.callout).foregroundStyle(.secondary)
-                    Picker("", selection: $draft.general.sound.stopSound) {
+                    }
+                    Picker("识别完成", selection: $draft.general.sound.stopSound) {
                         ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
-                    }.labelsHidden().frame(width: 140)
-                }
-                HStack(spacing: 8) {
-                    Button("试听开始") { NSSound(named: .init(draft.general.sound.startSound))?.play() }
-                    Button("试听完成") { NSSound(named: .init(draft.general.sound.stopSound))?.play() }
+                    }
+                    HStack(spacing: 8) {
+                        Button("试听开始") { NSSound(named: .init(draft.general.sound.startSound))?.play() }
+                        Button("试听完成") { NSSound(named: .init(draft.general.sound.stopSound))?.play() }
+                    }
                 }
             }
-
         }
     }
 
     // MARK: - 语音识别
 
     private var asrTab: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            section("引擎") {
-                Picker("", selection: $draft.asr.engine) {
+        Group {
+            Section {
+                Picker("识别引擎", selection: $draft.asr.engine) {
                     Text("系统听写").tag("system")
                     Text("阿里云 Fun-ASR").tag("aliyun")
-                }.labelsHidden().frame(width: 200)
+                }
+            } footer: {
+                Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
             }
-            Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
-                .font(typography.callout).foregroundStyle(.secondary)
 
-            section("识别语言") {
-                Picker("", selection: $draft.asr.system.language) {
+            Section {
+                Picker("识别语言", selection: $draft.asr.system.language) {
                     Text("中文").tag("zh-Hans-CN")
                     Text("English").tag("en-US")
                     Text("日本語").tag("ja-JP")
@@ -276,76 +269,68 @@ struct SettingsView: View {
                     Text("Português").tag("pt-BR")
                     Text("Русский").tag("ru-RU")
                     Text("Italiano").tag("it-IT")
-                }.labelsHidden().frame(width: 180)
+                }
+            } footer: {
+                Text("选择你说什么语言，偶尔夹带外文单词也能识别")
             }
-            Text("选择你说什么语言，偶尔夹带外文单词也能识别")
-                .font(typography.callout).foregroundStyle(.secondary)
 
             // 阿里云专属配置
             if draft.asr.engine == "aliyun" {
-                Divider()
-                Text("阿里云 Fun-ASR 配置").font(typography.sectionTitle)
-
-                Toggle("语义断句", isOn: $draft.asr.aliyun.semanticPunctuation)
-                Text("开启：AI 语义模型自动加标点，结果更自然。关闭：仅靠停顿分割。")
-                    .font(typography.callout).foregroundStyle(.secondary)
-                if !draft.asr.aliyun.semanticPunctuation {
-                    section("停顿时长") {
-                        HStack {
-                            Slider(value: Binding(get: { Double(draft.asr.aliyun.maxSentenceSilence) },
-                                                   set: { draft.asr.aliyun.maxSentenceSilence = Int($0) }),
-                                   in: 200...6000, step: 100)
-                            Text("\(draft.asr.aliyun.maxSentenceSilence)ms")
-                                .font(typography.callout).frame(width: 55, alignment: .trailing)
+                Section("标点与断句") {
+                    Toggle("语义断句", isOn: $draft.asr.aliyun.semanticPunctuation)
+                    if !draft.asr.aliyun.semanticPunctuation {
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Text("停顿时长")
+                                Slider(value: Binding(get: { Double(draft.asr.aliyun.maxSentenceSilence) },
+                                                       set: { draft.asr.aliyun.maxSentenceSilence = Int($0) }),
+                                       in: 200...6000, step: 100)
+                                Text("\(draft.asr.aliyun.maxSentenceSilence)ms")
+                                    .font(typography.callout).frame(width: 55, alignment: .trailing)
+                            }
+                            Text("说话停顿超过此时长则断句。值越小断句越频繁。")
+                                .font(typography.callout).foregroundStyle(.secondary)
                         }
-                        Text("说话停顿超过此时长则断句。值越小断句越频繁。")
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text("VAD 灵敏度")
+                            Slider(value: $draft.asr.aliyun.speechNoiseThreshold, in: -1...1, step: 0.1)
+                            Text(String(format: "%+.1f", draft.asr.aliyun.speechNoiseThreshold))
+                                .font(typography.callout).frame(width: 40, alignment: .trailing)
+                        }
+                        Text("负值更敏感（更容易判定为语音），正值更保守（更容易判定为静音）。")
                             .font(typography.callout).foregroundStyle(.secondary)
                     }
                 }
 
-                section("VAD 灵敏度") {
-                    HStack {
-                        Slider(value: $draft.asr.aliyun.speechNoiseThreshold, in: -1...1, step: 0.1)
-                        Text(String(format: "%+.1f", draft.asr.aliyun.speechNoiseThreshold))
-                            .font(typography.callout).frame(width: 40, alignment: .trailing)
-                    }
-                    Text("控制语音/静音判定灵敏度。负值更敏感（更容易判定为语音），正值更保守（更容易判定为静音）。")
-                        .font(typography.callout).foregroundStyle(.secondary)
-                }
-
-                Divider()
-                Toggle("静音自动停止", isOn: $draft.asr.aliyun.autoStopEnabled)
-                Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
-                    .font(typography.callout).foregroundStyle(.secondary)
-                if draft.asr.aliyun.autoStopEnabled {
-                    section("静音阈值") {
+                Section {
+                    Toggle("静音自动停止", isOn: $draft.asr.aliyun.autoStopEnabled)
+                    if draft.asr.aliyun.autoStopEnabled {
                         HStack {
+                            Text("静音阈值")
                             Slider(value: $draft.asr.aliyun.autoStopThreshold, in: 0.005...0.1, step: 0.005)
                             Text(String(format: "%.3f", draft.asr.aliyun.autoStopThreshold))
                                 .font(typography.callout).frame(width: 45, alignment: .trailing)
                         }
-                        Text("音频电平低于此值视为静音。值越小判定越严格（需要更安静的环境）。")
-                            .font(typography.callout).foregroundStyle(.secondary)
-                    }
-                    section("超时时间") {
                         HStack {
+                            Text("超时时间")
                             Slider(value: $draft.asr.aliyun.autoStopTimeout, in: 1...10, step: 0.5)
                             Text(String(format: "%.1fs", draft.asr.aliyun.autoStopTimeout))
                                 .font(typography.callout).frame(width: 40, alignment: .trailing)
                         }
-                        Text("连续静音超过此时长后自动停止听写。")
-                            .font(typography.callout).foregroundStyle(.secondary)
                     }
+                } footer: {
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
                 }
 
-                Divider()
-                section("API Key") {
+                Section("API 配置") {
                     HStack(spacing: 4) {
                         if showAPIKey {
-                            TextField("sk-...", text: $draft.asr.aliyun.apiKey)
+                            TextField("API Key", text: $draft.asr.aliyun.apiKey, prompt: Text("sk-..."))
                                 .textFieldStyle(.roundedBorder)
                         } else {
-                            SecureField("sk-...", text: $draft.asr.aliyun.apiKey)
+                            SecureField("API Key", text: $draft.asr.aliyun.apiKey, prompt: Text("sk-..."))
                                 .textFieldStyle(.roundedBorder)
                         }
                         Button(action: { showAPIKey.toggle() }) {
@@ -353,34 +338,29 @@ struct SettingsView: View {
                         }
                         .buttonStyle(.plain)
                         .accessibilityLabel(showAPIKey ? "隐藏 API Key" : "显示 API Key")
-                    }.frame(maxWidth: 380)
-                }
-                section("Workspace ID") {
-                    TextField("ws-...", text: $draft.asr.aliyun.workspaceId)
-                        .textFieldStyle(.roundedBorder).frame(maxWidth: 380)
-                }
-                section("区域") {
-                    TextField("cn-beijing", text: $draft.asr.aliyun.region)
-                        .textFieldStyle(.roundedBorder).frame(width: 220)
-                }
-                section("模型") {
-                    TextField("fun-asr-realtime", text: $draft.asr.aliyun.model)
-                        .textFieldStyle(.roundedBorder).frame(width: 220)
+                    }
+                    TextField("Workspace ID", text: $draft.asr.aliyun.workspaceId, prompt: Text("ws-..."))
+                        .textFieldStyle(.roundedBorder)
+                    HStack(spacing: 12) {
+                        TextField("区域", text: $draft.asr.aliyun.region, prompt: Text("cn-beijing"))
+                            .textFieldStyle(.roundedBorder)
+                        TextField("模型", text: $draft.asr.aliyun.model, prompt: Text("fun-asr-realtime"))
+                            .textFieldStyle(.roundedBorder)
+                    }
                 }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     // MARK: - AI 服务总览
 
     private var aiServiceOverviewTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
+        Group {
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("AI 润色总览")
-                            .font(typography.title)
+                        Text("AI 润色")
+                            .font(typography.sectionTitle)
                         Spacer()
                         Label(draft.llm.enabled ? "已启用" : "未启用",
                               systemImage: draft.llm.enabled ? "checkmark.circle.fill" : "pause.circle")
@@ -389,29 +369,28 @@ struct SettingsView: View {
                     }
                     Text("识别完成后，VoiceKit 可以把语音结果发送到你配置的 AI 模型进行整理、补标点和口语改写。AI 润色不会改变语音识别引擎本身。")
                         .font(typography.body)
+                        .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                     Toggle("启用 AI 润色", isOn: $draft.llm.enabled)
                 }
-                .padding(8)
+                .padding(.vertical, 4)
             }
 
-            GroupBox("工作方式") {
-                VStack(alignment: .leading, spacing: 10) {
-                    overviewStep("1", title: "先完成语音识别", detail: "语音由当前选择的系统听写或阿里云 Fun-ASR 处理。")
-                    overviewStep("2", title: "再调用你的模型", detail: "文本只发送到你在模型管理中配置的服务；VoiceKit 没有自己的中转 API。")
-                    overviewStep("3", title: "最后写回输入位置", detail: "润色结果和原始识别结果都会保留在历史记录中。")
+            Section("工作方式") {
+                overviewStep("1", title: "先完成语音识别", detail: "语音由当前选择的系统听写或阿里云 Fun-ASR 处理。")
+                overviewStep("2", title: "再调用你的模型", detail: "文本只发送到你在模型管理中配置的服务；VoiceKit 没有自己的中转 API。")
+                overviewStep("3", title: "最后写回输入位置", detail: "润色结果和原始识别结果都会保留在历史记录中。")
+            }
+
+            Section {
+                HStack(spacing: 10) {
+                    Button("模型管理") { selectedPane = .models }
+                        .buttonStyle(.borderedProminent)
+                    Button("提示词管理") { selectedPane = .prompts }
+                        .buttonStyle(.bordered)
                 }
-                .padding(8)
-            }
-
-            HStack(spacing: 10) {
-                Button("模型管理") { selectedPane = .models }
-                    .buttonStyle(.borderedProminent)
-                Button("提示词管理") { selectedPane = .prompts }
-                    .buttonStyle(.bordered)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private func overviewStep(_ number: String, title: String, detail: String) -> some View {
@@ -431,48 +410,49 @@ struct SettingsView: View {
     // MARK: - 模型管理
 
     private var modelTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            section("当前模型") {
+        Group {
+            Section {
                 HStack(spacing: 8) {
-                    Picker("", selection: $draft.llm.selectedModelID) {
+                    Picker("当前模型", selection: $draft.llm.selectedModelID) {
                         if draft.llm.models.isEmpty { Text("未配置模型").tag("") }
                         ForEach(draft.llm.models) { model in
                             Text(model.name).tag(model.id)
                         }
                     }
-                    .labelsHidden()
-                    .frame(width: 240)
                     Button("编辑模型列表") { showModelManagement = true }
                         .buttonStyle(.bordered)
                 }
+            } footer: {
                 if draft.llm.models.isEmpty {
                     Text("还没有模型。你可以添加云端 API 或本地 Ollama 模型。")
-                        .font(typography.callout).foregroundStyle(.secondary)
                 } else if let model = draft.llm.selectedModel {
                     Text("引擎：\(model.engine)  ·  模型：\(model.model)")
-                        .font(typography.callout).foregroundStyle(.secondary)
                 }
             }
 
-            section("输出行为") {
+            Section {
                 HStack {
+                    Text("随机性 (temperature)")
                     Slider(value: $draft.llm.temperature, in: 0...2, step: 0.1)
                     Text(String(format: "%.1f", draft.llm.temperature))
                         .font(typography.callout).frame(width: 30)
                 }
+            } footer: {
                 Text("温度越高越随机；越低越稳定。语音润色建议使用 0.3 到 0.7。")
-                    .font(typography.callout).foregroundStyle(.secondary)
             }
 
-            LLMConnectivityTest(llmConfig: draft.llm)
+            Section {
+                LLMConnectivityTest(llmConfig: draft.llm)
+            }
 
             if let model = draft.llm.selectedModel, model.engine == "openai" {
-                Toggle("深度思考 (thinking)", isOn: thinkingBinding)
-                Text("部分模型支持，启用后先深度推理再输出。请确保所选模型支持此功能。")
-                    .font(typography.callout).foregroundStyle(.secondary)
+                Section {
+                    Toggle("深度思考 (thinking)", isOn: thinkingBinding)
+                } footer: {
+                    Text("部分模型支持，启用后先深度推理再输出。请确保所选模型支持此功能。")
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private var thinkingBinding: Binding<Bool> {
@@ -499,13 +479,8 @@ struct SettingsView: View {
     // MARK: - 提示词管理
 
     private var promptTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("提示词决定 AI 如何整理识别结果。保留 {{input}} 占位符，运行时会替换为原始语音文本。")
-                .font(typography.body)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            section("系统提示词") {
+        Group {
+            Section {
                 TextEditor(text: $draft.llm.prompt.system)
                     .font(typography.body)
                     .frame(minHeight: 120)
@@ -513,9 +488,11 @@ struct SettingsView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            } header: {
+                Text("系统提示词")
             }
 
-            section("用户模板") {
+            Section {
                 TextEditor(text: $draft.llm.prompt.user)
                     .font(typography.body)
                     .frame(minHeight: 120)
@@ -523,98 +500,101 @@ struct SettingsView: View {
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            } header: {
+                Text("用户模板")
+            } footer: {
+                Text("保留 {{input}} 占位符，运行时会替换为原始语音文本。")
             }
 
-            HStack(spacing: 8) {
-                Button("预览提示词") { showPromptPreview = true }
-                Button("测试润色效果") { showLLMTest = true }
+            Section {
+                HStack(spacing: 8) {
+                    Button("预览提示词") { showPromptPreview = true }
+                    Button("测试润色效果") { showLLMTest = true }
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     // MARK: - 权限
 
     private var permissionTab: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("这些权限只用于录音、语音识别和把结果送回当前输入位置。你可以随时在系统设置中撤销。")
-                .font(typography.callout).foregroundStyle(.secondary)
-            
-            // 麦克风
-            permissionCard(
-                icon: "mic.fill",
-                name: "麦克风",
-                why: "听到你的声音，才能转成文字",
-                ifDenied: "不授权：无法使用语音输入",
-                status: micStatus,
-                action: requestMicPermission
-            )
+        Group {
+            Section {
+                permissionRow(
+                    icon: "mic.fill",
+                    name: "麦克风",
+                    why: "听到你的声音，才能转成文字",
+                    ifDenied: "不授权：无法使用语音输入",
+                    status: micStatus,
+                    action: requestMicPermission
+                )
+            }
 
-            // 语音识别
-            permissionCard(
-                icon: "text.bubble.fill",
-                name: "语音识别",
-                why: "把你说的话实时转写成文字",
-                ifDenied: "不授权：无法使用语音输入",
-                status: speechStatus,
-                action: requestSpeechPermission
-            )
+            Section {
+                permissionRow(
+                    icon: "text.bubble.fill",
+                    name: "语音识别",
+                    why: "把你说的话实时转写成文字",
+                    ifDenied: "不授权：无法使用语音输入",
+                    status: speechStatus,
+                    action: requestSpeechPermission
+                )
+            }
 
             // 合成键盘事件（App Store 版和官网版的剪贴板回退路径都需要）
-            permissionCard(
-                icon: "keyboard.fill",
-                name: "自动写回（键盘事件）",
-                why: "允许 VoiceKit 在识别完成后尝试发送一次 ⌘V",
-                ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
-                status: postEventStatus,
-                action: requestPostEventPermission
-            )
+            Section {
+                permissionRow(
+                    icon: "keyboard.fill",
+                    name: "自动写回（键盘事件）",
+                    why: "允许 VoiceKit 在识别完成后尝试发送一次 ⌘V",
+                    ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
+                    status: postEventStatus,
+                    action: requestPostEventPermission
+                )
+            }
 
             // 辅助功能（仅官网版）
 #if !APP_STORE
-            permissionCard(
-                icon: "rectangle.and.hand.point.up.left.fill",
-                name: "辅助功能（直接写入）",
-                why: "允许 VoiceKit 直接访问目标输入框写入文字",
-                ifDenied: "不授权：会回退到剪贴板，请手动按 ⌘V",
-                status: accessibilityStatus,
-                action: requestAccessibilityPermission
-            )
-#endif
+            Section {
+                permissionRow(
+                    icon: "rectangle.and.hand.point.up.left.fill",
+                    name: "辅助功能（直接写入）",
+                    why: "允许 VoiceKit 直接访问目标输入框写入文字",
+                    ifDenied: "不授权：会回退到剪贴板，请手动按 ⌘V",
+                    status: accessibilityStatus,
+                    action: requestAccessibilityPermission
+                )
+            }
 
-#if !APP_STORE
             if restartState == .recommended {
-                restartCard
+                Section {
+                    restartRow
+                }
             }
 #endif
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                Label("权限状态会在返回 VoiceKit 时刷新", systemImage: "arrow.triangle.2.circlepath")
-                    .font(typography.callout).foregroundStyle(.secondary)
-                Text(permissionReloadHint)
-                    .font(typography.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            Section {
+                VStack(alignment: .leading, spacing: 8) {
+                    Label("权限状态会在返回 VoiceKit 时刷新", systemImage: "arrow.triangle.2.circlepath")
+                        .font(typography.callout).foregroundStyle(.secondary)
+                    Text(permissionReloadHint)
+                        .font(typography.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 
 #if !APP_STORE
-                Label("多个 VoiceKit 副本", systemImage: "doc.on.doc")
-                    .font(typography.callout).foregroundStyle(.secondary)
-                    .padding(.top, 4)
-                Text("如果你安装过多个版本的 VoiceKit（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
-                    .font(typography.callout).foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                    Label("多个 VoiceKit 副本", systemImage: "doc.on.doc")
+                        .font(typography.callout).foregroundStyle(.secondary)
+                        .padding(.top, 4)
+                    Text("如果你安装过多个版本的 VoiceKit（比如从官网下载的 DMG 和从 App Store 下载的版本），每个版本需要单独授权。它们是 macOS 眼中的「不同 App」。")
+                        .font(typography.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
 #endif
+                }
+                .padding(.vertical, 4)
+            } header: {
+                Text("说明")
             }
-            .padding(10)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.blue.opacity(0.05))
-            )
-            
-            Spacer()
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
         // 从系统设置返回 App 时刷新权限状态，保证授权结果立即反映到界面
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             permissionRefreshID = UUID()
@@ -624,41 +604,29 @@ struct SettingsView: View {
     // MARK: - 数据隐私
 
     private var privacyTab: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            GroupBox {
-                VStack(alignment: .leading, spacing: 12) {
-                    Label("你决定数据去哪里", systemImage: "arrow.triangle.branch")
-                        .font(typography.sectionTitle)
-
-                    privacyRow(icon: "house.fill", color: .green,
-                               title: "系统听写",
-                               detail: "使用 macOS 内置语音识别，语音由系统处理。")
-                    privacyRow(icon: "cloud.fill", color: .blue,
-                               title: "阿里云 Fun-ASR",
-                               detail: "语音直接发送到你自己配置的阿里云服务实例。")
-                    privacyRow(icon: "cpu.fill", color: .orange,
-                               title: "AI 润色",
-                               detail: "识别文字直接发送到你配置的云端 API 或本地模型。使用本地模型时，文字不会离开这台 Mac。")
-                }
-                .padding(8)
+        Group {
+            Section("你决定数据去哪里") {
+                privacyRow(icon: "house.fill", color: .green,
+                           title: "系统听写",
+                           detail: "使用 macOS 内置语音识别，语音由系统处理。")
+                privacyRow(icon: "cloud.fill", color: .blue,
+                           title: "阿里云 Fun-ASR",
+                           detail: "语音直接发送到你自己配置的阿里云服务实例。")
+                privacyRow(icon: "cpu.fill", color: .orange,
+                           title: "AI 润色",
+                           detail: "识别文字直接发送到你配置的云端 API 或本地模型。使用本地模型时，文字不会离开这台 Mac。")
             }
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 10) {
-                    Label("VoiceKit 不提供中转服务", systemImage: "hand.raised.fill")
-                        .font(typography.sectionTitle)
-                    Text("除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不收集语音或文字，不统计使用情况，也不追踪用户行为。")
-                        .font(typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("API Key、模型地址和提示词只保存在本机配置中，并按你的设置使用。")
-                        .font(typography.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(8)
+            Section {
+                Text("除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不收集语音或文字，不统计使用情况，也不追踪用户行为。")
+                    .font(typography.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Label("VoiceKit 不提供中转服务", systemImage: "hand.raised.fill")
+            } footer: {
+                Text("API Key、模型地址和提示词只保存在本机配置中，并按你的设置使用。")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     private func privacyRow(icon: String, color: Color, title: String, detail: String) -> some View {
@@ -788,7 +756,7 @@ struct SettingsView: View {
 #endif
     }
 
-    private func permissionCard(icon: String, name: String, why: String, ifDenied: String, status: VoiceKitPermissionState, action: @escaping () -> Void) -> some View {
+    private func permissionRow(icon: String, name: String, why: String, ifDenied: String, status: VoiceKitPermissionState, action: @escaping () -> Void) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
@@ -814,15 +782,7 @@ struct SettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(status == .granted ? Color.green.opacity(0.05) : Color.orange.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(status == .granted ? Color.green.opacity(0.2) : Color.orange.opacity(0.2), lineWidth: 1)
-        )
+        .padding(.vertical, 4)
     }
 
     private func statusBadge(_ status: VoiceKitPermissionState) -> some View {
@@ -837,35 +797,33 @@ struct SettingsView: View {
     }
 
 #if !APP_STORE
-    private var restartCard: some View {
-        GroupBox {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
-                    .font(.title3)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("辅助功能已授权")
-                        .font(typography.sectionTitle)
-                    Text("重启 VoiceKit，让刚授权的直接写入能力完整生效。")
-                        .font(typography.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    HStack(spacing: 8) {
-                        Button("现在重启 VoiceKit") {
-                            restartApplication()
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button("稍后处理") {
-                            restartRequested = false
-                        }
-                        .buttonStyle(.bordered)
+    private var restartRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("辅助功能已授权")
+                    .font(typography.sectionTitle)
+                Text("重启 VoiceKit，让刚授权的直接写入能力完整生效。")
+                    .font(typography.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: 8) {
+                    Button("现在重启 VoiceKit") {
+                        restartApplication()
                     }
+                    .buttonStyle(.borderedProminent)
+
+                    Button("稍后处理") {
+                        restartRequested = false
+                    }
+                    .buttonStyle(.bordered)
                 }
-                Spacer(minLength: 0)
             }
-            .padding(4)
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 4)
     }
 
     private func restartApplication() {
@@ -883,17 +841,6 @@ struct SettingsView: View {
         }
     }
 #endif
-
-    // MARK: - 布局辅助
-
-    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(title)
-                .font(typography.sectionTitle)
-                .foregroundStyle(.primary)
-            content()
-        }
-    }
 
     private func closeSettings() {
         if hasChanges {
@@ -956,70 +903,54 @@ struct SettingsView: View {
     // MARK: - 关于
 
     private var aboutTab: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            HStack(spacing: 10) {
-                Image(systemName: "waveform")
-                    .font(.title2)
-                    .foregroundStyle(.tint)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("VoiceKit").font(typography.title).bold()
-                    Text("macOS 语音输入助手 — 全局热键，说话即输入")
-                        .font(typography.callout).foregroundStyle(.secondary)
-                    HStack(spacing: 6) {
-                        Text(aboutVersionString)
+        Group {
+            Section {
+                HStack(spacing: 10) {
+                    Image(systemName: "waveform")
+                        .font(.title2)
+                        .foregroundStyle(.tint)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("VoiceKit").font(typography.title).bold()
+                        Text("macOS 语音输入助手 — 全局热键，说话即输入")
                             .font(typography.callout).foregroundStyle(.secondary)
-                        Text("·")
-                            .font(typography.callout).foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Text(aboutVersionString)
+                                .font(typography.callout).foregroundStyle(.secondary)
+                            Text("·")
+                                .font(typography.callout).foregroundStyle(.secondary)
 #if APP_STORE
-                        Text("App Store")
-                            .font(typography.callout).foregroundStyle(.tint)
+                            Text("App Store")
+                                .font(typography.callout).foregroundStyle(.tint)
 #else
-                        Text("官网版")
-                            .font(typography.callout).foregroundStyle(.secondary)
+                            Text("官网版")
+                                .font(typography.callout).foregroundStyle(.secondary)
 #endif
+                        }
                     }
                 }
+                .padding(.vertical, 4)
             }
 
-            Divider()
-
             // 开源声明
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("开源免费 · 无需注册", systemImage: "lock.open")
-                        .font(typography.sectionTitle)
-                    Text("VoiceKit 是完全开源的软件，代码托管在 GitHub，任何人都可以查看、审计和参与改进。没有付费墙，没有隐藏费用，也不需要注册任何账号。")
-                        .font(typography.body)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Section {
+                Text("VoiceKit 是完全开源的软件，代码托管在 GitHub，任何人都可以查看、审计和参与改进。没有付费墙，没有隐藏费用，也不需要注册任何账号。")
+                    .font(typography.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            } header: {
+                Label("开源免费 · 无需注册", systemImage: "lock.open")
             }
 
             // 联系与更新
-            GroupBox {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label("联系与更新", systemImage: "envelope")
-                        .font(typography.sectionTitle)
-                    
-                    contactRow(icon: "envelope.fill", value: ContactInfo.email)
-                    contactRow(icon: "safari.fill", value: ContactInfo.website)
-                    contactRow(icon: "chevron.left.forwardslash.chevron.right", value: ContactInfo.github)
-                    Text("链接仅作为信息展示；使用右侧复制按钮后，可在浏览器或邮件客户端中使用。")
-                        .font(typography.callout).foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            Section {
+                contactRow(icon: "envelope.fill", value: ContactInfo.email)
+                contactRow(icon: "safari.fill", value: ContactInfo.website)
+                contactRow(icon: "chevron.left.forwardslash.chevron.right", value: ContactInfo.github)
+            } header: {
+                Label("联系与更新", systemImage: "envelope")
+            } footer: {
+                Text("链接仅作为信息展示；使用右侧复制按钮后，可在浏览器或邮件客户端中使用。\n\nCopyright © 2026 VoiceKit. MIT License.")
             }
-
-            Spacer()
-
-            Text("Copyright © 2026 VoiceKit. MIT License.")
-                .font(typography.metadata).foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     /// 从 Info.plist 读取版本号

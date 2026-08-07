@@ -4,6 +4,7 @@ struct PanelView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @Environment(AppCoordinator.self) private var coordinator
+    @Environment(\.colorScheme) private var systemColorScheme
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -135,7 +136,7 @@ struct PanelView: View {
         .padding(14)
         .frame(minWidth: 480, minHeight: 120, maxHeight: 500)
         .voiceKitTextScale(textScale)
-        .preferredColorScheme(appearance.colorScheme)
+        .preferredColorScheme(appearance.resolved(against: systemColorScheme))
     }
 
     /// 状态栏主文案（优先用 coordinator.statusText，兜底根据 sessionState 推断）

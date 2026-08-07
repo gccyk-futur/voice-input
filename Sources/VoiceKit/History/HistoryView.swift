@@ -10,6 +10,7 @@ struct HistoryView: View {
     @State private var selectedID: HistoryItem.ID?
     @State private var searchText = ""
     @State private var showClearConfirm = false
+    @Environment(\.colorScheme) private var systemColorScheme
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -72,7 +73,7 @@ struct HistoryView: View {
             }
         }
         .voiceKitTextScale(textScale)
-        .preferredColorScheme(appearance.colorScheme)
+        .preferredColorScheme(appearance.resolved(against: systemColorScheme))
         .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
             Button("清空", role: .destructive, action: clearAll)
             Button("取消", role: .cancel) {}

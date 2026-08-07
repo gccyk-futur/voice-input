@@ -12,6 +12,7 @@ struct StatusBarMenuView: View {
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
     @State private var hoveredItemID: String?
+    @Environment(\.colorScheme) private var systemColorScheme
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -101,7 +102,7 @@ struct StatusBarMenuView: View {
         .frame(width: popoverMinWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .voiceKitTextScale(textScale)
-        .preferredColorScheme(appearance.colorScheme)
+        .preferredColorScheme(appearance.resolved(against: systemColorScheme))
         .task { reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
