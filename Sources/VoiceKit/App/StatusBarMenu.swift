@@ -174,13 +174,56 @@ struct StatusBarMenuView: View {
 
     private var llmSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("AI 服务").font(typography.sectionTitle)
-                    Text(config.llm.enabled ? "已开启" : "已关闭")
-                        .font(typography.callout).foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Text("AI 服务").font(typography.sectionTitle)
+                Spacer(minLength: 4)
+
+                // 开关开启后才出现：模型/提示词紧凑下拉，收进标题行
+                if config.llm.enabled {
+                    if !config.llm.models.isEmpty {
+                        Picker("", selection: Binding(
+                            get: { config.llm.selectedModelID },
+                            set: { v in
+                                var cfg = config
+                                cfg.llm.selectedModelID = v
+                                config = cfg
+                                ConfigStore.shared.update(cfg)
+                            }
+                        )) {
+                            ForEach(config.llm.models) { model in
+                                Text(model.name).tag(model.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 120 * textScale.multiplier)
+                        .accessibilityLabel("选择润色模型")
+                        .help("选择润色模型")
+                    }
+
+                    if !config.llm.prompts.isEmpty {
+                        Picker("", selection: Binding(
+                            get: { config.llm.selectedPromptID },
+                            set: { v in
+                                var cfg = config
+                                cfg.llm.selectedPromptID = v
+                                config = cfg
+                                ConfigStore.shared.update(cfg)
+                            }
+                        )) {
+                            Text("默认").tag("")
+                            ForEach(config.llm.prompts) { preset in
+                                Text(preset.name).tag(preset.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: 100 * textScale.multiplier)
+                        .accessibilityLabel("选择提示词")
+                        .help("选择提示词")
+                    }
                 }
-                Spacer()
+
                 Toggle("", isOn: Binding(
                     get: { config.llm.enabled },
                     set: { v in
@@ -219,41 +262,6 @@ struct StatusBarMenuView: View {
                 ))
                 .toggleStyle(.switch)
                 .labelsHidden()
-            }
-
-            // 快捷选择模型（与设置 → 模型管理同步）
-            if !config.llm.models.isEmpty {
-                Picker("模型", selection: Binding(
-                    get: { config.llm.selectedModelID },
-                    set: { v in
-                        var cfg = config
-                        cfg.llm.selectedModelID = v
-                        config = cfg
-                        ConfigStore.shared.update(cfg)
-                    }
-                )) {
-                    ForEach(config.llm.models) { model in
-                        Text(model.name).tag(model.id)
-                    }
-                }
-            }
-
-            // 快捷选择提示词（有用户预设时才显示；第一项固定为系统默认）
-            if !config.llm.prompts.isEmpty {
-                Picker("提示词", selection: Binding(
-                    get: { config.llm.selectedPromptID },
-                    set: { v in
-                        var cfg = config
-                        cfg.llm.selectedPromptID = v
-                        config = cfg
-                        ConfigStore.shared.update(cfg)
-                    }
-                )) {
-                    Text("默认").tag("")
-                    ForEach(config.llm.prompts) { preset in
-                        Text(preset.name).tag(preset.id)
-                    }
-                }
             }
         }
     }

@@ -357,6 +357,10 @@ struct SettingsView: View {
                     Text("系统听写").tag("system")
                     Text("阿里云 Fun-ASR").tag("aliyun")
                 }
+                .labelsHidden()
+                .pickerStyle(.segmented)
+            } header: {
+                Text("识别引擎")
             } footer: {
                 Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
             }
@@ -565,11 +569,12 @@ struct SettingsView: View {
 
     /// 列表行：点击选中当前模型，行内编辑/删除/单测结果
     private func modelRow(_ model: LLMModelDef) -> some View {
-        HStack(spacing: 10) {
+        let result = modelTestResults[model.id]
+        return HStack(alignment: .top, spacing: 10) {
             Button {
                 draft.llm.selectedModelID = model.id
             } label: {
-                HStack(spacing: 8) {
+                HStack(alignment: .top, spacing: 8) {
                     Image(systemName: model.id == draft.llm.selectedModelID ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(model.id == draft.llm.selectedModelID ? Color.accentColor : VoiceKitSemanticColor.secondaryText)
                     VStack(alignment: .leading, spacing: 2) {
@@ -580,6 +585,14 @@ struct SettingsView: View {
                             .font(typography.metadata)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        // 测试失败的完整错误独占一行换行展示，不与右侧按钮争抢宽度
+                        if let result, !result.success {
+                            Text(result.error ?? "未知错误")
+                                .font(typography.metadata)
+                                .foregroundStyle(VoiceKitSemanticColor.failure)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .textSelection(.enabled)
+                        }
                     }
                 }
                 .contentShape(Rectangle())
@@ -589,16 +602,16 @@ struct SettingsView: View {
 
             Spacer(minLength: 4)
 
-            if let result = modelTestResults[model.id] {
+            if let result {
                 if result.success {
                     Text("\(result.latencyMs ?? 0)ms")
                         .font(typography.callout)
                         .foregroundStyle(VoiceKitSemanticColor.success)
                 } else {
-                    Text(result.error ?? "失败")
+                    Text("失败")
                         .font(typography.callout)
                         .foregroundStyle(VoiceKitSemanticColor.failure)
-                        .lineLimit(1)
+                        .help(result.error ?? "")
                 }
             }
 
@@ -1457,7 +1470,8 @@ private struct ModelEditorSheet: View {
 #endif
                     Text("Ollama（本地）").tag("ollama")
                 }
-                .labelsHidden().frame(width: 220)
+                .labelsHidden()
+                .pickerStyle(.segmented)
             }
 
             section("Base URL") {
