@@ -154,7 +154,7 @@ struct LLMOpenAIConfig: Codable, Equatable {
 }
 struct LLMPromptConfig: Codable, Equatable {
     var system: String = "你是一个专业的文字润色助手，负责将语音转写的口语内容改写为规范、自然的书面中文。改写规则：\n1. 去掉「嗯、啊、那个、就是说、其实」等口头禅和语气词\n2. 修正错别字、语病和明显的语音识别错误\n3. 保持原意不变，不新增、不遗漏信息\n4. 只输出改写后的文本本身，不要任何解释、前缀或引号"
-    var user: String = "口语内容：{{input}}\n\n改写结果："
+    var user: String = "口语内容：{{input}}"
 }
 
 /// 提示词预设：用户可维护多套提示词并在设置/状态栏菜单中快速切换。

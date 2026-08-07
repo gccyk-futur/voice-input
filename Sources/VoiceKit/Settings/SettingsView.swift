@@ -32,6 +32,10 @@ struct SettingsView: View {
     @State private var showValidationAlert = false
     @State private var validationMessage = ""
 
+    // 启用 AI 润色前的模型校验
+    @State private var showLLMEnableGuardAlert = false
+    @State private var llmEnableGuardMessage = ""
+
     // 提示词预览
     @State private var showPromptPreview = false
 
@@ -128,6 +132,12 @@ struct SettingsView: View {
             Button("好", role: .cancel) {}
         } message: {
             Text(validationMessage)
+        }
+        .alert("暂时无法启用 AI 润色", isPresented: $showLLMEnableGuardAlert) {
+            Button("好", role: .cancel) {}
+            Button("前往模型管理") { selectedPane = .models }
+        } message: {
+            Text(llmEnableGuardMessage)
         }
         .alert("放弃未保存的更改？", isPresented: $showDiscardAlert) {
             Button("继续编辑", role: .cancel) {}
@@ -348,6 +358,31 @@ struct SettingsView: View {
         )
     }
 
+    /// 启用 AI 润色前校验：无可用模型或模型信息不完整时阻止开启并给出引导。
+    private var llmEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.llm.enabled },
+            set: { v in
+                guard v else {
+                    draft.llm.enabled = false
+                    return
+                }
+                guard let model = draft.llm.selectedModel else {
+                    llmEnableGuardMessage = "还没有可用的模型。请先到「模型管理」添加模型，再启用 AI 润色。"
+                    showLLMEnableGuardAlert = true
+                    return
+                }
+                if model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty ||
+                   model.model.trimmingCharacters(in: .whitespaces).isEmpty {
+                    llmEnableGuardMessage = "当前选中的模型「\(model.name)」信息不完整，请到「模型管理」中补全 Base URL 和模型名。"
+                    showLLMEnableGuardAlert = true
+                    return
+                }
+                draft.llm.enabled = true
+            }
+        )
+    }
+
     // MARK: - 语音识别
 
     private var asrTab: some View {
@@ -479,7 +514,7 @@ struct SettingsView: View {
                         .font(typography.body)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                    Toggle("启用 AI 润色", isOn: $draft.llm.enabled)
+                    Toggle("启用 AI 润色", isOn: llmEnabledBinding)
                 }
                 .padding(.vertical, 4)
             }
@@ -1354,6 +1389,22 @@ private struct LLMTestSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("测试润色效果").font(typography.sectionTitle)
             Text("输入一段口语文本，测试 LLM 润色后的输出效果").font(typography.callout).foregroundStyle(.secondary)
+
+            // 服务未开启时明确提示：测试仅用于验证配置，不影响实际听写流程
+            if !llmConfig.enabled {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundStyle(.orange)
+                        .font(typography.callout)
+                    Text("AI 服务当前未开启。本次测试仅验证模型与提示词是否可用，润色结果不会用于实际听写。")
+                        .font(typography.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 6))
+            }
 
             section("输入文本") {
                 TextField("在这里输入要测试的口语…", text: $inputText, axis: .vertical)
