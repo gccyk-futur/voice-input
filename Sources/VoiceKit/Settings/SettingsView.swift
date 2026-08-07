@@ -48,6 +48,11 @@ struct SettingsView: View {
 
     // 提示词
     @State private var showPromptDeleteConfirm = false
+    @State private var promptToDelete: LLMPromptPreset?
+    @State private var editingPrompt: PromptEditing?
+
+    // 恢复默认
+    @State private var showResetConfirm = false
 
     @State private var showDiscardAlert = false
 
@@ -168,10 +173,44 @@ struct SettingsView: View {
             Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
         }
         .alert("删除提示词？", isPresented: $showPromptDeleteConfirm) {
-            Button("删除", role: .destructive) { deleteSelectedPrompt() }
+            Button("删除", role: .destructive) {
+                if let p = promptToDelete {
+                    draft.llm.prompts.removeAll { $0.id == p.id }
+                    if draft.llm.selectedPromptID == p.id {
+                        draft.llm.selectedPromptID = ""
+                    }
+                }
+            }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("确定要删除「\(draft.llm.selectedPrompt?.name ?? "")」吗？删除后将切换到第一个提示词。")
+            Text("确定要删除「\(promptToDelete?.name ?? "")」吗？删除后将切回系统默认提示词。")
+        }
+        .alert("恢复默认设置？", isPresented: $showResetConfirm) {
+            Button("恢复默认", role: .destructive) {
+                draft = .default
+                // 外观/文字大小是即时生效的 UI 偏好，一并复位
+                appearanceRawValue = VoiceKitAppearance.system.rawValue
+                textScaleRawValue = VoiceKitTextScale.system.rawValue
+            }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("热键、声音、语音引擎、模型（含 API Key）和提示词都会恢复出厂默认。恢复后点击右下角「保存」生效，直接关闭窗口可放弃。")
+        }
+        .sheet(item: $editingPrompt) { editing in
+            PromptEditorSheet(editing: editing) { saved in
+                if saved.id.isEmpty {
+                    // 系统默认提示词：写回 llm.prompt，名称固定
+                    draft.llm.prompt.system = saved.system
+                    draft.llm.prompt.user = saved.user
+                } else if let idx = draft.llm.prompts.firstIndex(where: { $0.id == saved.id }) {
+                    draft.llm.prompts[idx].name = saved.name
+                    draft.llm.prompts[idx].system = saved.system
+                    draft.llm.prompts[idx].user = saved.user
+                } else {
+                    draft.llm.prompts.append(LLMPromptPreset(id: saved.id, name: saved.name, system: saved.system, user: saved.user))
+                }
+                editingPrompt = nil
+            }
         }
     }
 
@@ -267,21 +306,46 @@ struct SettingsView: View {
             }
 
             Section("声音") {
-                Toggle("播放提示音", isOn: $draft.general.sound.enabled)
-                if draft.general.sound.enabled {
-                    Picker("开始录音", selection: $draft.general.sound.startSound) {
-                        ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
+                Toggle("开始录音提示音", isOn: startSoundEnabledBinding)
+                if draft.general.sound.start {
+                    HStack {
+                        Picker("开始录音音效", selection: $draft.general.sound.startSound) {
+                            ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
+                        }
+                        Button("试听") { NSSound(named: .init(draft.general.sound.startSound))?.play() }
                     }
-                    Picker("识别完成", selection: $draft.general.sound.stopSound) {
-                        ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
-                    }
-                    HStack(spacing: 8) {
-                        Button("试听开始") { NSSound(named: .init(draft.general.sound.startSound))?.play() }
-                        Button("试听完成") { NSSound(named: .init(draft.general.sound.stopSound))?.play() }
+                }
+                Toggle("识别完成提示音", isOn: stopSoundEnabledBinding)
+                if draft.general.sound.stop {
+                    HStack {
+                        Picker("识别完成音效", selection: $draft.general.sound.stopSound) {
+                            ForEach(Self.systemSounds, id: \.0) { n, l in Text(l).tag(n) }
+                        }
+                        Button("试听") { NSSound(named: .init(draft.general.sound.stopSound))?.play() }
                     }
                 }
             }
+
+            Section {
+                Button("恢复默认设置…", role: .destructive) { showResetConfirm = true }
+            } footer: {
+                Text("将所有设置恢复为 VoiceKit 出厂默认值。恢复后需点击右下角「保存」生效，直接关闭窗口可放弃。")
+            }
         }
+    }
+
+    private var startSoundEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.general.sound.start },
+            set: { draft.general.sound.startEnabled = $0 }
+        )
+    }
+
+    private var stopSoundEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { draft.general.sound.stop },
+            set: { draft.general.sound.stopEnabled = $0 }
+        )
     }
 
     // MARK: - 语音识别
@@ -489,10 +553,6 @@ struct SettingsView: View {
                 Text("温度越高越随机；越低越稳定。语音润色建议使用 0.3 到 0.7。")
             }
 
-            Section {
-                LLMConnectivityTest(llmConfig: draft.llm)
-            }
-
             if let model = draft.llm.selectedModel, model.engine == "openai" {
                 Section {
                     Toggle("深度思考 (thinking)", isOn: thinkingBinding)
@@ -642,101 +702,115 @@ struct SettingsView: View {
     private var promptTab: some View {
         Group {
             Section {
-                Picker("当前提示词", selection: $draft.llm.selectedPromptID) {
-                    ForEach(draft.llm.prompts) { preset in
-                        Text(preset.name).tag(preset.id)
-                    }
+                // 系统默认：固定第一条，可编辑不可删除
+                promptRow(
+                    id: "",
+                    name: "默认",
+                    subtitle: String(draft.llm.prompt.user.prefix(40)),
+                    deletable: false
+                )
+                ForEach(draft.llm.prompts) { preset in
+                    promptRow(
+                        id: preset.id,
+                        name: preset.name,
+                        subtitle: String(preset.user.prefix(40)),
+                        deletable: true,
+                        preset: preset
+                    )
                 }
-                TextField("名称", text: promptNameBinding)
                 HStack(spacing: 8) {
                     Button("新建（复制当前）") { addPromptPreset() }
-                    if draft.llm.prompts.count > 1 {
-                        Button("删除当前", role: .destructive) { showPromptDeleteConfirm = true }
-                    }
-                }
-            } footer: {
-                Text("可维护多套提示词并在这里或状态栏菜单快速切换。「新建」会复制当前提示词作为起点。")
-            }
-
-            Section {
-                TextEditor(text: promptSystemBinding)
-                    .font(typography.body)
-                    .frame(minHeight: 100)
-                    .scrollContentBackground(.hidden)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
-            } header: {
-                Text("系统提示词")
-            }
-
-            Section {
-                TextEditor(text: promptUserBinding)
-                    .font(typography.body)
-                    .frame(minHeight: 140)
-                    .scrollContentBackground(.hidden)
-                    .background(Color(nsColor: .textBackgroundColor))
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
-                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
-            } header: {
-                Text("用户模板")
-            } footer: {
-                Text("保留 {{input}} 占位符，运行时会替换为原始语音文本。")
-            }
-
-            Section {
-                HStack(spacing: 8) {
-                    Button("预览提示词") { showPromptPreview = true }
+                    Spacer()
+                    Button("预览") { showPromptPreview = true }
                     Button("测试润色效果") { showLLMTest = true }
                 }
+            } header: {
+                Text("提示词")
+            } footer: {
+                Text("「默认」是系统内置提示词，可编辑但不可删除；新建会以当前选中的提示词为起点。预览和测试作用于当前选中的提示词。")
             }
         }
     }
 
+    /// 列表行：点击选中当前提示词；行内编辑/删除
+    private func promptRow(id: String, name: String, subtitle: String, deletable: Bool, preset: LLMPromptPreset? = nil) -> some View {
+        HStack(spacing: 10) {
+            Button {
+                draft.llm.selectedPromptID = id
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: draft.llm.selectedPromptID == id ? "checkmark.circle.fill" : "circle")
+                        .foregroundStyle(draft.llm.selectedPromptID == id ? Color.accentColor : VoiceKitSemanticColor.secondaryText)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(name)
+                                .font(typography.body)
+                                .foregroundStyle(.primary)
+                            if !deletable {
+                                Text("系统")
+                                    .font(typography.metadata)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(.quaternary, in: Capsule())
+                            }
+                        }
+                        Text(subtitle)
+                            .font(typography.metadata)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("选择提示词 \(name)")
+
+            Spacer(minLength: 4)
+
+            Button("编辑") {
+                if let preset {
+                    editingPrompt = PromptEditing(id: preset.id, name: preset.name, system: preset.system, user: preset.user)
+                } else {
+                    editingPrompt = PromptEditing(id: "", name: "默认", system: draft.llm.prompt.system, user: draft.llm.prompt.user)
+                }
+            }
+            .buttonStyle(.borderless)
+
+            if deletable, let preset {
+                Button(role: .destructive) {
+                    promptToDelete = preset
+                    showPromptDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .accessibilityLabel("删除提示词 \(name)")
+            }
+        }
+        .padding(.vertical, 2)
+    }
+
     // MARK: - 提示词预设操作
 
-    private var selectedPromptIndex: Int? {
-        draft.llm.prompts.firstIndex { $0.id == draft.llm.selectedPromptID }
-            ?? draft.llm.prompts.indices.first
-    }
-
-    private var promptNameBinding: Binding<String> {
-        Binding(
-            get: { selectedPromptIndex.map { draft.llm.prompts[$0].name } ?? "" },
-            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].name = v } }
-        )
-    }
-
-    private var promptSystemBinding: Binding<String> {
-        Binding(
-            get: { selectedPromptIndex.map { draft.llm.prompts[$0].system } ?? "" },
-            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].system = v } }
-        )
-    }
-
-    private var promptUserBinding: Binding<String> {
-        Binding(
-            get: { selectedPromptIndex.map { draft.llm.prompts[$0].user } ?? "" },
-            set: { v in if let i = selectedPromptIndex { draft.llm.prompts[i].user = v } }
-        )
-    }
-
-    /// 以当前提示词为模板复制一份新的
+    /// 以当前选中的提示词（含系统默认）为模板复制一份新的
     private func addPromptPreset() {
-        let base = selectedPromptIndex.map { draft.llm.prompts[$0] }
+        let base = draft.llm.activePrompt
         let new = LLMPromptPreset(
             name: "提示词 \(draft.llm.prompts.count + 1)",
-            system: base?.system ?? "",
-            user: base?.user ?? ""
+            system: base.system,
+            user: base.user
         )
         draft.llm.prompts.append(new)
         draft.llm.selectedPromptID = new.id
     }
 
-    private func deleteSelectedPrompt() {
-        guard draft.llm.prompts.count > 1, let i = selectedPromptIndex else { return }
-        draft.llm.prompts.remove(at: i)
-        draft.llm.selectedPromptID = draft.llm.prompts.first?.id ?? ""
+    /// 编辑上下文：id 为空字符串表示系统默认提示词（名称固定、不可删除）
+    struct PromptEditing: Identifiable {
+        var id: String
+        var name: String
+        var system: String
+        var user: String
     }
 
     // MARK: - 权限
@@ -1345,70 +1419,6 @@ private struct LLMTestSheet: View {
     }
 }
 
-// MARK: - LLM 连接测试
-
-private struct LLMConnectivityTest: View {
-    let llmConfig: LLMConfig
-
-    @State private var status: Status = .idle
-    @Environment(\.voiceKitTextScale) private var textScale
-
-    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
-
-    private enum Status: Equatable {
-        case idle, testing, success, failure(String)
-    }
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Button("测试连接") {
-                runTest()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.small)
-            .disabled(status == .testing || llmConfig.selectedModel == nil)
-
-            if status == .testing {
-                ProgressView()
-                    .scaleEffect(0.5)
-                    .frame(width: 12, height: 12)
-                Text("连接中…")
-                    .font(typography.metadata).foregroundStyle(.secondary)
-            }
-
-            switch status {
-            case .success:
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.caption).foregroundStyle(.green)
-                Text("连接成功")
-                    .font(typography.metadata).foregroundStyle(.green)
-            case .failure(let msg):
-                Image(systemName: "xmark.circle.fill")
-                    .font(.caption).foregroundStyle(.red)
-                Text(msg)
-                    .font(typography.metadata).foregroundStyle(.red)
-                    .lineLimit(1)
-            default:
-                EmptyView()
-            }
-
-            Spacer()
-        }
-    }
-
-    private func runTest() {
-        guard let model = llmConfig.selectedModel else { return }
-        status = .testing
-        Task {
-            let engine = AppCoordinator.buildLLMEngine(from: model, temperature: llmConfig.temperature)
-            let ok = await engine.checkConnectivity()
-            await MainActor.run {
-                status = ok ? .success : .failure("无法连接，请检查 URL 和网络")
-            }
-        }
-    }
-}
-
 // MARK: - 模型编辑器 Sheet（新增 / 编辑）
 
 private struct ModelEditorSheet: View {
@@ -1508,6 +1518,89 @@ private struct ModelEditorSheet: View {
         }
         .padding(20)
         .frame(width: 440, height: 420)
+    }
+
+    private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(typography.callout).foregroundStyle(.secondary)
+            content()
+        }
+    }
+}
+
+
+// MARK: - 提示词编辑器 Sheet（编辑默认/用户预设）
+
+private struct PromptEditorSheet: View {
+    let initial: SettingsView.PromptEditing
+    let onSave: (SettingsView.PromptEditing) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.voiceKitTextScale) private var textScale
+    @State private var editing: SettingsView.PromptEditing
+
+    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
+
+    /// 系统默认提示词：名称固定为「默认」，不显示名称编辑
+    private var isSystemDefault: Bool { initial.id.isEmpty }
+
+    init(editing: SettingsView.PromptEditing, onSave: @escaping (SettingsView.PromptEditing) -> Void) {
+        self.initial = editing
+        self.onSave = onSave
+        _editing = State(initialValue: editing)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text(isSystemDefault ? "编辑默认提示词" : "编辑提示词")
+                .font(typography.sectionTitle)
+
+            if !isSystemDefault {
+                section("名称") {
+                    TextField("例如：正式书面语", text: $editing.name)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            section("系统提示词") {
+                TextEditor(text: $editing.system)
+                    .font(typography.body)
+                    .frame(minHeight: 90)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            }
+
+            section("用户模板") {
+                TextEditor(text: $editing.user)
+                    .font(typography.body)
+                    .frame(minHeight: 150)
+                    .scrollContentBackground(.hidden)
+                    .background(Color(nsColor: .textBackgroundColor))
+                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
+            }
+
+            Text("保留 {{input}} 占位符，运行时会替换为原始语音文本。")
+                .font(typography.metadata)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Spacer()
+                Button("取消") {
+                    dismiss()
+                }
+                Button("保存") {
+                    onSave(editing)
+                    dismiss()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!isSystemDefault && editing.name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 540, height: 560)
     }
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {

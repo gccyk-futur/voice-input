@@ -238,8 +238,8 @@ struct StatusBarMenuView: View {
                 }
             }
 
-            // 快捷选择提示词（多套时才显示）
-            if config.llm.prompts.count > 1 {
+            // 快捷选择提示词（有用户预设时才显示；第一项固定为系统默认）
+            if !config.llm.prompts.isEmpty {
                 Picker("提示词", selection: Binding(
                     get: { config.llm.selectedPromptID },
                     set: { v in
@@ -249,6 +249,7 @@ struct StatusBarMenuView: View {
                         ConfigStore.shared.update(cfg)
                     }
                 )) {
+                    Text("默认").tag("")
                     ForEach(config.llm.prompts) { preset in
                         Text(preset.name).tag(preset.id)
                     }

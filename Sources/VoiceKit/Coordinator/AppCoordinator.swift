@@ -300,7 +300,8 @@ final class AppCoordinator {
                 self.sessionState = .recording
                 self.statusText = "聆听中…"
                 self.recoveryNotice = nil
-                self.playSound(named: self.configStore.config.general.sound.startSound)
+                let sound = self.configStore.config.general.sound
+                self.playSound(named: sound.startSound, enabled: sound.start)
                 self.engineOperationInFlight = false
             } catch {
                 Log.error("[Coordinator] engine.start failed: \(error)")
@@ -415,7 +416,8 @@ final class AppCoordinator {
         }
         // 到达就绪态：自动粘贴
         await MainActor.run {
-            self.playSound(named: self.configStore.config.general.sound.stopSound)
+            let sound = self.configStore.config.general.sound
+            self.playSound(named: sound.stopSound, enabled: sound.stop)
             self.confirmPaste()
         }
     }
@@ -649,8 +651,8 @@ final class AppCoordinator {
         displayTimer = nil
     }
 
-    private func playSound(named name: String) {
-        guard configStore.config.general.sound.enabled else {
+    private func playSound(named name: String, enabled: Bool) {
+        guard enabled else {
             activeSound = nil
             return
         }

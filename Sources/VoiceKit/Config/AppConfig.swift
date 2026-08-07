@@ -21,9 +21,18 @@ struct GeneralConfig: Codable, Equatable {
 }
 
 struct SoundConfig: Codable, Equatable {
+    /// legacy 总开关（仅用于兼容旧配置，新逻辑不再读取）
     var enabled: Bool = true
-    var startSound: String = "Tink"
-    var stopSound: String = "Purr"
+    /// 开始录音提示音开关；nil 表示旧配置未迁移，回退到 legacy 总开关
+    var startEnabled: Bool? = nil
+    /// 识别完成提示音开关；nil 表示旧配置未迁移，回退到 legacy 总开关
+    var stopEnabled: Bool? = nil
+    var startSound: String = "Frog"
+    var stopSound: String = "Funk"
+
+    /// 运行时统一读取入口
+    var start: Bool { startEnabled ?? enabled }
+    var stop: Bool { stopEnabled ?? enabled }
 }
 
 struct ASRConfig: Codable, Equatable {
@@ -83,11 +92,12 @@ struct LLMConfig: Codable, Equatable {
     }
 
     var selectedPrompt: LLMPromptPreset? {
-        prompts.first { $0.id == selectedPromptID } ?? prompts.first
+        prompts.first { $0.id == selectedPromptID }
     }
 
-    /// 运行时统一读取入口：选中的提示词预设；无预设时回退到 legacy 单条 prompt 字段。
-    /// ASR/润色流程只读这里，不感知多预设结构。
+    /// 运行时统一读取入口：选中了用户预设则用预设，否则用系统默认提示词。
+    /// llm.prompt 是出厂默认（列表第一条，可编辑但不可删除）；
+    /// prompts[] 只存放用户自建的预设。ASR/润色流程只读这里。
     var activePrompt: LLMPromptConfig {
         if let p = selectedPrompt {
             return LLMPromptConfig(system: p.system, user: p.user)
@@ -123,14 +133,6 @@ struct LLMConfig: Codable, Equatable {
             models.append(m)
             selectedModelID = m.id
         }
-    }
-
-    /// 从旧版单条提示词迁移到多预设（仅首次执行，旧字段保留不删）。
-    mutating func migratePromptsFromLegacy() {
-        guard prompts.isEmpty else { return }
-        let preset = LLMPromptPreset(name: "默认", system: prompt.system, user: prompt.user)
-        prompts = [preset]
-        selectedPromptID = preset.id
     }
 }
 struct LLMOllamaConfig: Codable, Equatable {
