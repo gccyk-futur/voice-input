@@ -26,6 +26,7 @@ struct SettingsView: View {
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
     @State private var postEventRequestAttempted = false
+    @State private var postEventRestartDismissed = false
     @State private var restartRequested = false
 
     // 保存校验
@@ -887,20 +888,18 @@ struct SettingsView: View {
                 )
             }
 
-            // 合成键盘事件（App Store 版和官网版的剪贴板回退路径都需要）
+            // 合成键盘事件：仅 App Store 版显示（它是沙盒下唯一的自动写回授权）。
+            // 官网版不显示此行——辅助功能与键盘事件在系统设置中是同一面板，
+            // 不愿授 AX 的用户也不会单独授键盘事件；AX 未授权时的体验与提示
+            // 由「辅助功能」行的 ifDenied 文案（回退剪贴板手动 ⌘V）承载。
+#if APP_STORE
             Section {
-                permissionRow(
-                    icon: "keyboard.fill",
-                    name: "自动写回（键盘事件）",
-                    why: "允许 VoiceKit 在识别完成后尝试发送一次 ⌘V",
-                    ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
-                    status: postEventStatus,
-                    action: requestPostEventPermission
-                )
+                postEventPermissionRow
+            } footer: {
+                Text("此权限仅用于把识别结果写入你当前的输入框（由系统代为发送一次 ⌘V）。VoiceKit 不监听你的键盘输入，也不读取屏幕内容，可放心授权。")
             }
-
+#else
             // 辅助功能（仅官网版）
-#if !APP_STORE
             Section {
                 permissionRow(
                     icon: "rectangle.and.hand.point.up.left.fill",
@@ -911,13 +910,14 @@ struct SettingsView: View {
                     action: requestAccessibilityPermission
                 )
             }
+#endif
 
-            if restartState == .recommended {
+            // 重启提示（两版通用：辅助功能/键盘事件授权后，TCC 进程级缓存需重启刷新）
+            if case .recommended = restartState {
                 Section {
                     restartRow
                 }
             }
-#endif
 
             Section {
                 VStack(alignment: .leading, spacing: 8) {
@@ -1008,18 +1008,40 @@ struct SettingsView: View {
         }
     }
 
+#if APP_STORE
     private var postEventStatus: VoiceKitPermissionState {
         _ = permissionRefreshID
         if PasteService.shared.canPostEvents { return .granted }
         return postEventRequestAttempted ? .denied : .notDetermined
     }
 
+    /// 键盘事件授权行（仅 App Store 版；官网版不展示，见 permissionTab 注释）
+    private var postEventPermissionRow: some View {
+        permissionRow(
+            icon: "keyboard.fill",
+            name: "自动写回（键盘事件）",
+            why: "允许 VoiceKit 在识别完成后尝试发送一次 ⌘V",
+            ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
+            status: postEventStatus,
+            action: requestPostEventPermission
+        )
+    }
+#endif
+
+    private var distribution: VoiceKitDistribution {
+#if APP_STORE
+        .appStore
+#else
+        .direct
+#endif
+    }
+
     private var permissionReloadHint: String {
 #if APP_STORE
-        return "App Store 版不使用辅助功能直接写入；麦克风、语音识别和键盘事件权限通常会立即刷新。"
+        return "麦克风和语音识别授权后立即生效；键盘事件权限在系统设置中授权后，需要重启 VoiceKit 才会生效。"
 #else
-        if restartState == .recommended {
-            return "辅助功能刚刚授权，请使用上方的重启按钮；麦克风和语音识别权限通常不需要重启。"
+        if case .recommended = restartState {
+            return "辅助功能刚授权，请使用上方的重启按钮；麦克风和语音识别权限通常不需要重启。"
         }
         return "只有辅助功能在刚授权后可能需要重启；麦克风和语音识别权限通常不需要重启。"
 #endif
@@ -1056,6 +1078,7 @@ struct SettingsView: View {
         }
     }
 
+#if APP_STORE
     private func requestPostEventPermission() {
         guard !PasteService.shared.canPostEvents else { return }
         guard !postEventRequestAttempted else {
@@ -1066,6 +1089,7 @@ struct SettingsView: View {
         _ = PasteService.shared.requestPostEventAccess()
         permissionRefreshID = UUID()
     }
+#endif
 
 #if !APP_STORE
     private var accessibilityStatus: VoiceKitPermissionState {
@@ -1092,14 +1116,22 @@ struct SettingsView: View {
 #endif
 
     private var restartState: VoiceKitPermissionReloadState {
-#if APP_STORE
-        return .hidden
-#else
-        return VoiceKitPermissionReloadState.make(
-            distribution: .direct,
-            permission: accessibilityStatus,
-            requested: restartRequested
+        VoiceKitPermissionReloadState.make(
+            distribution: distribution,
+            accessibility: currentAccessibilityStatus,
+            accessibilityRequested: restartRequested,
+            postEventRequested: postEventRequestAttempted,
+            postEventUsable: PasteService.shared.canPostEvents,
+            postEventDismissed: postEventRestartDismissed
         )
+    }
+
+    /// App Store 版没有辅助功能路径，状态机里占位（不参与判定）。
+    private var currentAccessibilityStatus: VoiceKitPermissionState {
+#if APP_STORE
+        .notDetermined
+#else
+        accessibilityStatus
 #endif
     }
 
@@ -1143,16 +1175,27 @@ struct SettingsView: View {
         }
     }
 
-#if !APP_STORE
     private var restartRow: some View {
-        HStack(alignment: .top, spacing: 10) {
+        let copy: (title: String, detail: String) = {
+            if case .recommended(.postEvent) = restartState {
+                return (
+                    "自动写回将在重启后生效",
+                    "如果你刚刚在系统提示或系统设置中允许了键盘事件权限，VoiceKit 需要重启一次才能识别到新授权（系统缓存限制）。"
+                )
+            }
+            return (
+                "辅助功能已授权",
+                "重启 VoiceKit，让刚授权的直接写入能力完整生效。"
+            )
+        }()
+        return HStack(alignment: .top, spacing: 10) {
             Image(systemName: "arrow.triangle.2.circlepath.circle.fill")
                 .font(.title3)
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 6) {
-                Text("辅助功能已授权")
+                Text(copy.title)
                     .font(typography.sectionTitle)
-                Text("重启 VoiceKit，让刚授权的直接写入能力完整生效。")
+                Text(copy.detail)
                     .font(typography.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1163,7 +1206,7 @@ struct SettingsView: View {
                     .buttonStyle(.borderedProminent)
 
                     Button("稍后处理") {
-                        restartRequested = false
+                        dismissRestartRow()
                     }
                     .buttonStyle(.bordered)
                 }
@@ -1171,6 +1214,14 @@ struct SettingsView: View {
             Spacer(minLength: 0)
         }
         .padding(.vertical, 4)
+    }
+
+    private func dismissRestartRow() {
+        if case .recommended(.postEvent) = restartState {
+            postEventRestartDismissed = true
+        } else {
+            restartRequested = false
+        }
     }
 
     private func restartApplication() {
@@ -1187,7 +1238,6 @@ struct SettingsView: View {
             }
         }
     }
-#endif
 
     private func closeSettings() {
         if hasChanges {

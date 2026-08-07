@@ -123,18 +123,35 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
 }
 
 enum VoiceKitPermissionReloadState: Equatable, Sendable {
+    /// 需要重启才能生效的权限来源
+    enum Reason: String, Equatable, Sendable {
+        /// 辅助功能（仅官网版）
+        case accessibility
+        /// 合成键盘事件（两版都有；TCC 进程级缓存，授权后需重启才能被识别）
+        case postEvent
+    }
+
     case hidden
-    case recommended
+    case recommended(Reason)
 
     static func make(
         distribution: VoiceKitDistribution,
-        permission: VoiceKitPermissionState,
-        requested: Bool
+        accessibility: VoiceKitPermissionState,
+        accessibilityRequested: Bool,
+        postEventRequested: Bool,
+        postEventUsable: Bool,
+        postEventDismissed: Bool
     ) -> Self {
-        guard distribution == .direct, permission == .granted, requested else {
-            return .hidden
+        // 键盘事件：已发起授权请求但能力尚未生效（用户可能刚在系统设置中授权，
+        // CGPreflightPostEventAccess 进程级缓存不热更新）→ 提示重启，优先于 AX 提示。
+        if postEventRequested && !postEventUsable && !postEventDismissed {
+            return .recommended(.postEvent)
         }
-        return .recommended
+        // 辅助功能：仅官网版；授权成功后提示重启让直接写入能力完整生效。
+        if distribution == .direct, accessibility == .granted, accessibilityRequested {
+            return .recommended(.accessibility)
+        }
+        return .hidden
     }
 }
 

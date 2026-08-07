@@ -58,16 +58,76 @@ final class VoiceKitUIStateTests: XCTestCase {
         XCTAssertEqual(
             VoiceKitPermissionReloadState.make(
                 distribution: .direct,
-                permission: .granted,
-                requested: true
+                accessibility: .granted,
+                accessibilityRequested: true,
+                postEventRequested: false,
+                postEventUsable: false,
+                postEventDismissed: false
             ),
-            .recommended
+            .recommended(.accessibility)
         )
+        // App Store 版没有辅助功能路径，AX 参数不参与判定
         XCTAssertEqual(
             VoiceKitPermissionReloadState.make(
                 distribution: .appStore,
-                permission: .granted,
-                requested: true
+                accessibility: .granted,
+                accessibilityRequested: true,
+                postEventRequested: false,
+                postEventUsable: false,
+                postEventDismissed: false
+            ),
+            .hidden
+        )
+    }
+
+    func testPostEventGrantNeedsReloadOnBothChannels() {
+        // 已发起键盘事件授权但能力尚未生效（TCC 进程级缓存）→ 两版都提示重启
+        for distribution in [VoiceKitDistribution.direct, .appStore] {
+            XCTAssertEqual(
+                VoiceKitPermissionReloadState.make(
+                    distribution: distribution,
+                    accessibility: .notDetermined,
+                    accessibilityRequested: false,
+                    postEventRequested: true,
+                    postEventUsable: false,
+                    postEventDismissed: false
+                ),
+                .recommended(.postEvent)
+            )
+        }
+        // 能力已生效（重启后 preflight 返回 true）→ 不再提示
+        XCTAssertEqual(
+            VoiceKitPermissionReloadState.make(
+                distribution: .appStore,
+                accessibility: .notDetermined,
+                accessibilityRequested: false,
+                postEventRequested: true,
+                postEventUsable: true,
+                postEventDismissed: false
+            ),
+            .hidden
+        )
+        // 用户点了「稍后处理」→ 不再提示
+        XCTAssertEqual(
+            VoiceKitPermissionReloadState.make(
+                distribution: .appStore,
+                accessibility: .notDetermined,
+                accessibilityRequested: false,
+                postEventRequested: true,
+                postEventUsable: false,
+                postEventDismissed: true
+            ),
+            .hidden
+        )
+        // 从未发起过授权请求 → 不提示
+        XCTAssertEqual(
+            VoiceKitPermissionReloadState.make(
+                distribution: .appStore,
+                accessibility: .notDetermined,
+                accessibilityRequested: false,
+                postEventRequested: false,
+                postEventUsable: false,
+                postEventDismissed: false
             ),
             .hidden
         )
