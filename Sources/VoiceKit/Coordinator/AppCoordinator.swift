@@ -543,12 +543,11 @@ final class AppCoordinator {
     }
 
     private func finalizeAndRecord(useLLM: Bool, statusText: String?) {
-        let transientStatus = statusText
-        if let msg = transientStatus { self.statusText = msg }
+        // 组合兜底提示：官网版未授权辅助功能时顺带引导授权
+        var notice = statusText
 #if !APP_STORE
-        // 引导用户授权辅助功能（授权后可享丝滑直插体验）
         if !AccessibilityPasteService.shared.isTrusted {
-            self.statusText = (statusText ?? "") + " 授权辅助功能后可自动输入"
+            notice = (notice ?? "") + " 授权辅助功能后可自动输入"
         }
 #endif
         historyStore.append(HistoryItem(
@@ -560,19 +559,10 @@ final class AppCoordinator {
         reset()
         finalizing = false
 
-        // reset() restores the idle prompt and closes the panel. Keep an
-        // explicit fallback message visible briefly so clipboard-only paths
-        // are not silent and cannot be mistaken for successful insertion.
-        if let transientStatus {
-            self.statusText = transientStatus
-            panel.show()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
-                guard let self,
-                      self.sessionState == .idle,
-                      self.statusText == transientStatus else { return }
-                self.panel.close()
-                self.statusText = "按 ⌘⇧V 开始"
-            }
+        // 剪贴板兜底路径不能静默（也不能被误认为已成功写入）：
+        // 以独立吐司通知提示，不重新拉起听写面板，约 4 秒后自动消散。
+        if let notice, !notice.trimmingCharacters(in: .whitespaces).isEmpty {
+            ToastController.shared.show(notice, duration: 4)
         }
     }
 
