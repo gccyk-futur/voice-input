@@ -64,6 +64,8 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _finishSent = false
     /// 当前 task 的音频发送排空组；task-finished 前必须确认所有已排队音频发送回调完成。
     private var _audioSendDrain: AudioSendDrain?
+    /// 当前 task 的音频预缓冲发送门；仅阿里云远程 task 使用。
+    private var _audioPreRollGate: AudioPreRollSendGate?
     /// 等待握手完成的 continuation（ensureConnected 注册，didOpen/超时 resume）。
     private var _connectWait: (id: UUID, cont: CheckedContinuation<Void, Error>)?
     private var _isConnected = false
@@ -347,9 +349,11 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                onAutoStop: (@Sendable () -> Bool)?) async throws {
         // 没有麦克风时不要先向服务端创建一个必然 EmptyAudio 的 task。
         try capture.ensureInputAvailable()
-        try await ensureConnected(timeout: 5)
 
         let newTaskID = UUID().uuidString
+        let audioGate = AudioPreRollSendGate(sendQueue: sendQueue) { [weak self] data in
+            self?.sendAudioData(data, taskID: newTaskID)
+        }
         let beginResult = stateLock.withLock {
             let result = _taskLifecycle.begin(taskID: newTaskID)
             guard result == .accepted else { return result }
@@ -359,11 +363,13 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             _stopRequested = false
             _finishSent = false
             _audioSendDrain = AudioSendDrain()
+            _audioPreRollGate = audioGate
             return result
         }
         guard beginResult == .accepted else {
             throw AlibabaASRError.busy
         }
+        Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲已创建")
 
         let runTask: [String: Any] = [
             "header": ["action": "run-task", "task_id": newTaskID, "streaming": "duplex"],
@@ -382,6 +388,27 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         ]
         let json = String(data: try JSONSerialization.data(withJSONObject: runTask), encoding: .utf8)!
         do {
+            // 回调必须在远程 task 握手前安装，启动期间的 PCM 先进入本地预缓冲。
+            stateLock.withLock {
+                _onPartial = onPartial
+                _onAudioLevel = onAudioLevel
+                _onAutoStop = onAutoStop
+            }
+            try await startAudioCapture(gate: audioGate, taskID: newTaskID)
+
+            // 采集启动后，用户可能立即结束会话，或音频回调可能报告了不可恢复错误。
+            // 这两种情况都不能让启动协程继续创建远程 task。
+            guard canContinueStarting(taskID: newTaskID) else {
+                throw AlibabaASRError.cancelled
+            }
+
+            // 采集已由 gate 接住；首次建连也不能再吞掉用户的开头语音。
+            try await ensureConnected(timeout: 5)
+
+            guard canContinueStarting(taskID: newTaskID) else {
+                throw AlibabaASRError.cancelled
+            }
+
             // continuation 必须先注册，再发送 run-task，避免服务端事件先到导致丢失。
             try await sendRunTaskAndWait(json: json, taskID: newTaskID)
             let stopWasRequested = stateLock.withLock {
@@ -394,14 +421,20 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 throw AlibabaASRError.cancelled
             }
 
-            // 存储回调
-            stateLock.withLock {
-                _onPartial = onPartial
-                _onAudioLevel = onAudioLevel
-                _onAutoStop = onAutoStop
+            let bufferedBytes = audioGate.bufferedByteCount
+            Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲开始排空，bytes=\(bufferedBytes)")
+            guard await audioGate.serverReady() else {
+                throw AlibabaASRError.cancelled
             }
-            try await startAudioCapture()
+            Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲已排空，进入实时发送")
         } catch {
+            audioGate.discard()
+            Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲已丢弃，启动未完成")
+            stateLock.withLock {
+                if _audioPreRollGate === audioGate {
+                    _audioPreRollGate = nil
+                }
+            }
             let taskWasStarted = stateLock.withLock { _sessionActive }
             if taskWasStarted {
                 // 音频采集或取消失败：先正常结束服务端 task，再把错误抛给上层。
@@ -415,6 +448,8 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     func stop() async throws -> String {
         capture.stop()
+        let audioGate = stateLock.withLock { _audioPreRollGate }
+        audioGate?.discard()
 
         let taskToFinish = stateLock.withLock { () -> String? in
             switch _taskLifecycle.phase {
@@ -430,6 +465,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         guard let taskToFinish else {
             return stateLock.withLock { _finalText }
         }
+        Log.info("[AlibabaASR] task=\(taskToFinish) 音频预缓冲已丢弃，用户结束")
 
         await finishTaskAndWait(taskID: taskToFinish)
         return stateLock.withLock { _finalText }
@@ -508,6 +544,32 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         }
     }
 
+    /// 在发送队列上提交一块当前 task 的 PCM 音频。
+    /// 预缓冲和实时音频都经过这里，保证 finish-task 不会越过已经开始的发送。
+    private func sendAudioData(_ bytes: Data, taskID: String) {
+        let result: (URLSessionWebSocketTask?, AudioSendDrain?) = stateLock.withLock {
+            guard self.taskId == taskID else { return (nil, nil) }
+            return (self.webSocketTask, self._audioSendDrain)
+        }
+        let webSocketTask = result.0
+        let drain = result.1
+        guard let webSocketTask, let drain, drain.begin() else { return }
+        webSocketTask.send(.data(bytes)) { _ in
+            drain.end()
+        }
+    }
+
+    private func canContinueStarting(taskID: String) -> Bool {
+        stateLock.withLock {
+            guard self.taskId == taskID else { return false }
+            guard case let .starting(activeTaskID) = _taskLifecycle.phase,
+                  activeTaskID == taskID else {
+                return false
+            }
+            return !_stopRequested
+        }
+    }
+
     /// 等待当前 task 已经交给 URLSession 的全部音频帧完成回调。
     /// 若发送失败，回调同样会 leave，因此不会永久阻塞 finish 流程。
     private func waitForAudioDrain() async {
@@ -530,7 +592,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     // MARK: - 音频
 
-    private func startAudioCapture() async throws {
+    private func startAudioCapture(gate: AudioPreRollSendGate, taskID: String) async throws {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
         let silence: SilenceConfig? = autoStopEnabled
             ? SilenceConfig(threshold: autoStopThreshold, timeout: autoStopTimeout, gracePeriod: 1.0)
@@ -557,19 +619,13 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 let len = Int(out.frameLength)
                 guard len > 0, let ch = out.int16ChannelData?.pointee else { return }
                 let bytes = Data(bytes: ch, count: len * 2)
-                let (webSocketTask, drain) = self.stateLock.withLock {
-                    (self.webSocketTask, self._audioSendDrain)
-                }
-                guard let webSocketTask, let drain else { return }
-                guard drain.begin() else { return }
-                self.sendQueue.async {
-                    webSocketTask.send(.data(bytes)) { _ in
-                        drain.end()
-                    }
+                if case .overflow = gate.append(bytes) {
+                    Log.error("[AlibabaASR] task=\(taskID) 音频预缓冲已满，终止当前启动")
+                    self.failSession(AlibabaASRError.audioPreRollOverflow)
                 }
             }
         )
-        Log.info("[AlibabaASR] 音频引擎启动")
+        Log.info("[AlibabaASR] 音频引擎启动，等待远程 task")
     }
 
     /// 触发连接状态变化回调（在锁外执行，避免持锁回调上层）。
@@ -586,6 +642,8 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         var finishedCont: CheckedContinuation<Void, Never>?
         var stopWaiters: [CheckedContinuation<Void, Never>] = []
         var failureCB: (@Sendable (Error) -> Void)?
+        var audioGate: AudioPreRollSendGate?
+        var failedTaskID: String?
         var taskWasActive = false
         stateLock.withLock {
             switch _taskLifecycle.phase {
@@ -602,10 +660,13 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             } else if case let .finishing(taskID) = _taskLifecycle.phase {
                 _ = _taskLifecycle.taskFailed(taskID: taskID)
             }
+            failedTaskID = taskId
             _sessionActive = false
             _stopRequested = false
             _finishSent = false
             _audioSendDrain = nil
+            audioGate = _audioPreRollGate
+            _audioPreRollGate = nil
             _startedTimeoutTask?.cancel()
             _startedTimeoutTask = nil
             _stoppedTimeoutTask?.cancel()
@@ -619,6 +680,10 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             failureCB = _onFailure
         }
         guard taskWasActive else { return }
+        audioGate?.discard()
+        if let failedTaskID {
+            Log.info("[AlibabaASR] task=\(failedTaskID) 音频预缓冲已丢弃，会话失败")
+        }
         startedCont?.resume(throwing: error)
         finishedCont?.resume()
         stopWaiters.forEach { $0.resume() }
@@ -636,6 +701,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     private func resolveFinishWaiters(taskID: String, succeeded: Bool) {
         var waiters: [CheckedContinuation<Void, Never>] = []
+        var audioGate: AudioPreRollSendGate?
         stateLock.withLock {
             guard self.taskId == taskID else { return }
             if succeeded {
@@ -647,11 +713,14 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             _finishSent = false
             _stopRequested = false
             _audioSendDrain = nil
+            audioGate = _audioPreRollGate
+            _audioPreRollGate = nil
             _stoppedTimeoutTask?.cancel()
             _stoppedTimeoutTask = nil
             waiters = _stopWaiters
             _stopWaiters.removeAll()
         }
+        audioGate?.discard()
         waiters.forEach { $0.resume() }
     }
 
@@ -869,6 +938,7 @@ enum AlibabaASRError: LocalizedError {
     case cancelled
     case connectTimeout
     case startTimeout
+    case audioPreRollOverflow
     case taskFailed(code: String, message: String)
 
     var errorDescription: String? {
@@ -880,6 +950,7 @@ enum AlibabaASRError: LocalizedError {
         case .cancelled: return "阿里云 ASR 任务已取消"
         case .connectTimeout: return "连接阿里云 ASR 超时，请检查网络后重试"
         case .startTimeout: return "阿里云 ASR 启动超时，请重试"
+        case .audioPreRollOverflow: return "阿里云 ASR 启动较慢，请重试"
         case .taskFailed(_, let message): return "阿里云 ASR 任务失败：\(message)"
         }
     }

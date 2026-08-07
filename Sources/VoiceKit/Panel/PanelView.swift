@@ -6,6 +6,8 @@ struct PanelView: View {
     private var statusColor: Color {
         switch coordinator.sessionState {
         case .recording: return .red
+        case .preparing: return .orange
+        case .failed: return .red
         case .transcribing, .polishing: return .orange
         case .ready: return .green
         default: return .gray
@@ -41,41 +43,47 @@ struct PanelView: View {
                 .help("取消 (Esc)")
             }
 
-            // ── 主文本区：有内容才显示 ──
-            if !coordinator.asrText.isEmpty {
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(coordinator.asrText)
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .id("asrBottom")
-                    }
-                    .frame(maxHeight: .infinity)
-                    .onChange(of: coordinator.asrText) { _, _ in
-                        withAnimation { proxy.scrollTo("asrBottom", anchor: .bottom) }
-                    }
+            if let notice = coordinator.recoveryNotice {
+                RecoveryCard(notice: notice) { action in
+                    coordinator.performRecoveryAction(action)
                 }
             } else {
-                Spacer(minLength: 0)
-            }
-
-            // ── AI 润色结果 ──
-            if coordinator.sessionState == .ready || !coordinator.llmText.isEmpty {
-                Divider()
-                ScrollViewReader { proxy in
-                    ScrollView {
-                        Text(coordinator.llmText.isEmpty
-                             ? (coordinator.sessionState == .polishing ? "润色中…" : "")
-                             : coordinator.llmText)
-                            .foregroundStyle(.primary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .textSelection(.enabled)
-                            .id("llmBottom")
+                // ── 主文本区：有内容才显示 ──
+                if !coordinator.asrText.isEmpty {
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            Text(coordinator.asrText)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .id("asrBottom")
+                        }
+                        .frame(maxHeight: .infinity)
+                        .onChange(of: coordinator.asrText) { _, _ in
+                            withAnimation { proxy.scrollTo("asrBottom", anchor: .bottom) }
+                        }
                     }
-                    .frame(maxHeight: .infinity)
-                    .onChange(of: coordinator.llmText) { _, _ in
-                        withAnimation { proxy.scrollTo("llmBottom", anchor: .bottom) }
+                } else {
+                    Spacer(minLength: 0)
+                }
+
+                // ── AI 润色结果 ──
+                if coordinator.sessionState == .ready || !coordinator.llmText.isEmpty {
+                    Divider()
+                    ScrollViewReader { proxy in
+                        ScrollView {
+                            Text(coordinator.llmText.isEmpty
+                                 ? (coordinator.sessionState == .polishing ? "润色中…" : "")
+                                 : coordinator.llmText)
+                                .foregroundStyle(.primary)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .textSelection(.enabled)
+                                .id("llmBottom")
+                        }
+                        .frame(maxHeight: .infinity)
+                        .onChange(of: coordinator.llmText) { _, _ in
+                            withAnimation { proxy.scrollTo("llmBottom", anchor: .bottom) }
+                        }
                     }
                 }
             }
@@ -111,9 +119,11 @@ struct PanelView: View {
 
     /// 状态栏主文案（优先用 coordinator.statusText，兜底根据 sessionState 推断）
     private var statusLabel: String {
+        if coordinator.recoveryNotice != nil { return "需要处理" }
         let t = coordinator.statusText
         if !t.isEmpty, t != "按 ⌘⇧V 开始" { return t }
         switch coordinator.sessionState {
+        case .preparing: return "准备中…"
         case .recording: return "聆听中…"
         case .transcribing: return "正在识别…"
         case .polishing: return "润色中…"
@@ -125,6 +135,49 @@ struct PanelView: View {
     /// 是否显示「请开始讲话」提示（录音中且还没出字）
     private var showHint: Bool {
         coordinator.sessionState == .recording && coordinator.asrText.isEmpty
+    }
+}
+
+private struct RecoveryCard: View {
+    let notice: RecordingRecoveryNotice
+    let onAction: (RecordingRecoveryAction) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(notice.title, systemImage: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.red)
+
+            Text(notice.message)
+                .font(.body)
+                .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(spacing: 8) {
+                Button(notice.primaryAction.title) {
+                    onAction(notice.primaryAction)
+                }
+                .buttonStyle(.borderedProminent)
+
+                if let secondaryAction = notice.secondaryAction {
+                    Button(secondaryAction.title) {
+                        onAction(secondaryAction)
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color.red.opacity(0.08))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.red.opacity(0.22), lineWidth: 1)
+        )
+        .padding(.vertical, 12)
     }
 }
 

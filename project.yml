@@ -59,7 +59,10 @@ targets:
       - path: Sources/VoiceKit/ASR/ASRTaskLifecycle.swift
       - path: Sources/VoiceKit/Paste/CmdVEventPlan.swift
       - path: Sources/VoiceKit/Coordinator/RecordingFlowGate.swift
+      - path: Sources/VoiceKit/Coordinator/RecordingRecovery.swift
       - path: Sources/VoiceKit/ASR/AudioSendDrain.swift
+      - path: Sources/VoiceKit/ASR/AudioPreRollBuffer.swift
+      - path: Sources/VoiceKit/ASR/AudioPreRollSendGate.swift
       - path: Sources/VoiceKit/ASR/ConnectionEpoch.swift
       - path: Sources/VoiceKit/Paste/TextInsertionPlan.swift
       - path: Sources/VoiceKit/ASR/AudioTapFormatPolicy.swift

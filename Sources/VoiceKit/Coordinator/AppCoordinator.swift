@@ -12,7 +12,7 @@ import AVFoundation
 @Observable
 final class AppCoordinator {
     enum SessionState: Equatable {
-        case idle, recording, transcribing, polishing, ready
+        case idle, preparing, recording, transcribing, polishing, ready, failed
     }
 
     var sessionState: SessionState = .idle
@@ -20,6 +20,7 @@ final class AppCoordinator {
     var llmText: String = ""
     var statusText: String = "按 ⌘⇧V 开始"
     var audioLevel: Float = 0
+    var recoveryNotice: RecordingRecoveryNotice?
 
     // MARK: - 状态栏展示用的实时状态（@Observable 存储属性，变更驱动 UI 刷新）
     /// 当前选择的 ASR 引擎 id（"system" | "aliyun"）。
@@ -57,6 +58,8 @@ final class AppCoordinator {
     private var engineStartTask: Task<Void, Never>?
     /// 权限请求回调可能晚于用户取消返回；用 token 丢弃过期回调。
     private var permissionRequestID: UUID?
+    /// 持有最近一次提示音，避免 fire-and-forget 的 NSSound 被过早释放。
+    private var activeSound: NSSound?
 
     // MARK: - Display Sync (LLM 流式文字 → UI 解耦)
 
@@ -140,8 +143,6 @@ final class AppCoordinator {
             return
         }
 
-        // 播放开始提示音
-        playSound(named: configStore.config.general.sound.startSound)
         beginRecordingFlow()
     }
 
@@ -201,8 +202,11 @@ final class AppCoordinator {
         Log.info("[Coordinator] targetApp=\(targetApp?.localizedName ?? "nil")")
         asrText = ""
         llmText = ""
-        sessionState = .recording
-        statusText = "聆听中…"
+        recoveryNotice = nil
+        sessionState = .preparing
+        statusText = "准备中…"
+        // 面板可以即时反馈快捷键已经生效，但只有音频引擎真正启动后才显示“聆听中”。
+        panel.show()
 
         let languageID = configStore.config.asr.system.language
         let task = Task { @MainActor [weak self] in
@@ -210,7 +214,7 @@ final class AppCoordinator {
             let engine = await self.resolveASR()
             guard !Task.isCancelled,
                   self.recordingFlowGate.accepts(generation),
-                  self.sessionState == .recording else {
+                  self.sessionState == .preparing else {
                 return
             }
             self.resolvingASRTask = nil
@@ -248,10 +252,12 @@ final class AppCoordinator {
             }
             return true
         }
-        // 飞行中失败（麦克风断开、云端连接中断等）：退回 idle 并提示，面板保持可见
+        // 飞行中失败（麦克风断开、云端连接中断等）：结束本次会话并显示可恢复状态。
         engine.onFailure = { [weak self] error in
             Task { @MainActor in
-                guard let self, self.sessionState != .idle else { return }
+                guard let self,
+                      self.sessionState != .idle,
+                      self.sessionState != .failed else { return }
                 Log.error("[Coordinator] engine runtime failure: \(error)")
                 self.recordingFlowGate.invalidate()
                 self.resolvingASRTask?.cancel()
@@ -264,8 +270,7 @@ final class AppCoordinator {
                 }
                 self.pendingRuntimeFailure = nil
                 self.engineOperationInFlight = false
-                self.sessionState = .idle
-                self.statusText = "听写中断：\(error.localizedDescription)"
+                self.presentRecoveryFailure(error)
             }
         }
         let startTask = Task { @MainActor [weak self] in
@@ -283,7 +288,7 @@ final class AppCoordinator {
                 // 若 cancel/stop 已经发生，stopTask 会在这个 start 返回后负责清理；
                 // 若没有 stopTask，则由这里处理迟到的成功，避免 idle 状态下继续录音。
                 let shouldKeepRunning = self.recordingFlowGate.accepts(generation)
-                    && self.sessionState == .recording
+                    && self.sessionState == .preparing
                     && self.asrEngine?.id == engine.id
                     && self.stopTask == nil
                 guard shouldKeepRunning else {
@@ -292,6 +297,10 @@ final class AppCoordinator {
                     }
                     return
                 }
+                self.sessionState = .recording
+                self.statusText = "聆听中…"
+                self.recoveryNotice = nil
+                self.playSound(named: self.configStore.config.general.sound.startSound)
                 self.engineOperationInFlight = false
             } catch {
                 Log.error("[Coordinator] engine.start failed: \(error)")
@@ -300,31 +309,7 @@ final class AppCoordinator {
                 guard self.stopTask == nil else { return }
                 self.recordingFlowGate.invalidate()
                 self.engineOperationInFlight = false
-                self.sessionState = .idle
-                if let ae = error as? ASRError {
-                    switch ae {
-                    case .microphoneNotAuthorized:
-                        self.statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
-                        self.pasteService.openMicrophoneSettings()
-                    case .speechNotAuthorized:
-                        self.statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
-                        self.pasteService.openSpeechSettings()
-                    case .noInputDevice:
-                        // 关闭录音面板，只保留弹窗提示，避免"面板+弹窗"同时出现
-                        self.panel.close()
-                        self.statusText = "未检测到麦克风：请连接麦克风或在 系统设置→声音→输入 中选择输入设备"
-                        self.presentErrorAlert(
-                            title: "未检测到麦克风",
-                            message: "请连接麦克风或在 系统设置→声音→输入 中选择一个输入设备，然后重试。"
-                        )
-                    default:
-                        self.statusText = "听写启动失败：\(error.localizedDescription)"
-                    }
-                } else if let aliyunErr = error as? AlibabaASRError {
-                    self.statusText = "听写启动失败：\(aliyunErr.localizedDescription)"
-                } else {
-                    self.statusText = "听写启动失败：\(error.localizedDescription)"
-                }
+                self.presentRecoveryFailure(error)
             }
         }
         engineStartTask = startTask
@@ -620,7 +605,7 @@ final class AppCoordinator {
                     self.stopTask = nil
                     self.reset()
                     if let runtimeFailure {
-                        self.statusText = "听写中断：\(runtimeFailure.localizedDescription)"
+                        self.presentRecoveryFailure(runtimeFailure)
                     }
                     previousTarget?.activate()
                     self.targetApp = nil
@@ -665,8 +650,12 @@ final class AppCoordinator {
     }
 
     private func playSound(named name: String) {
-        guard configStore.config.general.sound.enabled else { return }
-        NSSound(named: .init(name))?.play()
+        guard configStore.config.general.sound.enabled else {
+            activeSound = nil
+            return
+        }
+        activeSound = NSSound(named: .init(name))
+        activeSound?.play()
     }
 
     private func reset() {
@@ -684,36 +673,73 @@ final class AppCoordinator {
         llmEngine = nil
         asrText = ""
         llmText = ""
+        recoveryNotice = nil
         sessionState = .idle
         statusText = "按 ⌘⇧V 开始"
         panel.close()
     }
 
-    /// 权限被拒时：在面板显示可读提示并打开对应系统设置页，不进入前台（避免 Dock 闪烁）。
+    /// 权限被拒时：在面板显示可读提示，由用户点击按钮打开对应系统设置页。
     private func presentPermissionError(micDenied: Bool, speechDenied: Bool) {
         asrText = ""
         llmText = ""
-        sessionState = .idle
+        sessionState = .failed
         if micDenied {
-            statusText = "未授权麦克风：请在 系统设置→隐私与安全性→麦克风 中允许 VoiceKit"
-            pasteService.openMicrophoneSettings()
+            recoveryNotice = .forKind(.microphonePermission)
         } else {
-            statusText = "未授权语音识别：请在 系统设置→隐私与安全性→语音识别 中允许 VoiceKit"
-            pasteService.openSpeechSettings()
+            recoveryNotice = .forKind(.speechPermission)
         }
+        statusText = ""
         panel.show()
     }
 
-    /// 弹出模态错误提示（如未检测到麦克风）。app 为 .accessory 策略，
-    /// 弹窗先轻量激活以确保 alert 可见。
-    private func presentErrorAlert(title: String, message: String) {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "好")
-        NSApp.activate(ignoringOtherApps: true)
-        alert.runModal()
+    func retryRecording() {
+        guard sessionState == .failed else { return }
+        reset()
+        startRecording()
+    }
+
+    func performRecoveryAction(_ action: RecordingRecoveryAction) {
+        switch action {
+        case .retry:
+            retryRecording()
+        case .openInputSettings:
+            openInputSettings()
+        case .openMicrophoneSettings:
+            pasteService.openMicrophoneSettings()
+        case .openSpeechSettings:
+            pasteService.openSpeechSettings()
+        }
+    }
+
+    private func openInputSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.sound") else { return }
+        NSWorkspace.shared.open(url)
+    }
+
+    private func presentRecoveryFailure(_ error: Error) {
+        recoveryNotice = .forKind(Self.recoveryKind(for: error))
+        sessionState = .failed
+        statusText = ""
+        panel.show()
+    }
+
+    private static func recoveryKind(for error: Error) -> RecordingFailureKind {
+        if let audioError = error as? ASRError {
+            switch audioError {
+            case .microphoneNotAuthorized:
+                return .microphonePermission
+            case .speechNotAuthorized:
+                return .speechPermission
+            case .noInputDevice:
+                return .noInputDevice
+            case .noAudioFormat, .converterInit, .audioEngineStartFailed:
+                return .audioInputUnavailable
+            case .noSpeechAsset, .speechNotAvailable:
+                return .speechUnavailable
+            }
+        }
+        return .serviceUnavailable
     }
 
     // MARK: - 引擎解析（可插拔）

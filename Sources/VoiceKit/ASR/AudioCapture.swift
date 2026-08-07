@@ -22,7 +22,7 @@ struct SilenceConfig: Sendable {
 /// 4. RMS 电平回调 + 静音自动停止（带启动宽限期）。
 /// 5. 幂等 stop：用 tapInstalled 守卫，避免"没装 tap 就 removeTap"二次崩溃。
 ///
-/// 不做路由变化监听（P1）：录音中设备切换暂不处理，当前仅保证起飞前/降落不崩。
+/// 5. 监听音频路由变化：设备切换或断开时安全结束当前会话，由上层提供重试入口。
 final class AudioCapture: @unchecked Sendable {
     private let engine = AVAudioEngine()
     private let lock = NSLock()
@@ -51,9 +51,11 @@ final class AudioCapture: @unchecked Sendable {
     /// 和 channel count；没有输入设备时，后续输入操作可能抛 Objective-C 异常。
     func ensureInputAvailable() throws {
         guard Self.hasDefaultInputDevice() else {
+            Log.error("[AudioCapture] input preflight failed: no default input device")
             throw ASRError.noInputDevice
         }
-        _ = try hardwareInputFormat()
+        let format = try hardwareInputFormat()
+        Log.info("[AudioCapture] input preflight ok: sampleRate=\(format.sampleRate), channels=\(format.channelCount)")
     }
 
     func start(targetFormat: AVAudioFormat,
@@ -67,6 +69,7 @@ final class AudioCapture: @unchecked Sendable {
         try ensureInputAvailable()
         let inputNode = engine.inputNode
         let hardwareFormat = try hardwareInputFormat()
+        Log.info("[AudioCapture] starting input tap: sampleRate=\(hardwareFormat.sampleRate), channels=\(hardwareFormat.channelCount)")
         // ② 格式转换器
         guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else {
             throw ASRError.converterInit
@@ -142,6 +145,7 @@ final class AudioCapture: @unchecked Sendable {
         guard stillActive else { return }
         let inputOK = (try? hardwareInputFormat()) != nil
         let running = engine.isRunning
+        Log.error("[AudioCapture] configuration changed: inputAvailable=\(inputOK), engineRunning=\(running)")
         if !inputOK || !running {
             let reason = inputOK ? "音频引擎已停止" : "麦克风已断开"
             let cb = lock.withLock { () -> (@Sendable (Error) -> Void)? in
