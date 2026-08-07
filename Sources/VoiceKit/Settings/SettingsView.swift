@@ -1396,7 +1396,7 @@ private struct LLMTestSheet: View {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .foregroundStyle(.orange)
                         .font(typography.callout)
-                    Text("AI 服务当前未开启。本次测试仅验证模型与提示词是否可用，润色结果不会用于实际听写。")
+                    Text("AI 服务未开启，听写时不会润色。这里的测试会直接调用你选中的模型，用来调试提示词效果。")
                         .font(typography.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -1454,7 +1454,7 @@ private struct LLMTestSheet: View {
         resultText = ""
         let text = inputText.trimmingCharacters(in: .whitespaces)
         guard let model = llmConfig.selectedModel else {
-            errorMsg = "未选择模型"
+            errorMsg = "请先在「模型管理」中添加并选中一个模型，再测试润色效果"
             isRunning = false
             return
         }
