@@ -270,6 +270,12 @@ struct StatusBarMenuView: View {
                                 .lineLimit(1)
                                 .truncationMode(.tail)
                             Spacer(minLength: 0)
+                            // 悬停时露出复制图标，让「点击复制」可被发现
+                            if hoveredItemID == item.id {
+                                Image(systemName: "doc.on.doc")
+                                    .font(typography.metadata)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .padding(.horizontal, 4)
                         .padding(.vertical, 2)
@@ -280,6 +286,7 @@ struct StatusBarMenuView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("复制历史记录")
+                    .help("点击复制到剪贴板")
                     .onHover { hovering in
                         hoveredItemID = hovering ? item.id : nil
                     }

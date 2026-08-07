@@ -43,26 +43,17 @@ struct SettingsView: View {
     @State private var showDiscardAlert = false
 
     var body: some View {
-        HStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("设置")
-                    .font(typography.title)
-                    .padding(.horizontal, 16)
-                    .padding(.top, 18)
-                    .padding(.bottom, 8)
-
-                List(SettingsPane.allCases, selection: $selectedPane) { pane in
-                    Label(pane.title, systemImage: pane.systemImage)
-                        .tag(pane)
-                        .padding(.leading, pane.isSubpane ? 16 : 0)
-                }
-                .listStyle(.sidebar)
-                .font(typography.body)
+        NavigationSplitView {
+            List(SettingsPane.allCases, selection: $selectedPane) { pane in
+                Label(pane.title, systemImage: pane.systemImage)
+                    .tag(pane)
+                    .padding(.leading, pane.isSubpane ? 16 : 0)
             }
-            .frame(width: 208)
-
-            Divider()
-
+            .listStyle(.sidebar)
+            .font(typography.body)
+            .navigationTitle("设置")
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
+        } detail: {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     if hasChanges {
@@ -78,11 +69,13 @@ struct SettingsView: View {
                         .background(.orange.opacity(0.08))
                     }
 
+                    paneHeader
+
                     paneContent
-                        .padding(.horizontal, 30)
-                        .padding(.top, 30)
-                        .padding(.bottom, 30)
                 }
+                .padding(.horizontal, 30)
+                .padding(.top, 24)
+                .padding(.bottom, 30)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .font(typography.body)
@@ -100,22 +93,12 @@ struct SettingsView: View {
             onTabChange(newPane.index)
         }
         .toolbar {
-            ToolbarItemGroup(placement: .navigation) {
-                Button { movePane(by: -1) } label: {
-                    Image(systemName: "chevron.left")
-                }
-                .disabled(selectedPane.index == 0)
-                .accessibilityLabel("上一个设置页面")
-
-                Button { movePane(by: 1) } label: {
-                    Image(systemName: "chevron.right")
-                }
-                .disabled(selectedPane.index == SettingsPane.allCases.count - 1)
-                .accessibilityLabel("下一个设置页面")
-            }
             ToolbarItemGroup(placement: .primaryAction) {
                 Button("关闭") { closeSettings() }
-                Button("保存") { save() }.disabled(!hasChanges)
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") { save() }
+                    .disabled(!hasChanges)
+                    .keyboardShortcut(.defaultAction)
             }
         }
         .alert("保存失败", isPresented: $showValidationAlert) {
@@ -170,6 +153,27 @@ struct SettingsView: View {
         case .permissions: permissionTab
         case .privacy: privacyTab
         case .about: aboutTab
+        }
+    }
+
+    // MARK: - 面板标题
+
+    /// 每个设置面板的标题与一句话说明，切换侧边栏时同步更新，
+    /// 让用户始终知道自己处于哪个设置域（HIG：清晰的位置反馈）。
+    @ViewBuilder
+    private var paneHeader: some View {
+        if selectedPane != .about {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(selectedPane.title)
+                    .font(typography.title)
+                Text(selectedPane.description)
+                    .font(typography.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, 18)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
         }
     }
 
@@ -365,7 +369,7 @@ struct SettingsView: View {
                 }
             }
         }
-        .frame(maxWidth: .infinity, minHeight: 480, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
     // MARK: - AI 服务总览
@@ -799,7 +803,6 @@ struct SettingsView: View {
                     // 已被拒绝时按钮的作用是跳转系统设置，如实标注。
                     Button(status == .notDetermined ? "继续" : "打开系统设置") { action() }
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
                 }
             }
             Text(why)
@@ -852,13 +855,11 @@ struct SettingsView: View {
                             restartApplication()
                         }
                         .buttonStyle(.borderedProminent)
-                        .controlSize(.small)
 
                         Button("稍后处理") {
                             restartRequested = false
                         }
                         .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
                 }
                 Spacer(minLength: 0)
@@ -892,13 +893,6 @@ struct SettingsView: View {
                 .foregroundStyle(.primary)
             content()
         }
-    }
-
-    private func movePane(by offset: Int) {
-        let panes = SettingsPane.allCases
-        guard let nextIndex = panes.firstIndex(of: selectedPane).map({ $0 + offset }),
-              panes.indices.contains(nextIndex) else { return }
-        selectedPane = panes[nextIndex]
     }
 
     private func closeSettings() {
@@ -1292,11 +1286,10 @@ private struct ModelManagementSheet: View {
             Text("管理模型").font(typography.sectionTitle)
 
             if models.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "tray").font(.largeTitle).foregroundStyle(.tertiary)
-                    Text("暂无模型，点击下方按钮添加").foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                ContentUnavailableView("暂无模型",
+                                       systemImage: "cube",
+                                       description: Text("点击下方「添加模型」配置云端 API 或本地 Ollama 模型"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 Table(of: ModelRow.self) {
                     TableColumn("名称", value: \.name).width(min: 80)

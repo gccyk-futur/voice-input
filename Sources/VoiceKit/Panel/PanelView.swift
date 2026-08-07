@@ -68,6 +68,7 @@ struct PanelView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             Text(coordinator.asrText)
+                                .font(typography.body)
                                 .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
@@ -90,6 +91,7 @@ struct PanelView: View {
                             Text(coordinator.llmText.isEmpty
                                  ? (coordinator.sessionState == .polishing ? "润色中…" : "")
                                  : coordinator.llmText)
+                                .font(typography.body)
                                 .foregroundStyle(.primary)
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .textSelection(.enabled)
@@ -123,6 +125,8 @@ struct PanelView: View {
 
                 if coordinator.sessionState == .ready {
                     Button("粘贴") { coordinator.confirmPaste() }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
                         .keyboardShortcut(.return, modifiers: .command)
                         .padding(.leading, 8)
                 }
@@ -220,7 +224,9 @@ private struct AudioBar: View {
         TimelineView(.animation) { timeline in
             let h = height(at: timeline.date.timeIntervalSinceReferenceDate)
             Capsule()
-                .fill(.white.opacity(0.2))
+                // 录音红：与状态圆点同色，浅色/深色模式下都清晰可见
+                // （原先的白色 20% 透明度在浅色模式的 popover 材质上几乎不可见）
+                .fill(VoiceKitSemanticColor.failure.opacity(0.75))
                 .frame(width: 3, height: h)
         }
     }

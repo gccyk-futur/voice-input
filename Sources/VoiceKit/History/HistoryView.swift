@@ -8,39 +8,44 @@ struct HistoryView: View {
     @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
     @State private var items: [HistoryItem] = HistoryStore.shared.items
     @State private var selectedID: HistoryItem.ID?
+    @State private var searchText = ""
     @State private var showClearConfirm = false
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
     }
 
+    private var typography: VoiceKitTypography {
+        VoiceKitTypography(scale: textScale)
+    }
+
     private var appearance: VoiceKitAppearance {
         VoiceKitAppearance.restored(from: appearanceRawValue)
     }
 
+    /// 搜索过滤：匹配识别原文或润色结果，大小写不敏感
+    private var filteredItems: [HistoryItem] {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return items }
+        return items.filter {
+            $0.asrResult.localizedCaseInsensitiveContains(query) ||
+            ($0.llmResult?.localizedCaseInsensitiveContains(query) ?? false)
+        }
+    }
+
     var body: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Text("历史记录").font(.headline)
-                Text("(\(items.count))").foregroundStyle(.secondary)
-                Spacer()
-                Button("清空全部", role: .destructive, action: { showClearConfirm = true })
-                    .disabled(items.isEmpty)
-            }
-            .padding(10)
-
-            Divider()
-
-            if items.isEmpty {
-                Spacer()
-                VStack(spacing: 6) {
-                    Image(systemName: "tray").font(.largeTitle).foregroundStyle(.tertiary)
-                    Text("暂无记录").foregroundStyle(.secondary)
+        Group {
+            if filteredItems.isEmpty {
+                if searchText.isEmpty {
+                    ContentUnavailableView("暂无记录",
+                                           systemImage: "tray",
+                                           description: Text("识别结果会自动保留在这里，可直接复制或收藏"))
+                } else {
+                    ContentUnavailableView.search(text: searchText)
                 }
-                Spacer()
             } else {
                 List(selection: $selectedID) {
-                    ForEach(items) { item in
+                    ForEach(filteredItems) { item in
                         HistoryRow(
                             item: item,
                             onCopy: { copy(item) },
@@ -53,7 +58,19 @@ struct HistoryView: View {
                 .listStyle(.inset)
             }
         }
-        .frame(width: 560, height: 520)
+        .frame(minWidth: 480, idealWidth: 560, minHeight: 360, idealHeight: 520)
+        .searchable(text: $searchText, placement: .toolbar, prompt: "搜索历史")
+        .toolbar {
+            ToolbarItem(placement: .navigation) {
+                Text("\(items.count) 条记录")
+                    .font(typography.callout)
+                    .foregroundStyle(.secondary)
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button("清空全部", role: .destructive, action: { showClearConfirm = true })
+                    .disabled(items.isEmpty)
+            }
+        }
         .voiceKitTextScale(textScale)
         .preferredColorScheme(appearance.colorScheme)
         .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
