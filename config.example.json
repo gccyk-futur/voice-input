@@ -22,6 +22,22 @@
       "autoStopEnabled": true,
       "autoStopTimeout": 3.5,
       "autoStopThreshold": 0.01
+    },
+    "xunfei": {
+      "appId": "your-app-id",
+      "apiKey": "your-api-key",
+      "apiSecret": "your-api-secret",
+      "dynamicCorrection": true,
+      "autoStopEnabled": true,
+      "autoStopTimeout": 3.5,
+      "autoStopThreshold": 0.01
+    },
+    "deepgram": {
+      "apiKey": "your-deepgram-api-key",
+      "model": "nova-3",
+      "autoStopEnabled": true,
+      "autoStopTimeout": 3.5,
+      "autoStopThreshold": 0.01
     }
   },
   "llm": {

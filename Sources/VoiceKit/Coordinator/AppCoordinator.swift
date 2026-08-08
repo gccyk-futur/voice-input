@@ -741,7 +741,9 @@ final class AppCoordinator {
     /// 选择 ASR 引擎：遵从用户设置。
     /// - "system"：SFSpeechRecognizer（稳定，无需前台，自动本地/云端路由）
     /// - "dictation"：DictationTranscriber（原生连续听写，需前台）
-    /// - "aliyun"：阿里云 Fun-ASR WebSocket（在线，高精度带标点）
+    /// - "aliyun"：阿里云 Fun-ASR WebSocket（在线，高精度带标点，常驻连接）
+    /// - "xunfei"：讯飞语音听写流式 WebSocket（在线，中文高精度，每会话一条连接）
+    /// - "deepgram"：Deepgram 流式 WebSocket（在线，海外高精度，每会话一条连接）
     func resolveASR() async -> any ASREngine {
         Log.info("[Coordinator] resolveASR: engine config = \(configStore.config.asr.engine)")
         switch configStore.config.asr.engine {
@@ -753,36 +755,77 @@ final class AppCoordinator {
                     return SystemDictationEngine()
                 }
             }
-            fallthrough
+            return await resolveAliyun()
         case "aliyun":
-            // 复用常驻连接
-            if let existing = asrEngine as? AlibabaASREngine {
-                wireAliyunCallbacks(existing)
-                return existing
+            return await resolveAliyun()
+        case "xunfei":
+            let cfg = configStore.config.asr.xunfei
+            if !cfg.appId.isEmpty, !cfg.apiKey.isEmpty, !cfg.apiSecret.isEmpty {
+                return XunfeiASREngine(
+                    appId: cfg.appId, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret,
+                    dynamicCorrection: cfg.dynamicCorrection,
+                    autoStopEnabled: cfg.autoStopEnabled,
+                    autoStopTimeout: cfg.autoStopTimeout,
+                    autoStopThreshold: Float(cfg.autoStopThreshold)
+                )
             }
-            let cfg = configStore.config.asr.aliyun
-            if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
-                return makeAliyunEngine(cfg: cfg)
+            Log.info("[Coordinator] 讯飞听写未配置 appId/apiKey/apiSecret，自动切回 system")
+            fallbackToSystem()
+            return await resolveSystemEngine()
+        case "deepgram":
+            let cfg = configStore.config.asr.deepgram
+            if !cfg.apiKey.isEmpty {
+                return DeepgramASREngine(
+                    apiKey: cfg.apiKey, model: cfg.model,
+                    autoStopEnabled: cfg.autoStopEnabled,
+                    autoStopTimeout: cfg.autoStopTimeout,
+                    autoStopThreshold: Float(cfg.autoStopThreshold)
+                )
             }
-            Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
-            // 自动回退：把配置写回 system，下次就不用再判断了
-            var corrected = configStore.config
-            corrected.asr.engine = "system"
-            configStore.update(corrected)
-            fallthrough
+            Log.info("[Coordinator] Deepgram 未配置 apiKey，自动切回 system")
+            fallbackToSystem()
+            return await resolveSystemEngine()
         default:
-            let raw = configStore.config.asr.system.language
-            let loc = Locale(identifier: raw)
-            let recognizer = SFSpeechRecognizer(locale: loc)
-            if let recognizer, recognizer.isAvailable {
-                return LegacyDictationEngine()
-            }
-            if #available(macOS 26, *),
-               await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
-                return SystemDictationEngine()
-            }
+            return await resolveSystemEngine()
+        }
+    }
+
+    /// 阿里云引擎解析：复用常驻连接；未配置时回退系统引擎。
+    private func resolveAliyun() async -> any ASREngine {
+        if let existing = asrEngine as? AlibabaASREngine {
+            wireAliyunCallbacks(existing)
+            return existing
+        }
+        let cfg = configStore.config.asr.aliyun
+        if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
+            return makeAliyunEngine(cfg: cfg)
+        }
+        Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
+        // 自动回退：把配置写回 system，下次就不用再判断了
+        fallbackToSystem()
+        return await resolveSystemEngine()
+    }
+
+    /// 自动回退：把引擎配置写回 system，下次就不用再判断了。
+    private func fallbackToSystem() {
+        var corrected = configStore.config
+        corrected.asr.engine = "system"
+        configStore.update(corrected)
+    }
+
+    /// 系统引擎解析：SFSpeechRecognizer 可用则用 legacy，否则尝试 macOS 26 听写。
+    private func resolveSystemEngine() async -> any ASREngine {
+        let raw = configStore.config.asr.system.language
+        let loc = Locale(identifier: raw)
+        let recognizer = SFSpeechRecognizer(locale: loc)
+        if let recognizer, recognizer.isAvailable {
             return LegacyDictationEngine()
         }
+        if #available(macOS 26, *),
+           await DictationTranscriber.supportedLocale(equivalentTo: loc) != nil {
+            return SystemDictationEngine()
+        }
+        return LegacyDictationEngine()
     }
 
     /// 创建阿里云引擎并挂接连接状态/失败回调。

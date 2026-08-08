@@ -1,7 +1,7 @@
 import Foundation
 
 /// 全量配置模型，对应 PRD-2 的 config.json 结构。
-/// 敏感字段（apiKey 等）在落盘时脱敏为 "****" 并存入 Keychain（见 ConfigStore）。
+/// 敏感字段（apiKey 等）以明文落盘于 config.json（本地个人工具，见 ConfigStore 注释）。
 struct AppConfig: Codable, Equatable {
     var version: String = "1.0"
     var general: GeneralConfig = .init()
@@ -36,9 +36,11 @@ struct SoundConfig: Codable, Equatable {
 }
 
 struct ASRConfig: Codable, Equatable {
-    var engine: String = "system" // system | aliyun
+    var engine: String = "system" // system | aliyun | xunfei | deepgram
     var system: ASRSystemConfig = .init()
     var aliyun: ASRAliyunConfig = .init()
+    var xunfei: ASRXunfeiConfig = .init()
+    var deepgram: ASRDeepgramConfig = .init()
 }
 
 struct ASRSystemConfig: Codable, Equatable {
@@ -55,6 +57,23 @@ struct ASRAliyunConfig: Codable, Equatable {
     var semanticPunctuation: Bool = true
     var speechNoiseThreshold: Double = 0.0
     var maxSentenceSilence: Int = 1300
+    var autoStopEnabled: Bool = true
+    var autoStopTimeout: Double = 3.5
+    var autoStopThreshold: Double = 0.01
+}
+struct ASRXunfeiConfig: Codable, Equatable {
+    var appId: String = ""
+    var apiKey: String = ""
+    var apiSecret: String = ""
+    /// 动态修正（wpgs）：已返回的中间结果可被后续结果修正，仅中文支持
+    var dynamicCorrection: Bool = true
+    var autoStopEnabled: Bool = true
+    var autoStopTimeout: Double = 3.5
+    var autoStopThreshold: Double = 0.01
+}
+struct ASRDeepgramConfig: Codable, Equatable {
+    var apiKey: String = ""
+    var model: String = "nova-3"
     var autoStopEnabled: Bool = true
     var autoStopTimeout: Double = 3.5
     var autoStopThreshold: Double = 0.01

@@ -75,8 +75,8 @@ final class ConfigStore {
         save()
         let loginItemErr = LoginItemManager.set(enabled: new.general.launchAtStartup)
         HistoryStore.shared.maxCount = new.general.maxHistoryCount
-        // 阿里云引擎参数变更 → 下次重新创建
-        if new.asr.engine == "aliyun" {
+        // 云端引擎参数变更 → 下次重新创建（常驻连接需断开重建）
+        if new.asr.engine != "system" {
             AppCoordinator.shared.invalidateASREngine()
         }
         NotificationCenter.default.post(name: Self.didChange, object: self)

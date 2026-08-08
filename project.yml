@@ -71,6 +71,8 @@ targets:
       - path: Sources/VoiceKit/Paste/PasteDeliveryPolicy.swift
       - path: Sources/VoiceKit/Config/ConfigImportPolicy.swift
       - path: Sources/VoiceKit/Support/VoiceKitLocalization.swift
+      - path: Sources/VoiceKit/ASR/XunfeiAuth.swift
+      - path: Sources/VoiceKit/ASR/XunfeiResultAssembler.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.ckai.VoiceKitTests

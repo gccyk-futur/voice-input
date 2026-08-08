@@ -389,16 +389,22 @@ struct SettingsView: View {
     private var asrTab: some View {
         Group {
             Section {
-                Picker("识别引擎", selection: $draft.asr.engine) {
-                    Text("系统听写").tag("system")
-                    Text("阿里云 Fun-ASR").tag("aliyun")
-                }
-                .labelsHidden()
-                .pickerStyle(.segmented)
+                engineRow("system",
+                          title: VoiceKitLocalization.string("系统听写"),
+                          desc: VoiceKitLocalization.string("macOS 内置语音识别，免费无需联网"))
+                engineRow("aliyun",
+                          title: VoiceKitLocalization.string("阿里云 Fun-ASR"),
+                          desc: VoiceKitLocalization.string("高精度、自动标点，需阿里云百炼 API Key（需中国大陆实名）"))
+                engineRow("xunfei",
+                          title: VoiceKitLocalization.string("讯飞听写"),
+                          desc: VoiceKitLocalization.string("中文高精度、支持动态修正，需讯飞开放平台 AppID/APIKey/APISecret（需中国大陆手机号）"))
+                engineRow("deepgram",
+                          title: "Deepgram",
+                          desc: VoiceKitLocalization.string("海外高精度实时识别，需 Deepgram API Key（邮箱注册）"))
             } header: {
                 Text("识别引擎")
             } footer: {
-                Text("macOS 内置语音识别，免费无需联网。阿里云高精度自动标点，需配置 API Key。")
+                Text("云端引擎需自备 API 凭据；未配置的云端引擎会自动回退到系统听写。")
             }
 
             Section {
@@ -495,6 +501,130 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            // 讯飞专属配置
+            if draft.asr.engine == "xunfei" {
+                Section {
+                    Toggle("动态修正", isOn: $draft.asr.xunfei.dynamicCorrection)
+                } footer: {
+                    Text("开启后讯飞会自动修正已返回的中间结果，识别更准，仅中文支持。")
+                }
+
+                Section {
+                    Toggle("静音自动停止", isOn: $draft.asr.xunfei.autoStopEnabled)
+                    if draft.asr.xunfei.autoStopEnabled {
+                        HStack {
+                            Text("静音阈值")
+                            Slider(value: $draft.asr.xunfei.autoStopThreshold, in: 0.005...0.1, step: 0.005)
+                            Text(String(format: "%.3f", draft.asr.xunfei.autoStopThreshold))
+                                .font(typography.callout).frame(width: 45, alignment: .trailing)
+                        }
+                        HStack {
+                            Text("超时时间")
+                            Slider(value: $draft.asr.xunfei.autoStopTimeout, in: 1...10, step: 0.5)
+                            Text(String(format: "%.1fs", draft.asr.xunfei.autoStopTimeout))
+                                .font(typography.callout).frame(width: 40, alignment: .trailing)
+                        }
+                    }
+                } footer: {
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                }
+
+                Section {
+                    TextField("App ID", text: $draft.asr.xunfei.appId, prompt: Text("12345678"))
+                        .textFieldStyle(.roundedBorder)
+                    secretField("API Key", text: $draft.asr.xunfei.apiKey)
+                    secretField("API Secret", text: $draft.asr.xunfei.apiSecret)
+                } header: {
+                    Text("API 配置")
+                } footer: {
+                    Text("在讯飞开放平台创建应用后，于「语音听写（流式版）」服务下查看三要素。")
+                }
+            }
+
+            // Deepgram 专属配置
+            if draft.asr.engine == "deepgram" {
+                Section {
+                    Toggle("静音自动停止", isOn: $draft.asr.deepgram.autoStopEnabled)
+                    if draft.asr.deepgram.autoStopEnabled {
+                        HStack {
+                            Text("静音阈值")
+                            Slider(value: $draft.asr.deepgram.autoStopThreshold, in: 0.005...0.1, step: 0.005)
+                            Text(String(format: "%.3f", draft.asr.deepgram.autoStopThreshold))
+                                .font(typography.callout).frame(width: 45, alignment: .trailing)
+                        }
+                        HStack {
+                            Text("超时时间")
+                            Slider(value: $draft.asr.deepgram.autoStopTimeout, in: 1...10, step: 0.5)
+                            Text(String(format: "%.1fs", draft.asr.deepgram.autoStopTimeout))
+                                .font(typography.callout).frame(width: 40, alignment: .trailing)
+                        }
+                    }
+                } footer: {
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                }
+
+                Section {
+                    secretField("API Key", text: $draft.asr.deepgram.apiKey)
+                    TextField("模型", text: $draft.asr.deepgram.model, prompt: Text("nova-3"))
+                        .textFieldStyle(.roundedBorder)
+                } header: {
+                    Text("API 配置")
+                } footer: {
+                    Text("在 console.deepgram.com 注册后创建 API Key，新账号自带免费额度。")
+                }
+            }
+        }
+    }
+
+    /// 引擎选择行：标题 + 一句介绍 + 选中标记。
+    private func engineRow(_ engineID: String, title: String, desc: String) -> some View {
+        let selected = draft.asr.engine == engineID
+        return Button {
+            draft.asr.engine = engineID
+        } label: {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: selected ? "checkmark.circle.fill" : "circle")
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
+                    .padding(.top, 2)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(typography.body)
+                    Text(desc)
+                        .font(typography.callout).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(selected ? Color.accentColor.opacity(0.15) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// 带明/密文切换的密钥输入框。
+    private func secretField(_ label: String, text: Binding<String>) -> some View {
+        HStack(spacing: 4) {
+            if showAPIKey {
+                TextField(label, text: text)
+                    .textFieldStyle(.roundedBorder)
+            } else {
+                SecureField(label, text: text)
+                    .textFieldStyle(.roundedBorder)
+            }
+            Button(action: { showAPIKey.toggle() }) {
+                Image(systemName: showAPIKey ? "eye.slash" : "eye")
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(showAPIKey
+                                ? VoiceKitLocalization.string("隐藏 API Key")
+                                : VoiceKitLocalization.string("显示 API Key"))
         }
     }
 
@@ -1278,6 +1408,22 @@ struct SettingsView: View {
             }
             if draft.asr.aliyun.workspaceId.trimmingCharacters(in: .whitespaces).isEmpty {
                 validationMessage = VoiceKitLocalization.string("阿里云 Fun-ASR 的 Workspace ID 不能为空")
+                showValidationAlert = true; return
+            }
+        }
+        // 讯飞：检查三要素必填
+        if draft.asr.engine == "xunfei" {
+            if draft.asr.xunfei.appId.trimmingCharacters(in: .whitespaces).isEmpty ||
+                draft.asr.xunfei.apiKey.trimmingCharacters(in: .whitespaces).isEmpty ||
+                draft.asr.xunfei.apiSecret.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationMessage = VoiceKitLocalization.string("讯飞听写的 AppID、APIKey、APISecret 不能为空")
+                showValidationAlert = true; return
+            }
+        }
+        // Deepgram：检查必填
+        if draft.asr.engine == "deepgram" {
+            if draft.asr.deepgram.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
+                validationMessage = VoiceKitLocalization.string("Deepgram 的 API Key 不能为空")
                 showValidationAlert = true; return
             }
         }

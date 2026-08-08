@@ -107,69 +107,56 @@ struct StatusBarMenuView: View {
 
     private var engineSection: some View {
         // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
-        // 不再依赖本地 config 快照——首次在设置中填好阿里云后无需重启即可切换。
+        // 不再依赖本地 config 快照——首次在设置中填好后无需重启即可切换。
         return VStack(alignment: .leading, spacing: 6) {
             Text("语音引擎")
                 .font(typography.sectionTitle)
                 .foregroundStyle(.primary)
 
-            // 未配置阿里云 → 只显示「系统听写」，提供配置入口
-            // 已配置阿里云 → 显示双引擎 Picker，可选切换
-            if coordinator.aliyunConfigured {
-                HStack(alignment: .center, spacing: 8) {
-                    Picker("", selection: Binding(
-                        get: { coordinator.asrEngineChoice },
-                        set: { newValue in
-                            var cfg = ConfigStore.shared.config
-                            cfg.asr.engine = newValue
-                            config = cfg
-                            ConfigStore.shared.update(cfg)
-                            coordinator.invalidateASREngine()
-                            // 切到阿里云后主动预建连，确保状态灯正常
-                            if newValue == "aliyun" {
-                                Task { await coordinator.prewarmAliyunEngine() }
-                            }
+            HStack(alignment: .center, spacing: 8) {
+                Picker("", selection: Binding(
+                    get: { coordinator.asrEngineChoice },
+                    set: { newValue in
+                        var cfg = ConfigStore.shared.config
+                        cfg.asr.engine = newValue
+                        config = cfg
+                        ConfigStore.shared.update(cfg)
+                        coordinator.invalidateASREngine()
+                        // 切到阿里云后主动预建连，确保状态灯正常
+                        if newValue == "aliyun" {
+                            Task { await coordinator.prewarmAliyunEngine() }
+                        } else if !Self.isEngineConfigured(newValue, asr: cfg.asr) {
+                            showToast("所选引擎未配置凭据，录音时将回退到系统听写")
                         }
-                    )) {
-                        Text("系统听写").tag("system")
-                        Text("阿里云 Fun-ASR").tag("aliyun")
                     }
-                    .labelsHidden()
-                    .pickerStyle(.segmented)
-                    .frame(maxWidth: .infinity)
+                )) {
+                    Text("系统听写").tag("system")
+                    Text("阿里云 Fun-ASR").tag("aliyun")
+                    Text("讯飞听写").tag("xunfei")
+                    Text("Deepgram").tag("deepgram")
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .frame(maxWidth: .infinity)
 
-                    if coordinator.asrEngineChoice == "aliyun" {
-                        Circle()
-                            .fill(coordinator.wsConnected ? Color.green : Color.red)
-                            .frame(width: 5, height: 5)
-                        Text(coordinator.wsConnected
-                             ? VoiceKitLocalization.string("已连接")
-                             : VoiceKitLocalization.string("未连接"))
-                            .font(typography.metadata)
-                            .foregroundStyle(coordinator.wsConnected ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.failure)
-                            .lineLimit(1)
-                            .fixedSize()
-                            .accessibilityLabel(VoiceKitLocalization.string("阿里云连接状态"))
-                            .accessibilityValue(coordinator.wsConnected
-                                                ? VoiceKitLocalization.string("已连接")
-                                                : VoiceKitLocalization.string("未连接"))
-                            .help(coordinator.wsStatusText)
-                    }
+                // 连接状态灯仅对常驻连接的阿里云有意义
+                if coordinator.asrEngineChoice == "aliyun" {
+                    Circle()
+                        .fill(coordinator.wsConnected ? Color.green : Color.red)
+                        .frame(width: 5, height: 5)
+                    Text(coordinator.wsConnected
+                         ? VoiceKitLocalization.string("已连接")
+                         : VoiceKitLocalization.string("未连接"))
+                        .font(typography.metadata)
+                        .foregroundStyle(coordinator.wsConnected ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.failure)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .accessibilityLabel(VoiceKitLocalization.string("阿里云连接状态"))
+                        .accessibilityValue(coordinator.wsConnected
+                                            ? VoiceKitLocalization.string("已连接")
+                                            : VoiceKitLocalization.string("未连接"))
+                        .help(coordinator.wsStatusText)
                 }
-            } else {
-                // 仅显示系统听写 + 配置阿里云的入口
-                HStack {
-                    Text("系统听写").font(typography.body)
-                    Spacer()
-                    Button("配置阿里云引擎 →") {
-                        SettingsWindowController.shared.show()
-                        dismissMenuBarExtra()
-                    }
-                    .buttonStyle(.plain)
-                    .font(typography.callout)
-                    .foregroundStyle(.tint)
-                }
-                .padding(.vertical, 2)
             }
         }
     }
@@ -378,6 +365,24 @@ struct StatusBarMenuView: View {
     }
 
     // MARK: - 辅助
+
+    /// 与设置页必填校验口径一致：判断引擎凭据是否已填写，
+    /// 用于状态栏切换时提示「未配置将回退系统听写」。
+    private static func isEngineConfigured(_ engine: String, asr: ASRConfig) -> Bool {
+        switch engine {
+        case "aliyun":
+            return !asr.aliyun.apiKey.trimmingCharacters(in: .whitespaces).isEmpty &&
+                   !asr.aliyun.workspaceId.trimmingCharacters(in: .whitespaces).isEmpty
+        case "xunfei":
+            return !asr.xunfei.appId.trimmingCharacters(in: .whitespaces).isEmpty &&
+                   !asr.xunfei.apiKey.trimmingCharacters(in: .whitespaces).isEmpty &&
+                   !asr.xunfei.apiSecret.trimmingCharacters(in: .whitespaces).isEmpty
+        case "deepgram":
+            return !asr.deepgram.apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+        default:
+            return true
+        }
+    }
 
     private var statusColor: Color {
         switch coordinator.sessionState {
