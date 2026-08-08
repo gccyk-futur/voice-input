@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoiceKit 需要使用麦克风进行语音输入。";
+"NSSpeechRecognitionUsageDescription" = "VoiceKit 需要使用语音识别将语音实时转为文字。";

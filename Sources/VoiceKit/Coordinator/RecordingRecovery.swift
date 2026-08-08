@@ -9,10 +9,10 @@ enum RecordingRecoveryAction: Equatable, Sendable {
 
     var title: String {
         switch self {
-        case .retry: return "重新尝试"
-        case .openInputSettings: return "打开声音设置…"
-        case .openMicrophoneSettings: return "打开系统设置…"
-        case .openSpeechSettings: return "打开系统设置…"
+        case .retry: return VoiceKitLocalization.string("重新尝试")
+        case .openInputSettings: return VoiceKitLocalization.string("打开声音设置…")
+        case .openMicrophoneSettings: return VoiceKitLocalization.string("打开系统设置…")
+        case .openSpeechSettings: return VoiceKitLocalization.string("打开系统设置…")
         }
     }
 }
@@ -37,43 +37,43 @@ struct RecordingRecoveryNotice: Equatable, Sendable {
         switch kind {
         case .audioInputUnavailable:
             return Self(
-                title: "麦克风暂时无法使用",
-                message: "已检测到麦克风，但当前无法开始采集声音。请重新连接耳机，或在声音设置中切换输入设备后重试。",
+                title: VoiceKitLocalization.string("麦克风暂时无法使用"),
+                message: VoiceKitLocalization.string("已检测到麦克风，但当前无法开始采集声音。请重新连接耳机，或在声音设置中切换输入设备后重试。"),
                 primaryAction: .retry,
                 secondaryAction: .openInputSettings
             )
         case .noInputDevice:
             return Self(
-                title: "无法开始听写",
-                message: "没有检测到可用的麦克风，请连接设备或在声音设置中选择输入设备。",
+                title: VoiceKitLocalization.string("无法开始听写"),
+                message: VoiceKitLocalization.string("没有检测到可用的麦克风，请连接设备或在声音设置中选择输入设备。"),
                 primaryAction: .retry,
                 secondaryAction: .openInputSettings
             )
         case .microphonePermission:
             return Self(
-                title: "需要麦克风权限",
-                message: "请允许 VoiceKit 使用麦克风后，再重新开始听写。",
+                title: VoiceKitLocalization.string("需要麦克风权限"),
+                message: VoiceKitLocalization.string("请允许 VoiceKit 使用麦克风后，再重新开始听写。"),
                 primaryAction: .openMicrophoneSettings,
                 secondaryAction: nil
             )
         case .speechPermission:
             return Self(
-                title: "需要语音识别权限",
-                message: "请允许 VoiceKit 使用语音识别后，再重新开始听写。",
+                title: VoiceKitLocalization.string("需要语音识别权限"),
+                message: VoiceKitLocalization.string("请允许 VoiceKit 使用语音识别后，再重新开始听写。"),
                 primaryAction: .openSpeechSettings,
                 secondaryAction: nil
             )
         case .speechUnavailable:
             return Self(
-                title: "无法开始听写",
-                message: "当前语言的系统语音识别不可用，请切换识别语言或语音引擎。",
+                title: VoiceKitLocalization.string("无法开始听写"),
+                message: VoiceKitLocalization.string("当前语言的系统语音识别不可用，请切换识别语言或语音引擎。"),
                 primaryAction: .retry,
                 secondaryAction: nil
             )
         case .serviceUnavailable:
             return Self(
-                title: "无法开始听写",
-                message: "语音服务暂时不可用或启动较慢，请检查网络后重试。",
+                title: VoiceKitLocalization.string("无法开始听写"),
+                message: VoiceKitLocalization.string("语音服务暂时不可用或启动较慢，请检查网络后重试。"),
                 primaryAction: .retry,
                 secondaryAction: nil
             )

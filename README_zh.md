@@ -17,6 +17,23 @@ macOS 语音输入助手 — 全局热键呼出，说话即转文字，自动粘
 - **AI 润色**：接入 LLM（OpenAI / DeepSeek / Claude / Ollama），口语转书面语
 - **历史记录**：所有识别结果可回溯
 
+## 多语言
+
+界面跟随 macOS 系统设置中的首选语言。目前支持：
+
+- 简体中文
+- 繁体中文
+- English
+- 日本語
+- 한국어
+- Français
+- Deutsch
+- Español
+- Português (Brasil)
+- Italiano
+
+未覆盖的系统语言会自动回退到英文，不包含俄语。
+
 ## 数据流向
 
 VoiceKit 是一个**纯客户端工具**，没有后台服务器，不收集任何数据。

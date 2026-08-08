@@ -17,6 +17,23 @@ VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and you
 - **AI polish** — send recognized text to an LLM (OpenAI / DeepSeek / Claude / Ollama) to convert spoken language into polished prose
 - **History** — browse all past transcriptions
 
+## Languages
+
+The interface follows the preferred language in macOS System Settings. VoiceKit currently includes:
+
+- Simplified Chinese
+- Traditional Chinese
+- English
+- Japanese
+- Korean
+- French
+- German
+- Spanish
+- Brazilian Portuguese
+- Italian
+
+If the macOS language is not covered, the interface falls back to English. Russian is not included.
+
 ## Privacy
 
 VoiceKit is a **pure client-side tool** — no backend servers, no data collection.

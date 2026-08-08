@@ -178,10 +178,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 避免为未崩溃的路径引入假设。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         let alert = NSAlert()
-        alert.messageText = "退出 VoiceKit？"
-        alert.informativeText = "退出后语音识别服务将停止运行，菜单栏图标也会消失。"
-        alert.addButton(withTitle: "退出")
-        alert.addButton(withTitle: "取消")
+        alert.messageText = VoiceKitLocalization.string("退出 VoiceKit？")
+        alert.informativeText = VoiceKitLocalization.string("退出后语音识别服务将停止运行，菜单栏图标也会消失。")
+        alert.addButton(withTitle: VoiceKitLocalization.string("退出"))
+        alert.addButton(withTitle: VoiceKitLocalization.string("取消"))
         alert.alertStyle = .warning
 
         switch alert.runModal() {

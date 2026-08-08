@@ -145,7 +145,7 @@ enum ConfigImportError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .unsupportedFile:
-            return "请选择官网版的 config.json 文件"
+            return VoiceKitLocalization.string("请选择官网版的 config.json 文件")
         }
     }
 }

@@ -7,7 +7,7 @@ import CoreMedia
 @available(macOS 26, *)
 final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system"
-    let displayName = "系统听写"
+    let displayName = VoiceKitLocalization.string("系统听写")
     let requiresForeground = true
 
     var onFailure: (@Sendable (Error) -> Void)?

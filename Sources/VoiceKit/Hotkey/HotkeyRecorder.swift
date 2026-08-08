@@ -103,7 +103,7 @@ struct HotkeyRecorder: NSViewRepresentable {
 
 final class HotkeyRecorderField: NSView {
     weak var coordinator: HotkeyRecorder.Coordinator?
-    private let label = NSTextField(labelWithString: "未设置")
+    private let label = NSTextField(labelWithString: VoiceKitLocalization.string("未设置"))
     private var current: String = ""
 
     override init(frame frameRect: NSRect) {
@@ -143,13 +143,15 @@ final class HotkeyRecorderField: NSView {
     func update(stringValue: String) {
         current = stringValue
         if coordinator?.recording != true {
-            label.stringValue = stringValue.isEmpty ? "未设置" : stringValue
+            label.stringValue = stringValue.isEmpty ? VoiceKitLocalization.string("未设置") : stringValue
         }
     }
 
     func setRecording(_ recording: Bool) {
         layer?.borderColor = recording ? NSColor.controlAccentColor.cgColor : NSColor.separatorColor.cgColor
-        label.stringValue = recording ? "请按下组合键…（ESC 取消）" : (current.isEmpty ? "未设置" : current)
+        label.stringValue = recording
+            ? VoiceKitLocalization.string("请按下组合键…（ESC 取消）")
+            : (current.isEmpty ? VoiceKitLocalization.string("未设置") : current)
     }
 
     @objc private func toggle() {

@@ -181,7 +181,7 @@ struct SettingsView: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("确定要删除「\(modelToDelete?.name ?? "")」吗？此操作不可撤销。")
+            Text(VoiceKitLocalization.format("确定要删除「%@」吗？此操作不可撤销。", modelToDelete?.name ?? ""))
         }
         .alert("删除提示词？", isPresented: $showPromptDeleteConfirm) {
             Button("删除", role: .destructive) {
@@ -194,7 +194,7 @@ struct SettingsView: View {
             }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("确定要删除「\(promptToDelete?.name ?? "")」吗？删除后将切回系统默认提示词。")
+            Text(VoiceKitLocalization.format("确定要删除「%@」吗？删除后将切回系统默认提示词。", promptToDelete?.name ?? ""))
         }
         .alert("恢复默认设置？", isPresented: $showResetConfirm) {
             Button("恢复默认", role: .destructive) {
@@ -369,13 +369,13 @@ struct SettingsView: View {
                     return
                 }
                 guard let model = draft.llm.selectedModel else {
-                    llmEnableGuardMessage = "还没有可用的模型。请先到「模型管理」添加模型，再启用 AI 润色。"
+                    llmEnableGuardMessage = VoiceKitLocalization.string("还没有可用的模型。请先到「模型管理」添加模型，再启用 AI 润色。")
                     showLLMEnableGuardAlert = true
                     return
                 }
                 if model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty ||
                    model.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                    llmEnableGuardMessage = "当前选中的模型「\(model.name)」信息不完整，请到「模型管理」中补全 Base URL 和模型名。"
+                    llmEnableGuardMessage = VoiceKitLocalization.format("当前选中的模型「%@」信息不完整，请到「模型管理」中补全 Base URL 和模型名。", model.name)
                     showLLMEnableGuardAlert = true
                     return
                 }
@@ -481,7 +481,9 @@ struct SettingsView: View {
                             Image(systemName: showAPIKey ? "eye.slash" : "eye")
                         }
                         .buttonStyle(.plain)
-                        .accessibilityLabel(showAPIKey ? "隐藏 API Key" : "显示 API Key")
+                        .accessibilityLabel(showAPIKey
+                                            ? VoiceKitLocalization.string("隐藏 API Key")
+                                            : VoiceKitLocalization.string("显示 API Key"))
                     }
                     TextField("Workspace ID", text: $draft.asr.aliyun.workspaceId, prompt: Text("ws-..."))
                         .textFieldStyle(.roundedBorder)
@@ -538,15 +540,17 @@ struct SettingsView: View {
     }
 
     private func overviewStep(_ number: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 10) {
+        let localizedTitle = VoiceKitLocalization.string(title)
+        let localizedDetail = VoiceKitLocalization.string(detail)
+        return HStack(alignment: .top, spacing: 10) {
             Text(number)
                 .font(typography.callout.bold())
                 .foregroundStyle(.tint)
                 .frame(width: 20, height: 20)
                 .background(Color.accentColor.opacity(0.12), in: Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(typography.body.bold())
-                Text(detail).font(typography.callout).foregroundStyle(.secondary)
+                Text(localizedTitle).font(typography.body.bold())
+                Text(localizedDetail).font(typography.callout).foregroundStyle(.secondary)
             }
         }
     }
@@ -614,16 +618,20 @@ struct SettingsView: View {
                     Image(systemName: model.id == draft.llm.selectedModelID ? "checkmark.circle.fill" : "circle")
                         .foregroundStyle(model.id == draft.llm.selectedModelID ? Color.accentColor : VoiceKitSemanticColor.secondaryText)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(model.name.isEmpty ? "未命名模型" : model.name)
+                        Text(model.name.isEmpty ? VoiceKitLocalization.string("未命名模型") : model.name)
                             .font(typography.body)
                             .foregroundStyle(.primary)
-                        Text("\(Self.engineDisplayName(model.engine)) · \(model.model) · Token \(model.totalTokens) · 使用 \(model.usageCount) 次")
+                        Text(VoiceKitLocalization.format("%@ · %@ · Token %lld · 使用 %lld 次",
+                                                          Self.engineDisplayName(model.engine),
+                                                          model.model,
+                                                          model.totalTokens,
+                                                          model.usageCount))
                             .font(typography.metadata)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                         // 测试失败的完整错误独占一行换行展示，不与右侧按钮争抢宽度
                         if let result, !result.success {
-                            Text(result.error ?? "未知错误")
+                            Text(result.error ?? VoiceKitLocalization.string("未知错误"))
                                 .font(typography.metadata)
                                 .foregroundStyle(VoiceKitSemanticColor.failure)
                                 .fixedSize(horizontal: false, vertical: true)
@@ -634,7 +642,7 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("选择模型 \(model.name)")
+            .accessibilityLabel(VoiceKitLocalization.format("选择模型 %@", model.name))
 
             Spacer(minLength: 4)
 
@@ -644,7 +652,7 @@ struct SettingsView: View {
                         .font(typography.callout)
                         .foregroundStyle(VoiceKitSemanticColor.success)
                 } else {
-                    Text("失败")
+                    Text(VoiceKitLocalization.string("失败"))
                         .font(typography.callout)
                         .foregroundStyle(VoiceKitSemanticColor.failure)
                         .help(result.error ?? "")
@@ -660,16 +668,18 @@ struct SettingsView: View {
                 Image(systemName: "trash")
             }
             .buttonStyle(.borderless)
-            .accessibilityLabel("删除模型 \(model.name)")
+            .accessibilityLabel(VoiceKitLocalization.format("删除模型 %@", model.name))
         }
         .padding(.vertical, 2)
     }
 
     private static func engineDisplayName(_ engine: String) -> String {
 #if APP_STORE
-        engine == "openai" ? "云端 API" : "Ollama"
+        engine == "openai"
+            ? VoiceKitLocalization.string("云端 API")
+            : VoiceKitLocalization.string("Ollama")
 #else
-        engine == "openai" ? "OpenAI" : "Ollama"
+        engine == "openai" ? "OpenAI" : VoiceKitLocalization.string("Ollama")
 #endif
     }
 
@@ -792,7 +802,7 @@ struct SettingsView: View {
                         .foregroundStyle(draft.llm.selectedPromptID == id ? Color.accentColor : VoiceKitSemanticColor.secondaryText)
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
-                            Text(name)
+                            Text(deletable ? name : VoiceKitLocalization.string("默认"))
                                 .font(typography.body)
                                 .foregroundStyle(.primary)
                             if !deletable {
@@ -813,7 +823,7 @@ struct SettingsView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("选择提示词 \(name)")
+            .accessibilityLabel(VoiceKitLocalization.format("选择提示词 %@", deletable ? name : VoiceKitLocalization.string("默认")))
 
             Spacer(minLength: 4)
 
@@ -981,8 +991,8 @@ struct SettingsView: View {
                 .foregroundStyle(color)
                 .frame(width: 20)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).font(typography.body.bold())
-                Text(detail)
+                Text(VoiceKitLocalization.string(title)).font(typography.body.bold())
+                Text(VoiceKitLocalization.string(detail))
                     .font(typography.callout)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1038,12 +1048,12 @@ struct SettingsView: View {
 
     private var permissionReloadHint: String {
 #if APP_STORE
-        return "麦克风和语音识别授权后立即生效；键盘事件权限在系统设置中授权后，需要重启 VoiceKit 才会生效。"
+            return VoiceKitLocalization.string("麦克风和语音识别授权后立即生效；键盘事件权限在系统设置中授权后，需要重启 VoiceKit 才会生效。")
 #else
         if case .recommended = restartState {
-            return "辅助功能刚授权，请使用上方的重启按钮；麦克风和语音识别权限通常不需要重启。"
+            return VoiceKitLocalization.string("辅助功能刚授权，请使用上方的重启按钮；麦克风和语音识别权限通常不需要重启。")
         }
-        return "只有辅助功能在刚授权后可能需要重启；麦克风和语音识别权限通常不需要重启。"
+        return VoiceKitLocalization.string("只有辅助功能在刚授权后可能需要重启；麦克风和语音识别权限通常不需要重启。")
 #endif
     }
 
@@ -1136,27 +1146,32 @@ struct SettingsView: View {
     }
 
     private func permissionRow(icon: String, name: String, why: String, ifDenied: String, status: VoiceKitPermissionState, action: @escaping () -> Void) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let localizedName = VoiceKitLocalization.string(name)
+        let localizedWhy = VoiceKitLocalization.string(why)
+        let localizedIfDenied = VoiceKitLocalization.string(ifDenied)
+        return VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.title3)
                     .foregroundStyle(status == .granted ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.secondaryText)
                     .frame(width: 24)
-                Text(name).font(typography.body).bold()
+                Text(localizedName).font(typography.body).bold()
                 Spacer()
                 statusBadge(status)
                 if status != .granted {
                     // App Review 5.1.1(iv)：授权弹窗前的按钮用「继续」这类中性文案；
                     // 已被拒绝时按钮的作用是跳转系统设置，如实标注。
-                    Button(status == .notDetermined ? "继续" : "打开系统设置") { action() }
+                    Button(status == .notDetermined
+                           ? VoiceKitLocalization.string("继续")
+                           : VoiceKitLocalization.string("打开系统设置")) { action() }
                         .buttonStyle(.borderedProminent)
                 }
             }
-            Text(why)
+            Text(localizedWhy)
                 .font(typography.callout).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             if status != .granted {
-                Text(ifDenied)
+                Text(localizedIfDenied)
                     .font(typography.callout).foregroundStyle(VoiceKitSemanticColor.warning)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1179,13 +1194,13 @@ struct SettingsView: View {
         let copy: (title: String, detail: String) = {
             if case .recommended(.postEvent) = restartState {
                 return (
-                    "自动写回将在重启后生效",
-                    "如果你刚刚在系统提示或系统设置中允许了键盘事件权限，VoiceKit 需要重启一次才能识别到新授权（系统缓存限制）。"
+                    VoiceKitLocalization.string("自动写回将在重启后生效"),
+                    VoiceKitLocalization.string("如果你刚刚在系统提示或系统设置中允许了键盘事件权限，VoiceKit 需要重启一次才能识别到新授权（系统缓存限制）。")
                 )
             }
             return (
-                "辅助功能已授权",
-                "重启 VoiceKit，让刚授权的直接写入能力完整生效。"
+                VoiceKitLocalization.string("辅助功能已授权"),
+                VoiceKitLocalization.string("重启 VoiceKit，让刚授权的直接写入能力完整生效。")
             )
         }()
         return HStack(alignment: .top, spacing: 10) {
@@ -1200,12 +1215,12 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                 HStack(spacing: 8) {
-                    Button("现在重启 VoiceKit") {
+                    Button(VoiceKitLocalization.string("现在重启 VoiceKit")) {
                         restartApplication()
                     }
                     .buttonStyle(.borderedProminent)
 
-                    Button("稍后处理") {
+                    Button(VoiceKitLocalization.string("稍后处理")) {
                         dismissRestartRow()
                     }
                     .buttonStyle(.bordered)
@@ -1258,35 +1273,35 @@ struct SettingsView: View {
         // 阿里云：检查必填
         if draft.asr.engine == "aliyun" {
             if draft.asr.aliyun.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "阿里云 Fun-ASR 的 API Key 不能为空"
+                validationMessage = VoiceKitLocalization.string("阿里云 Fun-ASR 的 API Key 不能为空")
                 showValidationAlert = true; return
             }
             if draft.asr.aliyun.workspaceId.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "阿里云 Fun-ASR 的 Workspace ID 不能为空"
+                validationMessage = VoiceKitLocalization.string("阿里云 Fun-ASR 的 Workspace ID 不能为空")
                 showValidationAlert = true; return
             }
         }
         // LLM：检查选中模型是否存在且必填字段完整
         if draft.llm.enabled {
             guard let model = draft.llm.selectedModel else {
-                validationMessage = "请先添加并选择一个 LLM 模型"
+                validationMessage = VoiceKitLocalization.string("请先添加并选择一个 LLM 模型")
                 showValidationAlert = true; return
             }
             if model.baseUrl.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "模型「\(model.name)」的 Base URL 不能为空"
+                validationMessage = VoiceKitLocalization.format("模型「%@」的 Base URL 不能为空", model.name)
                 showValidationAlert = true; return
             }
             if model.engine == "openai" && model.apiKey.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "模型「\(model.name)」的 API Key 不能为空"
+                validationMessage = VoiceKitLocalization.format("模型「%@」的 API Key 不能为空", model.name)
                 showValidationAlert = true; return
             }
             if model.model.trimmingCharacters(in: .whitespaces).isEmpty {
-                validationMessage = "模型「\(model.name)」的模型名不能为空"
+                validationMessage = VoiceKitLocalization.format("模型「%@」的模型名不能为空", model.name)
                 showValidationAlert = true; return
             }
         }
         if let loginItemErr = ConfigStore.shared.update(draft) {
-            validationMessage = "登录项设置失败：\(loginItemErr)"
+            validationMessage = VoiceKitLocalization.format("登录项设置失败：%@", loginItemErr)
             showValidationAlert = true
             return
         }
@@ -1354,7 +1369,7 @@ struct SettingsView: View {
     private var aboutVersionString: String {
         let ver = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "—"
-        return "版本 \(ver) (build \(build))"
+        return VoiceKitLocalization.format("版本 %@ (build %@)", ver, build)
     }
 
     private func contactRow(icon: String, value: String) -> some View {
@@ -1494,7 +1509,7 @@ private struct LLMTestSheet: View {
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(typography.callout).foregroundStyle(.secondary)
+            Text(VoiceKitLocalization.string(title)).font(typography.callout).foregroundStyle(.secondary)
             content()
         }
     }
@@ -1505,7 +1520,7 @@ private struct LLMTestSheet: View {
         resultText = ""
         let text = inputText.trimmingCharacters(in: .whitespaces)
         guard let model = llmConfig.selectedModel else {
-            errorMsg = "请先在「模型管理」中添加并选中一个模型，再测试润色效果"
+            errorMsg = VoiceKitLocalization.string("请先在「模型管理」中添加并选中一个模型，再测试润色效果")
             isRunning = false
             return
         }
@@ -1526,7 +1541,7 @@ private struct LLMTestSheet: View {
                 }
             } catch {
                 await MainActor.run {
-                    errorMsg = "请求失败：\(error.localizedDescription)"
+                    errorMsg = VoiceKitLocalization.format("请求失败：%@", error.localizedDescription)
                     isRunning = false
                 }
             }
@@ -1556,7 +1571,8 @@ private struct ModelEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(model.name.isEmpty ? "添加模型" : "编辑模型").font(typography.sectionTitle)
+            Text(VoiceKitLocalization.string(model.name.isEmpty ? "添加模型" : "编辑模型"))
+                .font(typography.sectionTitle)
 
             section("名称") {
                 TextField("例如：我的 DeepSeek", text: $model.name)
@@ -1613,7 +1629,7 @@ private struct ModelEditorSheet: View {
                 .textFieldStyle(.roundedBorder)
             }
 
-            Text("累计 Token：\(model.totalTokens)  ·  使用次数：\(model.usageCount)")
+            Text(VoiceKitLocalization.format("累计 Token：%lld  ·  使用次数：%lld", model.totalTokens, model.usageCount))
                 .font(typography.metadata).foregroundStyle(.secondary)
 
             HStack {
@@ -1638,7 +1654,7 @@ private struct ModelEditorSheet: View {
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(typography.callout).foregroundStyle(.secondary)
+            Text(VoiceKitLocalization.string(title)).font(typography.callout).foregroundStyle(.secondary)
             content()
         }
     }
@@ -1668,7 +1684,7 @@ private struct PromptEditorSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(isSystemDefault ? "编辑默认提示词" : "编辑提示词")
+            Text(VoiceKitLocalization.string(isSystemDefault ? "编辑默认提示词" : "编辑提示词"))
                 .font(typography.sectionTitle)
 
             if !isSystemDefault {
@@ -1698,7 +1714,7 @@ private struct PromptEditorSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color(nsColor: .separatorColor), lineWidth: 1))
             }
 
-            Text("保留 {{input}} 占位符，运行时会替换为原始语音文本。")
+            Text(VoiceKitLocalization.string("保留 {{input}} 占位符，运行时会替换为原始语音文本。"))
                 .font(typography.metadata)
                 .foregroundStyle(.secondary)
 
@@ -1721,7 +1737,7 @@ private struct PromptEditorSheet: View {
 
     private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(title).font(typography.callout).foregroundStyle(.secondary)
+            Text(VoiceKitLocalization.string(title)).font(typography.callout).foregroundStyle(.secondary)
             content()
         }
     }

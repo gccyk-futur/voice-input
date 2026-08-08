@@ -24,7 +24,7 @@ final class SettingsWindowController: NSObject {
             backing: .buffered,
             defer: false
         )
-        win.title = "VoiceKit 设置"
+        win.title = VoiceKitLocalization.string("VoiceKit 设置")
         // 先登记窗口，再安装 SwiftUI 内容，确保 rootView 的 onAppear
         // 恢复上次面板时能够立即更新窗口标题。
         window = win
@@ -77,7 +77,7 @@ final class SettingsWindowController: NSObject {
         // 页面标题由右侧内容区展示，窗口标题保持稳定，符合 macOS 设置窗口
         // 的导航模型，也避免切换侧边栏时出现重复标题。
         guard let win = window else { return }
-        win.title = "VoiceKit 设置"
+        win.title = VoiceKitLocalization.string("VoiceKit 设置")
     }
 }
 

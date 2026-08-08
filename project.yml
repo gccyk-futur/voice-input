@@ -8,6 +8,7 @@ settings:
   base:
     SWIFT_VERSION: "6.0"
     MACOSX_DEPLOYMENT_TARGET: "14.0"
+    DEVELOPMENT_LANGUAGE: en
     ARCHS: "arm64 x86_64"
     OTHER_LDFLAGS: "-framework ApplicationServices"
     CODE_SIGN_STYLE: Automatic
@@ -69,6 +70,7 @@ targets:
       - path: Sources/VoiceKit/ASR/AudioTapFormatPolicy.swift
       - path: Sources/VoiceKit/Paste/PasteDeliveryPolicy.swift
       - path: Sources/VoiceKit/Config/ConfigImportPolicy.swift
+      - path: Sources/VoiceKit/Support/VoiceKitLocalization.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.ckai.VoiceKitTests

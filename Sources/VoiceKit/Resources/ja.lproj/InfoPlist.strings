@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoiceKit は音声入力のためにマイクを使用します。";
+"NSSpeechRecognitionUsageDescription" = "VoiceKit は音声をリアルタイムでテキストに変換するために音声認識を使用します。";

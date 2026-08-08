@@ -164,8 +164,8 @@ enum AccessibilityPasteError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .noFocusedElement: return "未找到焦点元素"
-        case .generalFailure: return "Accessibility API 调用失败"
+        case .noFocusedElement: return VoiceKitLocalization.string("未找到焦点元素")
+        case .generalFailure: return VoiceKitLocalization.string("Accessibility API 调用失败")
         }
     }
 }

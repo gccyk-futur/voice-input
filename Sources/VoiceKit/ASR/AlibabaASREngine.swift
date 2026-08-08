@@ -10,7 +10,7 @@ import Foundation
 /// 乐观置位）；start 前会 ensureConnected，未连接时主动建连并带超时兜底。
 final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     let id = "aliyun"
-    let displayName = "阿里云 Fun-ASR"
+    let displayName = VoiceKitLocalization.string("阿里云 Fun-ASR")
     let requiresForeground = false
 
     var onFailure: (@Sendable (Error) -> Void)? {
@@ -943,15 +943,15 @@ enum AlibabaASRError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .invalidURL: return "阿里云 ASR WebSocket URL 无效"
-        case .noTaskStarted: return "阿里云 ASR 未收到 task-started"
-        case .notConnected: return "阿里云 ASR 未连接"
-        case .busy: return "阿里云 ASR 上一个任务尚未结束，请稍后重试"
-        case .cancelled: return "阿里云 ASR 任务已取消"
-        case .connectTimeout: return "连接阿里云 ASR 超时，请检查网络后重试"
-        case .startTimeout: return "阿里云 ASR 启动超时，请重试"
-        case .audioPreRollOverflow: return "阿里云 ASR 启动较慢，请重试"
-        case .taskFailed(_, let message): return "阿里云 ASR 任务失败：\(message)"
+        case .invalidURL: return VoiceKitLocalization.string("阿里云 ASR WebSocket URL 无效")
+        case .noTaskStarted: return VoiceKitLocalization.string("阿里云 ASR 未收到 task-started")
+        case .notConnected: return VoiceKitLocalization.string("阿里云 ASR 未连接")
+        case .busy: return VoiceKitLocalization.string("阿里云 ASR 上一个任务尚未结束，请稍后重试")
+        case .cancelled: return VoiceKitLocalization.string("阿里云 ASR 任务已取消")
+        case .connectTimeout: return VoiceKitLocalization.string("连接阿里云 ASR 超时，请检查网络后重试")
+        case .startTimeout: return VoiceKitLocalization.string("阿里云 ASR 启动超时，请重试")
+        case .audioPreRollOverflow: return VoiceKitLocalization.string("阿里云 ASR 启动较慢，请重试")
+        case .taskFailed(_, let message): return VoiceKitLocalization.format("阿里云 ASR 任务失败：%@", message)
         }
     }
 }

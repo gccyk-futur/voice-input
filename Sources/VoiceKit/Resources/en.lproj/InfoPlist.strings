@@ -1,0 +1,2 @@
+"NSMicrophoneUsageDescription" = "VoiceKit uses the microphone for voice input.";
+"NSSpeechRecognitionUsageDescription" = "VoiceKit uses speech recognition to turn speech into text in real time.";

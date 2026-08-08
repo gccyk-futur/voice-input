@@ -18,7 +18,7 @@ final class AppCoordinator {
     var sessionState: SessionState = .idle
     var asrText: String = ""
     var llmText: String = ""
-    var statusText: String = "按 ⌘⇧V 开始"
+    var statusText: String = VoiceKitLocalization.string("按 ⌘⇧V 开始")
     var audioLevel: Float = 0
     var recoveryNotice: RecordingRecoveryNotice?
 
@@ -30,7 +30,7 @@ final class AppCoordinator {
     /// 阿里云 WebSocket 是否已连接。
     var wsConnected: Bool = false
     /// 阿里云连接状态文字（"已连接" / "连接中…" / "已断开，2.4s 后自动重连"）。
-    var wsStatusText: String = "未连接"
+    var wsStatusText: String = VoiceKitLocalization.string("未连接")
 
     private let configStore = ConfigStore.shared
     private let historyStore = HistoryStore.shared
@@ -72,7 +72,9 @@ final class AppCoordinator {
 
     /// 菜单栏状态（供 StatusBarMenu 读取）
     var engineDisplayName: String {
-        asrEngineChoice == "aliyun" ? "阿里云 Fun-ASR" : "系统听写"
+        asrEngineChoice == "aliyun"
+            ? VoiceKitLocalization.string("阿里云 Fun-ASR")
+            : VoiceKitLocalization.string("系统听写")
     }
     var llmEnabled: Bool { configStore.config.llm.enabled }
 
@@ -103,7 +105,7 @@ final class AppCoordinator {
         aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
         wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
         if !aliyunConfigured {
-            wsStatusText = "未连接"
+            wsStatusText = VoiceKitLocalization.string("未连接")
         }
     }
 
@@ -204,7 +206,7 @@ final class AppCoordinator {
         llmText = ""
         recoveryNotice = nil
         sessionState = .preparing
-        statusText = "准备中…"
+        statusText = VoiceKitLocalization.string("准备中…")
         // 面板可以即时反馈快捷键已经生效，但只有音频引擎真正启动后才显示“聆听中”。
         panel.show()
 
@@ -298,7 +300,7 @@ final class AppCoordinator {
                     return
                 }
                 self.sessionState = .recording
-                self.statusText = "聆听中…"
+                self.statusText = VoiceKitLocalization.string("聆听中…")
                 self.recoveryNotice = nil
                 let sound = self.configStore.config.general.sound
                 self.playSound(named: sound.startSound, enabled: sound.start)
@@ -333,7 +335,7 @@ final class AppCoordinator {
         }
         engineOperationInFlight = true
         sessionState = .transcribing
-        statusText = "转写中…"
+        statusText = VoiceKitLocalization.string("转写中…")
         let pendingStart = engineStartTask
         let task = Task { [weak self] in
             guard let self else { return }
@@ -356,7 +358,7 @@ final class AppCoordinator {
                     self.engineOperationInFlight = false
                     self.stopTask = nil
                     self.reset()
-                    self.statusText = "听写中断：\(runtimeFailure.localizedDescription)"
+                    self.statusText = VoiceKitLocalization.format("听写中断：%@", runtimeFailure.localizedDescription)
                 }
                 return
             }
@@ -377,7 +379,7 @@ final class AppCoordinator {
             Log.info("[Coordinator] ASR 结果为空，跳过润色/粘贴")
             await MainActor.run {
                 self.reset()
-                self.statusText = "未识别到内容"
+                self.statusText = VoiceKitLocalization.string("未识别到内容")
             }
             return
         }
@@ -385,7 +387,7 @@ final class AppCoordinator {
         if cfg.llm.enabled, let llm = resolveLLM() {
             llmEngine = llm
             sessionState = .polishing
-            statusText = "润色中…"
+            statusText = VoiceKitLocalization.string("润色中…")
             llmText = ""
             llmBuffer = ""
             startDisplaySync()
@@ -439,7 +441,7 @@ final class AppCoordinator {
         // 没有可用目标时只能保留剪贴板，不能声称已经写回。
         guard let target, !target.isTerminated else {
             pasteService.writeClipboardOnly(text)
-            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板")
+            finalizeAndRecord(useLLM: useLLM, statusText: VoiceKitLocalization.string("已复制到剪贴板"))
             return
         }
 
@@ -480,7 +482,7 @@ final class AppCoordinator {
         switch PasteDeliveryPolicy.mode(isAppStore: true) {
         case .clipboardOnly:
             pasteService.writeClipboardOnly(text)
-            finalizeAndRecord(useLLM: useLLM, statusText: "已复制到剪贴板（请手动 ⌘V）")
+            finalizeAndRecord(useLLM: useLLM, statusText: VoiceKitLocalization.string("已复制到剪贴板（请手动 ⌘V）"))
             return
         case .automatic:
             break
@@ -506,7 +508,7 @@ final class AppCoordinator {
             pasteService.writeClipboardOnly(text)
             finalizeAndRecord(
                 useLLM: useLLM,
-                statusText: "已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）"
+                statusText: VoiceKitLocalization.string("已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）")
             )
             return
         }
@@ -524,7 +526,7 @@ final class AppCoordinator {
             pasteService.writeClipboardOnly(text)
             finalizeAndRecord(
                 useLLM: useLLM,
-                statusText: "已复制到剪贴板，请按 ⌘V；授权键盘事件后可自动写回"
+                statusText: VoiceKitLocalization.string("已复制到剪贴板，请按 ⌘V；授权键盘事件后可自动写回")
             )
             return
         }
@@ -538,7 +540,7 @@ final class AppCoordinator {
         // 事件创建失败时仍保留诚实的剪贴板兜底提示。
         finalizeAndRecord(
             useLLM: useLLM,
-            statusText: pasteOK ? nil : "自动写回失败，文字仍在剪贴板，请按 ⌘V"
+            statusText: pasteOK ? nil : VoiceKitLocalization.string("自动写回失败，文字仍在剪贴板，请按 ⌘V")
         )
     }
 
@@ -547,7 +549,7 @@ final class AppCoordinator {
         var notice = statusText
 #if !APP_STORE
         if !AccessibilityPasteService.shared.isTrusted {
-            notice = (notice ?? "") + " 授权辅助功能后可自动输入"
+            notice = (notice ?? "") + " " + VoiceKitLocalization.string("授权辅助功能后可自动输入")
         }
 #endif
         historyStore.append(HistoryItem(
@@ -583,7 +585,7 @@ final class AppCoordinator {
            (engineOperationInFlight || sessionState == .recording) {
             engineOperationInFlight = true
             sessionState = .transcribing
-            statusText = "正在停止…"
+            statusText = VoiceKitLocalization.string("正在停止…")
             stopDisplaySync()
             let previousTarget = targetApp
             let task = Task { [weak self] in
@@ -667,7 +669,7 @@ final class AppCoordinator {
         llmText = ""
         recoveryNotice = nil
         sessionState = .idle
-        statusText = "按 ⌘⇧V 开始"
+        statusText = VoiceKitLocalization.string("按 ⌘⇧V 开始")
         panel.close()
     }
 
@@ -808,7 +810,9 @@ final class AppCoordinator {
         }
         // 初始同步一次当前状态
         wsConnected = engine.wsConnected
-        wsStatusText = engine.wsConnected ? "已连接" : "未连接"
+        wsStatusText = engine.wsConnected
+            ? VoiceKitLocalization.string("已连接")
+            : VoiceKitLocalization.string("未连接")
     }
 
     /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。

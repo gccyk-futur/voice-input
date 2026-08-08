@@ -7,9 +7,9 @@ enum VoiceKitTextScale: String, CaseIterable, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .system: return "跟随系统"
-        case .large: return "较大"
-        case .extraLarge: return "更大"
+        case .system: return VoiceKitLocalization.string("跟随系统")
+        case .large: return VoiceKitLocalization.string("较大")
+        case .extraLarge: return VoiceKitLocalization.string("更大")
         }
     }
 
@@ -33,9 +33,9 @@ enum VoiceKitAppearance: String, CaseIterable, Codable, Sendable {
 
     var title: String {
         switch self {
-        case .system: return "跟随系统"
-        case .light: return "浅色"
-        case .dark: return "深色"
+        case .system: return VoiceKitLocalization.string("跟随系统")
+        case .light: return VoiceKitLocalization.string("浅色")
+        case .dark: return VoiceKitLocalization.string("深色")
         }
     }
 
@@ -84,27 +84,27 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
 
     var title: String {
         switch self {
-        case .general: return "常规"
-        case .input: return "语音引擎"
-        case .services: return "AI 服务"
-        case .models: return "模型管理"
-        case .prompts: return "提示词管理"
-        case .permissions: return "权限"
-        case .privacy: return "数据隐私"
-        case .about: return "关于"
+        case .general: return VoiceKitLocalization.string("常规")
+        case .input: return VoiceKitLocalization.string("语音引擎")
+        case .services: return VoiceKitLocalization.string("AI 服务")
+        case .models: return VoiceKitLocalization.string("模型管理")
+        case .prompts: return VoiceKitLocalization.string("提示词管理")
+        case .permissions: return VoiceKitLocalization.string("权限")
+        case .privacy: return VoiceKitLocalization.string("数据隐私")
+        case .about: return VoiceKitLocalization.string("关于")
         }
     }
 
     var description: String {
         switch self {
-        case .general: return "快捷键、启动方式、声音和历史记录"
-        case .input: return "选择语音引擎、语言和实时听写行为"
-        case .services: return "了解 AI 润色如何工作，以及当前是否启用"
-        case .models: return "管理云端 API 和本地模型"
-        case .prompts: return "管理 AI 润色使用的系统提示词和用户模板"
-        case .permissions: return "管理 VoiceKit 使用的系统权限"
-        case .privacy: return "了解数据如何流转，以及 VoiceKit 不会做什么"
-        case .about: return "版本、开源说明和联系方式"
+        case .general: return VoiceKitLocalization.string("快捷键、启动方式、声音和历史记录")
+        case .input: return VoiceKitLocalization.string("选择语音引擎、语言和实时听写行为")
+        case .services: return VoiceKitLocalization.string("了解 AI 润色如何工作，以及当前是否启用")
+        case .models: return VoiceKitLocalization.string("管理云端 API 和本地模型")
+        case .prompts: return VoiceKitLocalization.string("管理 AI 润色使用的系统提示词和用户模板")
+        case .permissions: return VoiceKitLocalization.string("管理 VoiceKit 使用的系统权限")
+        case .privacy: return VoiceKitLocalization.string("了解数据如何流转，以及 VoiceKit 不会做什么")
+        case .about: return VoiceKitLocalization.string("版本、开源说明和联系方式")
         }
     }
 
@@ -169,22 +169,22 @@ struct WriteBackPresentation: Equatable, Sendable {
             switch permission {
             case .granted:
                 return Self(
-                    title: "辅助功能（直接写入）",
-                    explanation: "已允许 VoiceKit 直接访问目标输入框写入文字。",
-                    fallbackExplanation: "如果目标应用不支持直接写入，将回退到剪贴板和 ⌘V。"
+                    title: VoiceKitLocalization.string("辅助功能（直接写入）"),
+                    explanation: VoiceKitLocalization.string("已允许 VoiceKit 直接访问目标输入框写入文字。"),
+                    fallbackExplanation: VoiceKitLocalization.string("如果目标应用不支持直接写入，将回退到剪贴板和 ⌘V。")
                 )
             case .notDetermined, .denied:
                 return Self(
-                    title: "辅助功能（直接写入）",
-                    explanation: "允许 VoiceKit 直接访问目标输入框写入文字。",
-                    fallbackExplanation: "未授权时，文字仍会保留在剪贴板，请手动按 ⌘V。"
+                    title: VoiceKitLocalization.string("辅助功能（直接写入）"),
+                    explanation: VoiceKitLocalization.string("允许 VoiceKit 直接访问目标输入框写入文字。"),
+                    fallbackExplanation: VoiceKitLocalization.string("未授权时，文字仍会保留在剪贴板，请手动按 ⌘V。")
                 )
             }
         case .appStore:
             return Self(
-                title: "自动写回（键盘事件）",
-                explanation: "App Store 沙盒版会尝试自动写回识别结果；系统只保证发送尝试，不保证目标应用一定接受。",
-                fallbackExplanation: "如果自动写回未生效，文字仍会保留在剪贴板，请手动按 ⌘V。"
+                title: VoiceKitLocalization.string("自动写回（键盘事件）"),
+                explanation: VoiceKitLocalization.string("App Store 沙盒版会尝试自动写回识别结果；系统只保证发送尝试，不保证目标应用一定接受。"),
+                fallbackExplanation: VoiceKitLocalization.string("如果自动写回未生效，文字仍会保留在剪贴板，请手动按 ⌘V。")
             )
         }
     }

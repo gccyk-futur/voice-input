@@ -32,7 +32,7 @@ struct PanelView: View {
                     Text(statusLabel)
                         .font(typography.callout).foregroundStyle(.secondary)
                     if showHint {
-                        Text("请开始讲话")
+                        Text(VoiceKitLocalization.string("请开始讲话"))
                             .font(typography.callout).foregroundStyle(.secondary)
                     }
                 }
@@ -49,8 +49,8 @@ struct PanelView: View {
                     Image(systemName: "xmark.circle.fill")
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel("取消听写")
-                .help("取消 (Esc)")
+                .accessibilityLabel(VoiceKitLocalization.string("取消听写"))
+                .help(VoiceKitLocalization.string("取消 (Esc)"))
             }
 
             if let notice = coordinator.recoveryNotice {
@@ -84,7 +84,7 @@ struct PanelView: View {
                     ScrollViewReader { proxy in
                         ScrollView {
                             Text(coordinator.llmText.isEmpty
-                                 ? (coordinator.sessionState == .polishing ? "润色中…" : "")
+                                 ? (coordinator.sessionState == .polishing ? VoiceKitLocalization.string("润色中…") : "")
                                  : coordinator.llmText)
                                 .font(typography.body)
                                 .foregroundStyle(.primary)
@@ -102,7 +102,7 @@ struct PanelView: View {
 
             // ── 底部栏 ──
             HStack(spacing: 0) {
-                Text("Esc 退出")
+                Text(VoiceKitLocalization.string("Esc 退出"))
                     .font(typography.metadata)
                     .foregroundStyle(.secondary)
                 
@@ -113,7 +113,9 @@ struct PanelView: View {
                         .font(typography.metadata)
                     Text("·")
                         .font(typography.metadata)
-                    Text(coordinator.llmEnabled ? "AI 润色" : "未润色")
+                    Text(coordinator.llmEnabled
+                         ? VoiceKitLocalization.string("AI 润色")
+                         : VoiceKitLocalization.string("未润色"))
                         .font(typography.metadata)
                 }
                 .foregroundStyle(.secondary)
@@ -134,16 +136,16 @@ struct PanelView: View {
 
     /// 状态栏主文案（优先用 coordinator.statusText，兜底根据 sessionState 推断）
     private var statusLabel: String {
-        if coordinator.recoveryNotice != nil { return "需要处理" }
+        if coordinator.recoveryNotice != nil { return VoiceKitLocalization.string("需要处理") }
         let t = coordinator.statusText
-        if !t.isEmpty, t != "按 ⌘⇧V 开始" { return t }
+        if !t.isEmpty, t != VoiceKitLocalization.string("按 ⌘⇧V 开始") { return t }
         switch coordinator.sessionState {
-        case .preparing: return "准备中…"
-        case .recording: return "聆听中…"
-        case .transcribing: return "正在识别…"
-        case .polishing: return "润色中…"
-        case .ready: return "识别完成"
-        default: return "就绪"
+        case .preparing: return VoiceKitLocalization.string("准备中…")
+        case .recording: return VoiceKitLocalization.string("聆听中…")
+        case .transcribing: return VoiceKitLocalization.string("正在识别…")
+        case .polishing: return VoiceKitLocalization.string("润色中…")
+        case .ready: return VoiceKitLocalization.string("识别完成")
+        default: return VoiceKitLocalization.string("就绪")
         }
     }
 

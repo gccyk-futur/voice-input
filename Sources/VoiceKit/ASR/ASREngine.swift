@@ -42,21 +42,21 @@ enum ASRError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .speechNotAuthorized:
-            return "未授权语音识别，请在系统设置→隐私与安全性→语音识别 中允许"
+            return VoiceKitLocalization.string("未授权语音识别，请在系统设置→隐私与安全性→语音识别 中允许")
         case .microphoneNotAuthorized:
-            return "未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许"
+            return VoiceKitLocalization.string("未授权麦克风，请在系统设置→隐私与安全性→麦克风 中允许")
         case .noInputDevice:
-            return "未检测到麦克风，请连接麦克风或在系统设置→声音→输入中选择一个输入设备"
+            return VoiceKitLocalization.string("未检测到麦克风，请连接麦克风或在系统设置→声音→输入中选择一个输入设备")
         case .noAudioFormat:
-            return "无可用的音频格式"
+            return VoiceKitLocalization.string("无可用的音频格式")
         case .converterInit:
-            return "音频转换器初始化失败，请检查麦克风的采样率设置或尝试更换输入设备"
+            return VoiceKitLocalization.string("音频转换器初始化失败，请检查麦克风的采样率设置或尝试更换输入设备")
         case .audioEngineStartFailed(let reason):
-            return "音频引擎启动失败：\(reason)"
+            return VoiceKitLocalization.format("音频引擎启动失败：%@", reason)
         case .noSpeechAsset(let original):
-            return "所选语言（\(original)）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码"
+            return VoiceKitLocalization.format("所选语言（%@）无可用语音识别模型，请在设置中将识别语言改为 zh-Hans / zh-Hant 等受支持的区域码", original)
         case .speechNotAvailable(let locale):
-            return "当前设备不支持语言（\(locale)）的语音识别"
+            return VoiceKitLocalization.format("当前设备不支持语言（%@）的语音识别", locale)
         }
     }
 }

@@ -12,7 +12,7 @@ import Foundation
 /// 与 SystemDictationEngine 一样，本类不隔离到主线程，避免阻塞 UI。
 final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     let id = "system-legacy"
-    let displayName = "系统听写（服务器）"
+    let displayName = VoiceKitLocalization.string("系统听写（服务器）")
     let requiresForeground = false
 
     var onFailure: (@Sendable (Error) -> Void)?

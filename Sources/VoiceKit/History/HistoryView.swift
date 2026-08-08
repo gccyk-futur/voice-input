@@ -57,7 +57,7 @@ struct HistoryView: View {
         .searchable(text: $searchText, placement: .toolbar, prompt: "搜索历史")
         .toolbar {
             ToolbarItem(placement: .navigation) {
-                Text("\(items.count) 条记录")
+                Text(VoiceKitLocalization.format("%lld 条记录", items.count))
                     .font(typography.callout)
                     .foregroundStyle(.secondary)
             }
@@ -129,7 +129,9 @@ private struct HistoryRow: View {
                         .foregroundStyle(item.favorite ? .yellow : .secondary)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(item.favorite ? "取消收藏" : "收藏")
+                .accessibilityLabel(item.favorite
+                                    ? VoiceKitLocalization.string("取消收藏")
+                                    : VoiceKitLocalization.string("收藏"))
 
                 Text(timeLabel).font(typography.callout).foregroundStyle(.secondary)
 
@@ -146,12 +148,12 @@ private struct HistoryRow: View {
 
                 Button(action: onCopy) { Image(systemName: "doc.on.doc") }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("复制")
-                    .help("复制")
+                    .accessibilityLabel(VoiceKitLocalization.string("复制"))
+                    .help(VoiceKitLocalization.string("复制"))
                 Button(action: onDelete) { Image(systemName: "trash") }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("删除")
-                    .help("删除")
+                    .accessibilityLabel(VoiceKitLocalization.string("删除"))
+                    .help(VoiceKitLocalization.string("删除"))
                     .foregroundStyle(.red)
             }
 

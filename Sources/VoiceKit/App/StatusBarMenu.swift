@@ -142,13 +142,17 @@ struct StatusBarMenuView: View {
                         Circle()
                             .fill(coordinator.wsConnected ? Color.green : Color.red)
                             .frame(width: 5, height: 5)
-                        Text(coordinator.wsConnected ? "已连接" : "未连接")
+                        Text(coordinator.wsConnected
+                             ? VoiceKitLocalization.string("已连接")
+                             : VoiceKitLocalization.string("未连接"))
                             .font(typography.metadata)
                             .foregroundStyle(coordinator.wsConnected ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.failure)
                             .lineLimit(1)
                             .fixedSize()
-                            .accessibilityLabel("阿里云连接状态")
-                            .accessibilityValue(coordinator.wsConnected ? "已连接" : "未连接")
+                            .accessibilityLabel(VoiceKitLocalization.string("阿里云连接状态"))
+                            .accessibilityValue(coordinator.wsConnected
+                                                ? VoiceKitLocalization.string("已连接")
+                                                : VoiceKitLocalization.string("未连接"))
                             .help(coordinator.wsStatusText)
                     }
                 }
@@ -197,8 +201,8 @@ struct StatusBarMenuView: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(maxWidth: 120 * textScale.multiplier)
-                        .accessibilityLabel("选择润色模型")
-                        .help("选择润色模型")
+                        .accessibilityLabel(VoiceKitLocalization.string("选择润色模型"))
+                        .help(VoiceKitLocalization.string("选择润色模型"))
                     }
 
                     if !config.llm.prompts.isEmpty {
@@ -219,8 +223,8 @@ struct StatusBarMenuView: View {
                         .labelsHidden()
                         .pickerStyle(.menu)
                         .frame(maxWidth: 100 * textScale.multiplier)
-                        .accessibilityLabel("选择提示词")
-                        .help("选择提示词")
+                        .accessibilityLabel(VoiceKitLocalization.string("选择提示词"))
+                        .help(VoiceKitLocalization.string("选择提示词"))
                     }
                 }
 
@@ -277,7 +281,7 @@ struct StatusBarMenuView: View {
                     .foregroundStyle(.primary)
                 Spacer()
                 if !historyItems.isEmpty {
-                    Text("已记录 \(historyItems.count)/\(config.general.maxHistoryCount) 条")
+                    Text(VoiceKitLocalization.format("已记录 %lld/%lld 条", historyItems.count, config.general.maxHistoryCount))
                         .font(typography.metadata).foregroundStyle(.secondary)
                 }
             }
@@ -314,8 +318,8 @@ struct StatusBarMenuView: View {
                         )
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel("复制历史记录")
-                    .help("点击复制到剪贴板")
+                    .accessibilityLabel(VoiceKitLocalization.string("复制历史记录"))
+                    .help(VoiceKitLocalization.string("点击复制到剪贴板"))
                     .onHover { hovering in
                         hoveredItemID = hovering ? item.id : nil
                     }
@@ -333,10 +337,11 @@ struct StatusBarMenuView: View {
 
     // MARK: - 底部操作
 
-    private func bottomButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: {
+    private func bottomButton(_ titleKey: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        let title = VoiceKitLocalization.string(titleKey)
+        return Button(action: {
             // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
-            if title == "退出" {
+            if titleKey == "退出" {
                 NSApp.terminate(nil)
                 return
             }
@@ -357,9 +362,9 @@ struct StatusBarMenuView: View {
     }
 
     /// 在面板内显示临时提示，3 秒后自动消失。
-    private func showToast(_ message: String) {
+    private func showToast(_ messageKey: String) {
         toastWork?.cancel()
-        toastMessage = message
+        toastMessage = VoiceKitLocalization.string(messageKey)
         let work = DispatchWorkItem { self.toastMessage = nil }
         toastWork = work
         DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: work)
@@ -394,7 +399,7 @@ struct StatusBarMenuView: View {
 #if APP_STORE
         "App Store"
 #else
-        "官网版"
+        VoiceKitLocalization.string("官网版")
 #endif
     }
 
