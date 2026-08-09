@@ -89,6 +89,11 @@
 "Deepgram 的 API Key 不能为空" = "La chiave API di Deepgram non può essere vuota";
 "Deepgram WebSocket URL 无效" = "L'URL WebSocket di Deepgram non è valido";
 "Deepgram 未连接" = "Deepgram non è connesso";
+"Deepgram 连接失败：%@" = "Connessione a Deepgram non riuscita: %@";
+"测试连接" = "Prova connessione";
+"正在测试…" = "Test in corso…";
+"连接成功" = "Connessione riuscita";
+"连接失败：%@" = "Connessione non riuscita: %@";
 "Deepgram 任务已取消" = "L'attività di Deepgram è stata annullata";
 "连接 Deepgram 超时，请检查网络后重试" = "Timeout di connessione a Deepgram. Controlla la rete e riprova";
 "Deepgram 启动较慢，请重试" = "Deepgram si avvia lentamente. Riprova";

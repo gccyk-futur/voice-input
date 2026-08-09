@@ -59,6 +59,10 @@ struct SettingsView: View {
     // 恢复默认
     @State private var showResetConfirm = false
 
+    // ASR 连接测试
+    @State private var connTestRunning: String?
+    @State private var connTestResults: [String: ASRConnTestResult] = [:]
+
     @State private var showDiscardAlert = false
 
     var body: some View {
@@ -499,6 +503,11 @@ struct SettingsView: View {
                         TextField("模型", text: $draft.asr.aliyun.model, prompt: Text("fun-asr-realtime"))
                             .textFieldStyle(.roundedBorder)
                     }
+                    connTestRow(engineID: "aliyun",
+                                enabled: !draft.asr.aliyun.apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+                                    && !draft.asr.aliyun.workspaceId.trimmingCharacters(in: .whitespaces).isEmpty) {
+                        await ASRConnectionTester.testAliyun(draft.asr.aliyun)
+                    }
                 }
             }
 
@@ -535,6 +544,11 @@ struct SettingsView: View {
                         .textFieldStyle(.roundedBorder)
                     secretField("API Key", text: $draft.asr.xunfei.apiKey)
                     secretField("API Secret", text: $draft.asr.xunfei.apiSecret)
+                    connTestRow(engineID: "xunfei",
+                                enabled: !draft.asr.xunfei.apiKey.trimmingCharacters(in: .whitespaces).isEmpty
+                                    && !draft.asr.xunfei.apiSecret.trimmingCharacters(in: .whitespaces).isEmpty) {
+                        await ASRConnectionTester.testXunfei(draft.asr.xunfei)
+                    }
                 } header: {
                     Text("API 配置")
                 } footer: {
@@ -568,6 +582,10 @@ struct SettingsView: View {
                     secretField("API Key", text: $draft.asr.deepgram.apiKey)
                     TextField("模型", text: $draft.asr.deepgram.model, prompt: Text("nova-3"))
                         .textFieldStyle(.roundedBorder)
+                    connTestRow(engineID: "deepgram",
+                                enabled: !draft.asr.deepgram.apiKey.trimmingCharacters(in: .whitespaces).isEmpty) {
+                        await ASRConnectionTester.testDeepgram(draft.asr.deepgram)
+                    }
                 } header: {
                     Text("API 配置")
                 } footer: {
@@ -606,6 +624,46 @@ struct SettingsView: View {
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// 连接测试行：按钮 + 结果展示（失败时透传服务商原始信息）。
+    private func connTestRow(engineID: String, enabled: Bool,
+                             action: @escaping () async -> ASRConnTestResult) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Button {
+                connTestRunning = engineID
+                connTestResults[engineID] = nil
+                Task {
+                    let result = await action()
+                    connTestRunning = nil
+                    connTestResults[engineID] = result
+                }
+            } label: {
+                if connTestRunning == engineID {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.small)
+                        Text("正在测试…")
+                    }
+                } else {
+                    Text("测试连接")
+                }
+            }
+            .disabled(!enabled || connTestRunning == engineID)
+            if let result = connTestResults[engineID] {
+                switch result {
+                case .ok:
+                    Label("连接成功", systemImage: "checkmark.circle.fill")
+                        .font(typography.callout)
+                        .foregroundStyle(VoiceKitSemanticColor.success)
+                case .failed(let detail):
+                    Text(VoiceKitLocalization.format("连接失败：%@", detail))
+                        .font(typography.callout)
+                        .foregroundStyle(VoiceKitSemanticColor.failure)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
     }
 
     /// 带明/密文切换的密钥输入框。

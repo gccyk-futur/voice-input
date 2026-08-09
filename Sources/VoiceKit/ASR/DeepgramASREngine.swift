@@ -48,6 +48,8 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
     private var _receiveTask: Task<Void, Never>?
+    /// 底层连接错误的原始描述（close code / receive 异常），报错时透传给用户，不做转译。
+    private var _lastUnderlyingError: String?
 
     init(apiKey: String, model: String = "nova-3",
          autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5, autoStopThreshold: Float = 0.01) {
@@ -201,6 +203,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
                     msg = try await task.receive()
                 } catch {
                     Log.error("[Deepgram] 接收循环断开: \(error)")
+                    self.stateLock.withLock { self._lastUnderlyingError = "\(error)" }
                     break
                 }
                 if case .string(let jsonText) = msg {
@@ -378,16 +381,16 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     /// 接收循环结束：正常收尾（stop 流程）不报错；录音中意外断开则 failSession。
     private func receiveLoopEnded() {
-        let (unexpected, failureCB) = stateLock.withLock { () -> (Bool, (@Sendable (Error) -> Void)?) in
+        let (unexpected, failureCB, underlying) = stateLock.withLock { () -> (Bool, (@Sendable (Error) -> Void)?, String?) in
             // stopRequested 表示用户主动结束，断开属于正常收尾
             let unexpected = _sessionActive && !_stopRequested
-            return (unexpected, _onFailure)
+            return (unexpected, _onFailure, _lastUnderlyingError)
         }
         resolveStopWaiters()
         if unexpected {
             capture.stop()
             Log.error("[Deepgram] 录音中连接意外断开")
-            failureCB?(DeepgramASRError.notConnected)
+            failureCB?(DeepgramASRError.connectionLost(underlying: underlying))
         }
     }
 }
@@ -425,10 +428,11 @@ extension DeepgramASREngine: URLSessionWebSocketDelegate {
         Log.info("[Deepgram] WebSocket 关闭 code=\(closeCode.rawValue)")
         var cont: CheckedContinuation<Void, Error>?
         stateLock.withLock {
+            _lastUnderlyingError = "WebSocket closed, code=\(closeCode.rawValue)"
             cont = _connectCont
             _connectCont = nil
         }
-        cont?.resume(throwing: DeepgramASRError.notConnected)
+        cont?.resume(throwing: DeepgramASRError.connectionLost(underlying: "WebSocket closed, code=\(closeCode.rawValue)"))
     }
 }
 
@@ -438,6 +442,8 @@ enum DeepgramASRError: LocalizedError {
     case cancelled
     case connectTimeout
     case audioPreRollOverflow
+    /// 连接丢失/被拒绝，带服务商或系统返回的原始信息（不转译，供专业用户对照官方文档排查）。
+    case connectionLost(underlying: String?)
 
     var errorDescription: String? {
         switch self {
@@ -446,6 +452,11 @@ enum DeepgramASRError: LocalizedError {
         case .cancelled: return VoiceKitLocalization.string("Deepgram 任务已取消")
         case .connectTimeout: return VoiceKitLocalization.string("连接 Deepgram 超时，请检查网络后重试")
         case .audioPreRollOverflow: return VoiceKitLocalization.string("Deepgram 启动较慢，请重试")
+        case .connectionLost(let underlying):
+            if let underlying, !underlying.isEmpty {
+                return VoiceKitLocalization.format("Deepgram 连接失败：%@", underlying)
+            }
+            return VoiceKitLocalization.string("Deepgram 未连接")
         }
     }
 }

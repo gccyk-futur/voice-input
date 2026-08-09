@@ -90,6 +90,11 @@
 "Deepgram 的 API Key 不能为空" = "Deepgram 的 API Key 不能為空";
 "Deepgram WebSocket URL 无效" = "Deepgram WebSocket URL 無效";
 "Deepgram 未连接" = "Deepgram 未連線";
+"Deepgram 连接失败：%@" = "Deepgram 連線失敗：%@";
+"测试连接" = "測試連線";
+"正在测试…" = "正在測試…";
+"连接成功" = "連線成功";
+"连接失败：%@" = "連線失敗：%@";
 "Deepgram 任务已取消" = "Deepgram 工作已取消";
 "连接 Deepgram 超时，请检查网络后重试" = "連線 Deepgram 逾時，請檢查網路後重試";
 "Deepgram 启动较慢，请重试" = "Deepgram 啟動較慢，請重試";
