@@ -51,7 +51,7 @@
 /// 语音转文字引擎协议：所有 ASR 实现（系统/whisper/云端）遵循。
 @MainActor
 protocol ASREngine: AnyObject {
-    var id: String { get }                       // "system" | "whisper" | ...
+    var id: String { get }                       // "system" | "aliyun" | "xunfei" | "deepgram"
     var displayName: String { get }
 
     /// 开始识别，partials 为实时中间结果流（主线程回调）。
@@ -62,7 +62,10 @@ protocol ASREngine: AnyObject {
 ```
 
 - `SystemDictationEngine`：内部按 `ProcessInfo` 系统版本选择 `SpeechAnalyzer`（macOS 26+）或降级 `SFSpeechRecognizer`。
-- `WhisperEngine` / `CloudASREngine`：v1.2 实现，遵循同一协议，运行时由 `AppCoordinator.resolveASR()` 切换。
+- `AlibabaASREngine`：持久 WebSocket 连接（连接池预热），高精度、自动标点。
+- `XunfeiASREngine` / `DeepgramASREngine`：每次识别会话新建 WebSocket；讯飞 wpgs 动态纠错的结果组装（`XunfeiResultAssembler`）与鉴权签名（`XunfeiAuth`）均为纯函数，可独立单测。
+- 未配置凭据的云端引擎由 `AppCoordinator.resolveASR()` 自动回退到 `SystemDictationEngine`。
+- 本地 Whisper 引擎尚未实现（原 v1.2 规划遗留项）。
 
 ### 2.2 LLM 协议（流式）
 
@@ -224,7 +227,7 @@ VoiceKit/
 |------|----------|-------------|
 | v1.0（本次开发） | 工程骨架 + Coordinator + 热键 + 悬浮窗 + 系统听写 + 粘贴 + 基础设置 + 配置/历史落盘 | ASR/LLM 协议就位 |
 | v1.1 | Ollama 润色默认打通 + 自定义快捷键 | LLMEngine 实装 Ollama/OpenAI |
-| v1.2 | Whisper 本地 ASR + 讯飞/阿里/OpenAI Whisper ASR | ASREngine 实装 Whisper/Cloud |
+| v1.2 | 讯飞 / 阿里云 / Deepgram 云端 ASR（已随 1.1.0 落地）；Whisper 本地 ASR 仍待实现 | ASREngine 已实装四个云端/系统引擎 |
 | v1.3 | 自定义 Prompt 多模板 + 音量指示 + 快捷键冲突检测 | PromptTemplate 扩展 |
 
 下一步：按 `Sources/` 目录实现 v1.0 MVP。

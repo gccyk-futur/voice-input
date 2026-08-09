@@ -10,9 +10,12 @@ VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and you
 
 - **Global hotkey** (default `Cmd+Shift+V`) — summon the floating panel from any app
 - **Real-time speech recognition** — see words appear as you speak, auto-paste when done
-- **Dual ASR engines**:
+- **Four ASR engines** (pick in Settings, cloud engines are bring-your-own-key):
   - Apple Dictation (offline, free, built into macOS)
   - Alibaba Fun-ASR (cloud-based, high accuracy, auto punctuation)
+  - iFLYTEK / Xunfei (cloud-based, streaming with dynamic correction)
+  - Deepgram (cloud-based, low-latency streaming)
+  - Unconfigured engines automatically fall back to Apple Dictation
 - **Silence auto-stop** — automatically finishes after a configurable pause
 - **AI polish** — send recognized text to an LLM (OpenAI / DeepSeek / Claude / Ollama) to convert spoken language into polished prose
 - **History** — browse all past transcriptions
@@ -42,6 +45,8 @@ VoiceKit is a **pure client-side tool** — no backend servers, no data collecti
 |--------|---------------------|
 | Apple Dictation | Processed **locally** by macOS, never leaves your device |
 | Alibaba Fun-ASR | Audio sent directly to **your own Alibaba Cloud account** |
+| iFLYTEK (Xunfei) | Audio sent directly to **your own iFLYTEK account** |
+| Deepgram | Audio sent directly to **your own Deepgram account** |
 | AI Polish | Text sent directly to **your configured AI provider**. With Ollama local models, data never leaves your machine |
 
 - **No telemetry**: no analytics, no tracking, no phoning home
@@ -73,7 +78,7 @@ The maintainer uses 1Password CLI (`op read`) for signing certificates and secre
 ```
 VoiceKit/
 ├── Sources/VoiceKit/
-│   ├── ASR/              # Speech recognition engines (Apple Dictation / Alibaba Fun-ASR)
+│   ├── ASR/              # Speech recognition engines (Apple Dictation / Alibaba Fun-ASR / iFLYTEK / Deepgram)
 │   ├── LLM/              # LLM polish (OpenAI / DeepSeek / Claude / Ollama)
 │   ├── Panel/            # Floating panel (NSPanel + vibrancy)
 │   ├── Hotkey/           # Global hotkey (Carbon + NSEvent dual-engine)
