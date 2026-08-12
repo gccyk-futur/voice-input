@@ -72,9 +72,12 @@ final class AppCoordinator {
 
     /// 菜单栏状态（供 StatusBarMenu 读取）
     var engineDisplayName: String {
-        asrEngineChoice == "aliyun"
-            ? VoiceKitLocalization.string("阿里云 Fun-ASR")
-            : VoiceKitLocalization.string("系统听写")
+        switch asrEngineChoice {
+        case "aliyun": return VoiceKitLocalization.string("阿里云 Fun-ASR")
+        case "xunfei": return VoiceKitLocalization.string("讯飞听写")
+        case "deepgram": return "Deepgram"
+        default: return VoiceKitLocalization.string("系统听写")
+        }
     }
     var llmEnabled: Bool { configStore.config.llm.enabled }
 
@@ -98,14 +101,25 @@ final class AppCoordinator {
         }
     }
 
-    /// 依据配置与当前引擎刷新状态栏展示状态（引擎选择、阿里云配置/连接状态）。
+    /// 依据配置与当前引擎刷新状态栏展示状态（引擎选择、云端引擎配置/连接状态）。
     private func refreshEngineStatus() {
         let cfg = configStore.config
         asrEngineChoice = cfg.asr.engine
         aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
-        wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
-        if !aliyunConfigured {
-            wsStatusText = VoiceKitLocalization.string("未连接")
+        switch asrEngineChoice {
+        case "aliyun":
+            wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
+            if !aliyunConfigured {
+                wsStatusText = VoiceKitLocalization.string("未连接")
+            }
+        case "xunfei", "deepgram":
+            // 会话制引擎：空闲时回到灰色「未连接」（属正常状态，非错误）
+            if sessionState == .idle {
+                wsConnected = false
+                wsStatusText = VoiceKitLocalization.string("未连接")
+            }
+        default:
+            break
         }
     }
 
@@ -115,6 +129,10 @@ final class AppCoordinator {
         switch sessionState {
         case .idle: startRecording()
         case .recording: stopAndProcess()
+        case .preparing, .failed:
+            // 准备中/错误页下按热键 = 用户想取消（等同 Esc）：静默复位，
+            // 不进入错误页；也避免 preparing 期按键被忽略造成的「关不掉」体感。
+            cancel()
         default:
             // 转写/润色中：等待流水线自动粘贴，忽略重复热键，避免重复提交；
             // 就绪态已由 handleFinal 自动粘贴并复位。
@@ -221,6 +239,12 @@ final class AppCoordinator {
             }
             self.resolvingASRTask = nil
             self.asrEngine = engine
+            // 会话制云端引擎（讯飞/Deepgram）：挂接连接状态回调，驱动状态栏指示灯
+            if let xunfei = engine as? XunfeiASREngine {
+                wireSessionConnectionStatus(xunfei)
+            } else if let deepgram = engine as? DeepgramASREngine {
+                wireSessionConnectionStatus(deepgram)
+            }
             // 本地引擎：传入静音检测配置
             if let legacy = engine as? LegacyDictationEngine {
                 let cfg = configStore.config.asr.system
@@ -593,14 +617,15 @@ final class AppCoordinator {
                 await pendingStart?.value
                 _ = try? await engine.stop()
                 await MainActor.run {
-                    let runtimeFailure = self.pendingRuntimeFailure
+                    // 用户主动取消（Esc/关闭按钮/热键）：即使引擎同时段报过
+                    // 运行时失败，也只静默复位，不把取消显示成错误页。
+                    if let runtimeFailure = self.pendingRuntimeFailure {
+                        Log.info("[Coordinator] 用户取消，忽略并发的运行时失败: \(runtimeFailure)")
+                    }
                     self.pendingRuntimeFailure = nil
                     self.engineOperationInFlight = false
                     self.stopTask = nil
                     self.reset()
-                    if let runtimeFailure {
-                        self.presentRecoveryFailure(runtimeFailure)
-                    }
                     previousTarget?.activate()
                     self.targetApp = nil
                 }
@@ -755,7 +780,9 @@ final class AppCoordinator {
                     return SystemDictationEngine()
                 }
             }
-            return await resolveAliyun()
+            // 旧配置残留：macOS < 26 或 locale 不支持时回落系统引擎，
+            // 而不是静默切到阿里云（用户从未选择过云端引擎）。
+            return await resolveSystemEngine()
         case "aliyun":
             return await resolveAliyun()
         case "xunfei":
@@ -790,11 +817,16 @@ final class AppCoordinator {
         }
     }
 
-    /// 阿里云引擎解析：复用常驻连接；未配置时回退系统引擎。
+    /// 阿里云引擎解析：复用常驻连接（复用前做健康检查，连接作废/生命周期
+    /// 未复位的旧引擎直接弃用新建）；未配置时回退系统引擎。
     private func resolveAliyun() async -> any ASREngine {
         if let existing = asrEngine as? AlibabaASREngine {
-            wireAliyunCallbacks(existing)
-            return existing
+            if existing.canStartNewSession {
+                wireAliyunCallbacks(existing)
+                return existing
+            }
+            Log.info("[Coordinator] 阿里云引擎连接已作废或任务未复位，弃用并新建")
+            asrEngine = nil
         }
         let cfg = configStore.config.asr.aliyun
         if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
@@ -866,6 +898,26 @@ final class AppCoordinator {
         let engine = makeAliyunEngine(cfg: cfg)
         self.asrEngine = engine
         Log.info("[Coordinator] 阿里云引擎预建连完成")
+    }
+
+    /// 会话制云端引擎（讯飞/Deepgram）的连接状态挂接：指示灯只在录音会话期间变化，
+    /// 空闲时显示「未连接」灰色属正常（不同于阿里云的常驻连接）。
+    private func wireSessionConnectionStatus(_ engine: XunfeiASREngine) {
+        engine.onConnectionChange = { [weak self] connected, status in
+            Task { @MainActor in
+                self?.wsConnected = connected
+                self?.wsStatusText = status
+            }
+        }
+    }
+
+    private func wireSessionConnectionStatus(_ engine: DeepgramASREngine) {
+        engine.onConnectionChange = { [weak self] connected, status in
+            Task { @MainActor in
+                self?.wsConnected = connected
+                self?.wsStatusText = status
+            }
+        }
     }
 
     func resolveLLM() -> (any LLMEngine)? {

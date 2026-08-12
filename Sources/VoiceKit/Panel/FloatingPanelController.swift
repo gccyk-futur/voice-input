@@ -52,6 +52,10 @@ final class FloatingPanelController {
 
     func show(needsActivation: Bool = false) {
         if panel == nil { buildPanel() }
+        // 面板弹出（录音/错误页）时主动收起状态栏 popover：
+        // popover 的 .transient 自动关闭依赖正常的 key window 链，
+        // 本面板是 .nonactivatingPanel，会打断该机制导致 popover 卡住不收起。
+        (NSApp.delegate as? AppDelegate)?.dismissPopover()
         // .nonactivatingPanel 保证面板浮在最前且可接收键盘事件，但不激活 App。
         // 目标 App 始终保持前台，无需来回切换焦点。
         // needsActivation=true 时额外触发激活（仅 DictationTranscriber 引擎需此行为）。

@@ -16,7 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private let popover = NSPopover()
     private var monitorTimer: Timer?
-    private var eventShow: AnyObject?
+    /// popover 显式关闭的全局/本地事件监听器（见 installPopoverDismissMonitors）
+    private var eventShow: Any?
+    private var eventShowLocal: Any?
+    /// 检测到重复实例后的自我终止标记：跳过退出确认弹窗
+    private var terminatingForDuplicateInstance = false
 
     // MARK: - 启动
 
@@ -24,6 +28,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 保持 @MainActor 原样，不再用 assumeIsolated 包裹（见 #89197：assumeIsolated
     /// 自身的 precondition 在 macOS 26 上也可能崩，避免在启动早期触碰它）。
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // 单实例保护：必须在热键注册（AppCoordinator.init）与任何窗口之前执行。
+        // 双实例会同 Bundle ID 同时响应全局热键、同时开麦克风、互相热重载覆盖
+        // 同一份 config.json——发现已有实例时激活它并静默退出本实例。
+        if let bundleID = Bundle.main.bundleIdentifier {
+            let currentPID = ProcessInfo.processInfo.processIdentifier
+            let others = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+                .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
+            if let existing = others.first {
+                handleDuplicateInstance(existing)
+                return
+            }
+        }
+
+        continueLaunch()
+    }
+
+    /// 正常启动流程（单实例检查通过后执行）
+    private func continueLaunch() {
         NSApp.setActivationPolicy(.accessory)
 
         setupStatusItem()
@@ -43,6 +65,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         if ConfigStore.shared.config.general.showSettingsOnLaunch {
             SettingsWindowController.shared.show()
+        }
+    }
+
+    /// 发现已有实例时的处理。需要区分两种场景：
+    /// - 应用内重启（SettingsView.restartApplication 用 createsNewApplicationInstance
+    ///   先拉起新实例再 terminate 旧实例）：旧实例正在退出，稍等它终止后继续
+    ///   正常启动，否则新实例会自杀、重启失败。
+    /// - 用户真的重复打开（双击 App / open 第二次）：旧实例持续存活，等超时后
+    ///   激活旧实例并静默退出本实例。
+    private func handleDuplicateInstance(_ existing: NSRunningApplication) {
+        print("[AppDelegate] 检测到已有 VoiceKit 实例 (pid \(existing.processIdentifier))，等待其退出（重启场景）")
+        Task { @MainActor in
+            // 最多等约 2 秒：覆盖旧实例 terminate 的常规耗时
+            for _ in 0 ..< 20 {
+                if existing.isTerminated {
+                    print("[AppDelegate] 旧实例已退出，继续启动（应用内重启）")
+                    continueLaunch()
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+            print("[AppDelegate] 旧实例仍在运行，激活它并退出本实例")
+            terminatingForDuplicateInstance = true
+            existing.activate()
+            NSApp.terminate(nil)
         }
     }
 
@@ -119,12 +166,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let button = statusItem?.button else { return }
         if popover.isShown {
             popover.close()
+            removePopoverDismissMonitors()
         } else {
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             // 外观在窗口层应用（popover 的窗口在 show 后才存在）
             popover.contentViewController?.view.window?.appearance = VoiceKitAppearance.current.nsAppearance
             // 确保 popover 成为 key window，否则文本选择等交互失效
             popover.contentViewController?.view.window?.makeKey()
+            installPopoverDismissMonitors()
         }
     }
 
@@ -132,6 +181,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func dismissPopover() {
         if popover.isShown {
             popover.close()
+        }
+        removePopoverDismissMonitors()
+    }
+
+    // MARK: - Popover 显式关闭监听
+
+    /// .transient 的「点外部自动关闭」在 macOS 26 上会被 nonactivating 悬浮面板、
+    /// 截图工具等场景打断（popover 卡住不收起）。不再依赖系统机制：
+    /// 显式监听 popover 之外的点击并主动关闭；点状态栏图标本身由 toggle 处理，需排除。
+    private func installPopoverDismissMonitors() {
+        removePopoverDismissMonitors()
+        // 其他应用的点击（桌面、截图工具、其他 App 窗口）
+        eventShow = NSEvent.addGlobalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.popover.isShown else { return }
+                // 点击状态栏图标本身不在这里关闭（由 toggle 处理）
+                if let buttonWindow = self.statusItem?.button?.window,
+                   NSPointInRect(NSEvent.mouseLocation, buttonWindow.frame) {
+                    return
+                }
+                self.dismissPopover()
+            }
+        }
+        // 本应用内其他窗口的点击（设置/历史/悬浮面板）
+        eventShowLocal = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+        ) { [weak self] event in
+            if let self,
+               self.popover.isShown,
+               event.window != self.popover.contentViewController?.view.window,
+               event.window != self.statusItem?.button?.window {
+                self.dismissPopover()
+            }
+            return event
+        }
+    }
+
+    private func removePopoverDismissMonitors() {
+        if let monitor = eventShow {
+            NSEvent.removeMonitor(monitor)
+            eventShow = nil
+        }
+        if let monitor = eventShowLocal {
+            NSEvent.removeMonitor(monitor)
+            eventShowLocal = nil
         }
     }
 
@@ -177,6 +273,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// 不强行 nonisolated：NSAlert 在 macOS 26 SDK 上是 @MainActor 隔离类型，
     /// 避免为未崩溃的路径引入假设。
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // 重复实例的静默自我终止：不弹退出确认
+        if terminatingForDuplicateInstance { return .terminateNow }
+
         let alert = NSAlert()
         alert.messageText = VoiceKitLocalization.string("退出 VoiceKit？")
         alert.informativeText = VoiceKitLocalization.string("退出后语音识别服务将停止运行，菜单栏图标也会消失。")

@@ -41,8 +41,8 @@ targets:
         CFBundleName: VoiceKit
         CFBundleDisplayName: VoiceKit
         CFBundleIdentifier: me.ckai.VoiceMate
-        CFBundleVersion: "34"
-        CFBundleShortVersionString: "1.0.0"
+        CFBundleVersion: "35"
+        CFBundleShortVersionString: "1.1.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceKit
         CFBundleIconFile: AppIcon
@@ -70,9 +70,11 @@ targets:
       - path: Sources/VoiceKit/ASR/AudioTapFormatPolicy.swift
       - path: Sources/VoiceKit/Paste/PasteDeliveryPolicy.swift
       - path: Sources/VoiceKit/Config/ConfigImportPolicy.swift
+      - path: Sources/VoiceKit/Config/AppConfig.swift
       - path: Sources/VoiceKit/Support/VoiceKitLocalization.swift
       - path: Sources/VoiceKit/ASR/XunfeiAuth.swift
       - path: Sources/VoiceKit/ASR/XunfeiResultAssembler.swift
+      - path: Sources/VoiceKit/ASR/ASRConnectionTester.swift
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: me.ckai.VoiceKitTests

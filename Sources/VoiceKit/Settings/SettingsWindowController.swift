@@ -1,6 +1,16 @@
 import AppKit
 import SwiftUI
 
+/// 设置窗口与 SwiftUI 视图之间的状态桥：
+/// 红叉/Cmd+W 关闭请求被 windowShouldClose 拦截后，由 SwiftUI 侧弹「放弃更改」确认。
+@MainActor
+final class SettingsWindowBridge {
+    /// SwiftUI 侧 draft 与原始配置存在差异
+    var hasChanges = false
+    /// 控制器请求 SwiftUI 侧弹出「放弃更改」确认
+    var discardConfirmationRequested = false
+}
+
 /// 设置窗口控制器：复用单个窗口实例。
 /// - 使用稳定的侧边栏导航，切换页面不改变窗口尺寸
 /// - 关闭窗口时切回 .accessory 策略
@@ -10,6 +20,7 @@ final class SettingsWindowController: NSObject {
 
     private(set) var window: NSWindow?
     private var appearanceApplier: AppearanceApplier?
+    private var bridge = SettingsWindowBridge()
 
     func show() {
         if let win = window, win.isVisible {
@@ -28,11 +39,15 @@ final class SettingsWindowController: NSObject {
         // 先登记窗口，再安装 SwiftUI 内容，确保 rootView 的 onAppear
         // 恢复上次面板时能够立即更新窗口标题。
         window = win
-        win.contentView = NSHostingView(rootView: SettingsView(onDone: { [weak self] in self?.close() },
+        bridge = SettingsWindowBridge()
+        win.contentView = NSHostingView(rootView: SettingsView(bridge: bridge,
+                                                               onDone: { [weak self] in self?.close() },
                                                                onTabChange: { [weak self] tab in self?.updateTitle(for: tab) }))
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        win.minSize = NSSize(width: 720, height: 480)
+        // 与 SwiftUI 根视图的 .frame(minWidth: 760, minHeight: 520) 保持一致：
+        // 此前 720×480 与内容最小尺寸冲突，Auto Layout 约束打架导致切换页面时版式错乱。
+        win.minSize = NSSize(width: 760, height: 520)
         // 外观在窗口层应用：侧栏与 detail 同步渲染，跟随系统时系统切换自动生效
         appearanceApplier = AppearanceApplier(window: win)
         // 关闭窗口时不退出 app，只是隐藏
@@ -41,17 +56,6 @@ final class SettingsWindowController: NSObject {
         win.setContentSize(NSSize(width: 820, height: 580))
 
         showWindow(win)
-        removeSidebarToggle(from: win)
-    }
-
-    /// macOS 26 上 SwiftUI 的 .toolbar(removing: .sidebarToggle) 不生效，
-    /// 直接从 NSToolbar 移除 NavigationSplitView 的侧栏折叠按钮。
-    private func removeSidebarToggle(from win: NSWindow) {
-        guard let toolbar = win.toolbar else { return }
-        for (index, item) in toolbar.items.enumerated().reversed()
-        where item.itemIdentifier.rawValue.lowercased().contains("togglesidebar") {
-            toolbar.removeItem(at: index)
-        }
     }
 
     /// 显示窗口：切到 .regular 让 app 出现在 Dock/Switcher
@@ -84,6 +88,21 @@ final class SettingsWindowController: NSObject {
 // MARK: - NSWindowDelegate
 
 extension SettingsWindowController: NSWindowDelegate {
+    /// 拦截红叉/Cmd+W 的真实关闭：统一走 handleCloseRequest，
+    /// 有未保存变更时弹「放弃更改」确认（此前红叉会静默丢弃修改）。
+    nonisolated func windowShouldClose(_ sender: NSWindow) -> Bool {
+        Task { @MainActor [weak self] in self?.handleCloseRequest() }
+        return false
+    }
+
+    private func handleCloseRequest() {
+        if bridge.hasChanges {
+            bridge.discardConfirmationRequested = true
+        } else {
+            close()
+        }
+    }
+
     nonisolated func windowWillClose(_ notification: Notification) {
         Task { @MainActor in
             print("[SettingsWindow] 窗口关闭 → 切回 accessory 策略，app 继续运行")
@@ -96,8 +115,6 @@ extension SettingsWindowController: NSWindowDelegate {
         Task { @MainActor in
             // 窗口被激活时确保策略是 .regular（双击唤醒时用到）
             NSApp.setActivationPolicy(.regular)
-            // toolbar 项目可能延迟出现，激活时再清一次侧栏折叠按钮
-            if let win = self.window { self.removeSidebarToggle(from: win) }
         }
     }
 }

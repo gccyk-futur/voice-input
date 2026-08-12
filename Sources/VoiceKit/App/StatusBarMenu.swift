@@ -109,55 +109,98 @@ struct StatusBarMenuView: View {
         // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
         // 不再依赖本地 config 快照——首次在设置中填好后无需重启即可切换。
         return VStack(alignment: .leading, spacing: 6) {
-            Text("语音引擎")
-                .font(typography.sectionTitle)
-                .foregroundStyle(.primary)
+            HStack(spacing: 6) {
+                Text("语音引擎")
+                    .font(typography.sectionTitle)
+                    .foregroundStyle(.primary)
+                Spacer(minLength: 4)
 
-            HStack(alignment: .center, spacing: 8) {
-                Picker("", selection: Binding(
-                    get: { coordinator.asrEngineChoice },
-                    set: { newValue in
-                        var cfg = ConfigStore.shared.config
-                        cfg.asr.engine = newValue
-                        config = cfg
-                        ConfigStore.shared.update(cfg)
-                        coordinator.invalidateASREngine()
-                        // 切到阿里云后主动预建连，确保状态灯正常
-                        if newValue == "aliyun" {
-                            Task { await coordinator.prewarmAliyunEngine() }
-                        } else if !Self.isEngineConfigured(newValue, asr: cfg.asr) {
-                            showToast("所选引擎未配置凭据，录音时将回退到系统听写")
-                        }
-                    }
-                )) {
-                    Text("系统听写").tag("system")
-                    Text("阿里云 Fun-ASR").tag("aliyun")
-                    Text("讯飞听写").tag("xunfei")
-                    Text("Deepgram").tag("deepgram")
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity)
-
-                // 连接状态灯仅对常驻连接的阿里云有意义
-                if coordinator.asrEngineChoice == "aliyun" {
+                // 连接状态灯对全部云端引擎展示。语义差异：
+                // - 阿里云是常驻连接（预建连），断开即异常，红色警示；
+                // - 讯飞/Deepgram 是会话制连接，只在录音期间存在，
+                //   空闲时灰色「未连接」属正常，不作红色警示。
+                if coordinator.asrEngineChoice != "system" {
+                    let persistent = coordinator.asrEngineChoice == "aliyun"
+                    let connected = coordinator.wsConnected
                     Circle()
-                        .fill(coordinator.wsConnected ? Color.green : Color.red)
+                        .fill(connected ? Color.green : (persistent ? Color.red : Color.secondary))
                         .frame(width: 5, height: 5)
-                    Text(coordinator.wsConnected
+                    Text(connected
                          ? VoiceKitLocalization.string("已连接")
                          : VoiceKitLocalization.string("未连接"))
                         .font(typography.metadata)
-                        .foregroundStyle(coordinator.wsConnected ? VoiceKitSemanticColor.success : VoiceKitSemanticColor.failure)
+                        .foregroundStyle(connected
+                                         ? VoiceKitSemanticColor.success
+                                         : (persistent ? VoiceKitSemanticColor.failure : .secondary))
                         .lineLimit(1)
                         .fixedSize()
-                        .accessibilityLabel(VoiceKitLocalization.string("阿里云连接状态"))
-                        .accessibilityValue(coordinator.wsConnected
-                                            ? VoiceKitLocalization.string("已连接")
-                                            : VoiceKitLocalization.string("未连接"))
+                        .accessibilityLabel(VoiceKitLocalization.string("连接状态"))
+                        .accessibilityValue(coordinator.wsStatusText)
                         .help(coordinator.wsStatusText)
                 }
             }
+
+            // 用 Menu + 自绘全宽 label 替代 .menu 样式的 Picker：
+            // macOS 26 上 Picker(.menu) 按钮只吃内容宽度、不响应 maxWidth 拉伸，
+            // 文字居中显得两侧空荡；Menu 的 label 可以完全控制布局。
+            Menu {
+                ForEach(Self.engineOptions, id: \.id) { option in
+                    Button {
+                        selectEngine(option.id)
+                    } label: {
+                        let selected = coordinator.asrEngineChoice == option.id
+                        if selected {
+                            Label(option.title, systemImage: "checkmark")
+                        } else {
+                            Text(option.title)
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(Self.engineOptions.first { $0.id == coordinator.asrEngineChoice }?.title
+                         ?? VoiceKitLocalization.string("系统听写"))
+                        .font(typography.body)
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(typography.metadata)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.06))
+                )
+            }
+            .menuIndicator(.hidden)
+            .menuStyle(.borderlessButton)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    /// 引擎可选项（与设置页列表口径一致）
+    private static let engineOptions: [(id: String, title: String)] = [
+        ("system", VoiceKitLocalization.string("系统听写")),
+        ("aliyun", VoiceKitLocalization.string("阿里云 Fun-ASR")),
+        ("xunfei", VoiceKitLocalization.string("讯飞听写")),
+        ("deepgram", "Deepgram")
+    ]
+
+    private func selectEngine(_ newValue: String) {
+        guard newValue != coordinator.asrEngineChoice else { return }
+        var cfg = ConfigStore.shared.config
+        cfg.asr.engine = newValue
+        config = cfg
+        ConfigStore.shared.update(cfg)
+        coordinator.invalidateASREngine()
+        // 切到阿里云后主动预建连，确保状态灯正常
+        if newValue == "aliyun" {
+            Task { await coordinator.prewarmAliyunEngine() }
+        } else if !Self.isEngineConfigured(newValue, asr: cfg.asr) {
+            showToast("所选引擎未配置凭据，录音时将回退到系统听写")
         }
     }
 

@@ -15,7 +15,9 @@ final class AudioPreRollBuffer: @unchecked Sendable {
         case overflow(capacityBytes: Int, attemptedBytes: Int)
     }
 
-    static let defaultCapacityBytes = 32_000
+    /// 预缓冲容量：16kHz/16bit 单声道为 32KB/s。6 秒（192KB）覆盖
+    /// 5s 建连超时再加余量，慢网络下开头语音不会被截断。
+    static let defaultCapacityBytes = 192_000
 
     let capacityBytes: Int
     private let lock = NSLock()

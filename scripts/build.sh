@@ -50,7 +50,7 @@ case "$MODE" in
         IDENTITY="$(detect_dev_identity)"
         if [ -n "$IDENTITY" ]; then
             TEAM_ID="$(echo "$IDENTITY" | sed -E 's/.*\(([A-Z0-9]+)\)$/\1/')"
-            echo "📦 构建官网版（本地测试，签名: $IDENTITY）..."
+            echo "📦 构建官网版（本地测试，签名: ${IDENTITY}）..."
             xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Release \
                 CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$TEAM_ID" \
                 CODE_SIGN_IDENTITY="$IDENTITY" \

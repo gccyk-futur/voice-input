@@ -31,10 +31,11 @@ enum ASRConnectionTester {
     }
 
     static func testXunfei(_ cfg: ASRXunfeiConfig) async -> ASRConnTestResult {
+        let appId = cfg.appId.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiKey = cfg.apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
         let apiSecret = cfg.apiSecret.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !apiKey.isEmpty, !apiSecret.isEmpty else {
-            return .failed(detail: "API Key / API Secret empty")
+        guard !appId.isEmpty, !apiKey.isEmpty, !apiSecret.isEmpty else {
+            return .failed(detail: "APP ID / API Key / API Secret empty")
         }
         guard let url = XunfeiAuth.signedURL(host: "iat-api.xfyun.cn", path: "/v2/iat",
                                              apiKey: apiKey, apiSecret: apiSecret) else {
@@ -42,11 +43,33 @@ enum ASRConnectionTester {
         }
         var req = URLRequest(url: url)
         req.timeoutInterval = 10
-        switch await ConnProbe().run(req, waitFirstMessage: true) {
+        // 讯飞 IAT 是应答式协议：握手只校验签名 URL，服务端在收到首帧前不会推任何数据；
+        // 且首帧（40ms 静音）没有可识别内容时也不会回帧——只发一帧干等，15s 后会被
+        // 服务端以 "server read msg timeout" 关闭（实测确认）。因此模拟真实引擎的
+        // 最小会话：首帧（status 0 + common/business）+ 若干静音帧 + 结束帧（status 2），
+        // 服务端收到结束帧后立刻回最终结果（code==0 即鉴权/参数全部通过）。
+        // 这同时覆盖了握手无法校验的 appId（签名不含 appId，错误 appId 只在响应帧里报）。
+        let silence = Data(count: 1280).base64EncodedString() // 40ms @16kHz
+        var frames: [String] = []
+        let firstFrame: [String: Any] = [
+            "common": ["app_id": appId],
+            "business": ["language": "zh_cn", "domain": "iat", "accent": "mandarin", "ptt": 1],
+            "data": ["status": 0, "format": "audio/L16;rate=16000", "encoding": "raw", "audio": silence]
+        ]
+        frames.append(Self.jsonText(firstFrame))
+        for _ in 0 ..< 10 {
+            frames.append(Self.jsonText([
+                "data": ["status": 1, "format": "audio/L16;rate=16000", "encoding": "raw", "audio": silence]
+            ]))
+        }
+        frames.append(Self.jsonText([
+            "data": ["status": 2, "format": "audio/L16;rate=16000", "encoding": "raw", "audio": ""]
+        ]))
+        switch await ConnProbe().run(req, framesToSend: frames) {
         case .opened:
             return .failed(detail: "connected but no response frame received")
         case .firstMessage(let text):
-            // 讯飞首帧 code 字段为 0 才算鉴权通过；非 0 时把原始帧透传给用户
+            // 讯飞响应帧 code 字段为 0 才算鉴权通过；非 0 时把原始帧透传给用户
             if let data = text.data(using: .utf8),
                let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                let code = json["code"] as? Int, code == 0 {
@@ -56,6 +79,12 @@ enum ASRConnectionTester {
         case .failed(let detail):
             return .failed(detail: detail)
         }
+    }
+
+    private static func jsonText(_ object: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let text = String(data: data, encoding: .utf8) else { return "{}" }
+        return text
     }
 
     static func testDeepgram(_ cfg: ASRDeepgramConfig) async -> ASRConnTestResult {
@@ -70,10 +99,11 @@ enum ASRConnectionTester {
         var req = URLRequest(url: url)
         req.setValue("Token \(apiKey)", forHTTPHeaderField: "Authorization")
         req.timeoutInterval = 10
-        // 连接成功后 Deepgram 会立刻推 Metadata 帧；凭据无效则被立即关闭，关闭原因即原始信息
-        switch await ConnProbe().run(req, waitFirstMessage: true) {
-        case .firstMessage: return .ok
-        case .opened: return .failed(detail: "connected but no response frame received")
+        // Deepgram 连接成功后不会主动推任何帧（实测：Metadata 只在流结束/超时关闭时才下发，
+        // 空等会被 12s 无音频超时以 1011 关闭）。鉴权失败在 WebSocket 握手阶段即被 401 拒绝，
+        // 因此握手成功即代表凭据有效，与阿里云同策略。
+        switch await ConnProbe().run(req, waitFirstMessage: false) {
+        case .opened, .firstMessage: return .ok
         case .failed(let detail): return .failed(detail: detail)
         }
     }
@@ -96,7 +126,11 @@ private final class ConnProbe: NSObject, URLSessionWebSocketDelegate, @unchecked
     private var openCont: CheckedContinuation<Void, Error>?
     private var closedDetail: String?
 
-    func run(_ request: URLRequest, waitFirstMessage: Bool) async -> Outcome {
+    /// - Parameters:
+    ///   - waitFirstMessage: 握手成功后是否再等一帧服务端消息。
+    ///   - framesToSend: 握手成功后按 40ms 间隔依次发送的文本帧（应答式协议如讯飞
+    ///     需要发完整会话——首帧+数据帧+结束帧——才有响应）；非空时隐含 waitFirstMessage = true。
+    func run(_ request: URLRequest, waitFirstMessage: Bool = false, framesToSend: [String] = []) async -> Outcome {
         let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
         let task = session.webSocketTask(with: request)
         task.resume()
@@ -124,7 +158,18 @@ private final class ConnProbe: NSObject, URLSessionWebSocketDelegate, @unchecked
             return .failed(Self.describe(error, closedDetail: lock.withLock { closedDetail }))
         }
 
-        guard waitFirstMessage else { return .opened }
+        for frame in framesToSend {
+            do {
+                try await task.send(.string(frame))
+            } catch {
+                return .failed(Self.describe(error, closedDetail: lock.withLock { closedDetail }))
+            }
+            if frame != framesToSend.last {
+                try? await Task.sleep(nanoseconds: 40_000_000)
+            }
+        }
+
+        guard waitFirstMessage || !framesToSend.isEmpty else { return .opened }
 
         // 2. 首帧：receive 抛错或超时都按原始信息失败
         do {
@@ -144,6 +189,7 @@ private final class ConnProbe: NSObject, URLSessionWebSocketDelegate, @unchecked
     /// 错误描述：优先使用服务端关闭原因（含 close code / reason），其次系统错误原文。
     private static func describe(_ error: Error, closedDetail: String?) -> String {
         if let closedDetail, !closedDetail.isEmpty { return closedDetail }
+        if let raw = error as? RawFailure { return raw.detail }
         return "\(error)"
     }
 

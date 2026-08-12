@@ -147,7 +147,7 @@ final class AudioCapture: @unchecked Sendable {
         let running = engine.isRunning
         Log.error("[AudioCapture] configuration changed: inputAvailable=\(inputOK), engineRunning=\(running)")
         if !inputOK || !running {
-            let reason = inputOK ? "音频引擎已停止" : "麦克风已断开"
+            let reason = inputOK ? VoiceKitLocalization.string("音频引擎已停止") : VoiceKitLocalization.string("麦克风已断开")
             let cb = lock.withLock { () -> (@Sendable (Error) -> Void)? in
                 self.active = false
                 return self.onInterruption

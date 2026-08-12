@@ -87,8 +87,16 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     /// session 活跃标记：接收循环据此在 finish 后退出，而非触发重连。
     private var _sessionActive = false
+    /// 当前 task 已发出的音频字节数：用于区分「零音频空会话」与真实任务失败。
+    private var _audioBytesSent = 0
 
     var wsConnected: Bool { stateLock.withLock { _isConnected } }
+
+    /// 复用前健康检查：连接在且生命周期允许开新任务才复用；
+    /// 否则由协调器新建引擎，避免把作废的连接状态带进下一次会话。
+    var canStartNewSession: Bool {
+        stateLock.withLock { _isConnected && _taskLifecycle.canStart }
+    }
 
     init(apiKey: String, workspaceId: String, region: String, model: String,
          semanticPunctuation: Bool = true, speechNoiseThreshold: Double = 0, maxSentenceSilence: Int = 1300,
@@ -187,7 +195,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         oldTask?.cancel()
         newTask.resume()
         Log.info("[AlibabaASR] 正在连接 WebSocket…")
-        notifyConnectionChange(false, "连接中…")
+        notifyConnectionChange(false, VoiceKitLocalization.string("连接中…"))
 
         // 统一接收循环：只消费这个 epoch 对应的 WebSocket；旧循环退出时
         // receiveLoopEnded 会丢弃其重连请求。
@@ -270,7 +278,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         guard delay >= 0 else { return }
         let delayStr = String(format: "%.1f", delay)
         Log.info("[AlibabaASR] 将在 \(delayStr)s 后重连...")
-        notifyConnectionChange(false, "已断开，\(delayStr)s 后自动重连")
+        notifyConnectionChange(false, VoiceKitLocalization.format("已断开，%@s 后自动重连", delayStr))
         Task { [weak self] in
             do {
                 try await Task.sleep(for: .seconds(delay))
@@ -343,6 +351,23 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     // MARK: - ASREngine
 
+    /// 原子地尝试开启一个服务端 task 生命周期，成功后初始化本 task 的全部状态。
+    private func tryBeginTask(taskID: String, gate: AudioPreRollSendGate) -> ASRTaskLifecycle.Transition {
+        stateLock.withLock {
+            let result = _taskLifecycle.begin(taskID: taskID)
+            guard result == .accepted else { return result }
+            taskId = taskID
+            _finalText = ""
+            _currentPartial = ""
+            _stopRequested = false
+            _finishSent = false
+            _audioBytesSent = 0
+            _audioSendDrain = AudioSendDrain()
+            _audioPreRollGate = gate
+            return result
+        }
+    }
+
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
@@ -354,17 +379,14 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         let audioGate = AudioPreRollSendGate(sendQueue: sendQueue) { [weak self] data in
             self?.sendAudioData(data, taskID: newTaskID)
         }
-        let beginResult = stateLock.withLock {
-            let result = _taskLifecycle.begin(taskID: newTaskID)
-            guard result == .accepted else { return result }
-            taskId = newTaskID
-            _finalText = ""
-            _currentPartial = ""
-            _stopRequested = false
-            _finishSent = false
-            _audioSendDrain = AudioSendDrain()
-            _audioPreRollGate = audioGate
-            return result
+        var beginResult = tryBeginTask(taskID: newTaskID, gate: audioGate)
+        if case .rejected(.requiresReconnect) = beginResult {
+            // 上一次会话失败作废了常驻连接（task-failed 后必须换连接）：
+            // 等待后台重连完成（ensureConnected 会等当前握手），然后重试一次 begin，
+            // 而不是把「正在重连」直接抛成 busy 错误页。
+            Log.info("[AlibabaASR] 连接重建中，等待后重试开任务")
+            try await ensureConnected(timeout: 8)
+            beginResult = tryBeginTask(taskID: newTaskID, gate: audioGate)
         }
         guard beginResult == .accepted else {
             throw AlibabaASRError.busy
@@ -428,6 +450,9 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             }
             Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲已排空，进入实时发送")
         } catch {
+            // 启动失败必须停采集：否则 tap 残留，麦克风常亮，
+            // 且下次 start 对已装 tap 的 inputNode 再 installTap 会抛 NSException。
+            capture.stop()
             audioGate.discard()
             Log.info("[AlibabaASR] task=\(newTaskID) 音频预缓冲已丢弃，启动未完成")
             stateLock.withLock {
@@ -549,6 +574,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private func sendAudioData(_ bytes: Data, taskID: String) {
         let result: (URLSessionWebSocketTask?, AudioSendDrain?) = stateLock.withLock {
             guard self.taskId == taskID else { return (nil, nil) }
+            _audioBytesSent += bytes.count
             return (self.webSocketTask, self._audioSendDrain)
         }
         let webSocketTask = result.0
@@ -842,24 +868,39 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             let taskError = AlibabaASRError.taskFailed(code: code, message: msg)
             Log.error("[AlibabaASR] 任务失败: \(code) - \(msg)")
             var failureCB: (@Sendable (Error) -> Void)?
-            let shouldHandle = stateLock.withLock { () -> Bool in
-                guard currentTaskID == taskId else { return false }
+            let (shouldHandle, isSilentEmptySession) = stateLock.withLock { () -> (Bool, Bool) in
+                guard currentTaskID == taskId else { return (false, false) }
                 switch _taskLifecycle.phase {
                 case .idle, .failed:
-                    return false
+                    return (false, false)
                 case .starting, .running, .finishing:
                     break
                 }
+                // 零音频空会话：用户按下停止时从未发出过任何音频（例如呼出后
+                // 没说话就关闭），服务端必然以 EmptyAudio 类 task-failed 收尾。
+                // 这是用户主动取消的正常结果而非故障：协议收尾（断连重连）照旧，
+                // 但不上报 onFailure，避免把「没说话就关掉」显示成错误页。
+                let silent: Bool
+                if case .finishing = _taskLifecycle.phase, _audioBytesSent == 0 {
+                    silent = true
+                } else {
+                    silent = false
+                    failureCB = _onFailure
+                }
                 _ = _taskLifecycle.taskFailed(taskID: currentTaskID)
                 _sessionActive = false
-                failureCB = _onFailure
-                return true
+                return (true, silent)
             }
             guard shouldHandle else { return }
+            if isSilentEmptySession {
+                Log.info("[AlibabaASR] 零音频空会话，静默收尾（不上报失败）")
+            }
             capture.stop()
             safeResumeStarted(.failure(taskError))
             resolveFinishWaiters(taskID: currentTaskID, succeeded: false)
-            failureCB?(taskError)
+            if !isSilentEmptySession {
+                failureCB?(taskError)
+            }
             currentWebSocketTask()?.cancel(with: .goingAway, reason: nil)
             scheduleReconnect()
 
@@ -893,7 +934,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         guard isCurrent else { return }
         Log.info("[AlibabaASR] WebSocket 已连接")
         resumeConnectWait(result: .success(()))
-        notifyConnectionChange(true, "已连接")
+        notifyConnectionChange(true, VoiceKitLocalization.string("已连接"))
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask,
@@ -908,7 +949,7 @@ extension AlibabaASREngine: URLSessionWebSocketDelegate {
         guard isCurrent else { return }
         resumeConnectWait(result: .failure(AlibabaASRError.notConnected))
         Log.info("[AlibabaASR] WebSocket 关闭 code=\(closeCode.rawValue)")
-        notifyConnectionChange(false, "已断开")
+        notifyConnectionChange(false, VoiceKitLocalization.string("已断开"))
         // 只要仍有 task 在途，断开就必须解开 start/stop 等待者；
         // session 正常结束时生命周期已回到 idle，由 finish 流程处理。
         let taskInFlight = stateLock.withLock { () -> Bool in

@@ -183,3 +183,192 @@ struct LLMPromptPreset: Codable, Identifiable, Equatable {
     var system: String = ""
     var user: String = ""
 }
+
+// MARK: - 宽容解码（向后兼容旧版 config.json）
+//
+// 合成 Codable 要求所有非可选字段的 key 必须存在，新增配置字段会导致旧版
+// config.json 整体解码失败、用户配置被静默重置为默认值。这里为每个配置结构
+// 提供自定义 init(from:)：缺失的 key 一律回退到默认值。
+
+private extension KeyedDecodingContainer {
+    /// key 缺失或值为 null 时回退到默认值。
+    func decode<T: Decodable>(_ type: T.Type, forKey key: Key, default def: @autoclosure () -> T) throws -> T {
+        try decodeIfPresent(type, forKey: key) ?? def()
+    }
+}
+
+extension AppConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = AppConfig()
+        version = try c.decode(String.self, forKey: .version, default: d.version)
+        general = try c.decode(GeneralConfig.self, forKey: .general, default: d.general)
+        asr = try c.decode(ASRConfig.self, forKey: .asr, default: d.asr)
+        llm = try c.decode(LLMConfig.self, forKey: .llm, default: d.llm)
+    }
+}
+
+extension GeneralConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = GeneralConfig()
+        hotkey = try c.decode(String.self, forKey: .hotkey, default: d.hotkey)
+        launchAtStartup = try c.decode(Bool.self, forKey: .launchAtStartup, default: d.launchAtStartup)
+        showSettingsOnLaunch = try c.decode(Bool.self, forKey: .showSettingsOnLaunch, default: d.showSettingsOnLaunch)
+        windowStyle = try c.decode(String.self, forKey: .windowStyle, default: d.windowStyle)
+        maxHistoryCount = try c.decode(Int.self, forKey: .maxHistoryCount, default: d.maxHistoryCount)
+        sound = try c.decode(SoundConfig.self, forKey: .sound, default: d.sound)
+    }
+}
+
+extension SoundConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = SoundConfig()
+        enabled = try c.decode(Bool.self, forKey: .enabled, default: d.enabled)
+        startEnabled = try c.decodeIfPresent(Bool.self, forKey: .startEnabled)
+        stopEnabled = try c.decodeIfPresent(Bool.self, forKey: .stopEnabled)
+        startSound = try c.decode(String.self, forKey: .startSound, default: d.startSound)
+        stopSound = try c.decode(String.self, forKey: .stopSound, default: d.stopSound)
+    }
+}
+
+extension ASRConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ASRConfig()
+        engine = try c.decode(String.self, forKey: .engine, default: d.engine)
+        system = try c.decode(ASRSystemConfig.self, forKey: .system, default: d.system)
+        aliyun = try c.decode(ASRAliyunConfig.self, forKey: .aliyun, default: d.aliyun)
+        xunfei = try c.decode(ASRXunfeiConfig.self, forKey: .xunfei, default: d.xunfei)
+        deepgram = try c.decode(ASRDeepgramConfig.self, forKey: .deepgram, default: d.deepgram)
+    }
+}
+
+extension ASRSystemConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ASRSystemConfig()
+        language = try c.decode(String.self, forKey: .language, default: d.language)
+        silenceAutoStopEnabled = try c.decode(Bool.self, forKey: .silenceAutoStopEnabled, default: d.silenceAutoStopEnabled)
+        silenceTimeout = try c.decode(Double.self, forKey: .silenceTimeout, default: d.silenceTimeout)
+        silenceThreshold = try c.decode(Double.self, forKey: .silenceThreshold, default: d.silenceThreshold)
+    }
+}
+
+extension ASRAliyunConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ASRAliyunConfig()
+        apiKey = try c.decode(String.self, forKey: .apiKey, default: d.apiKey)
+        workspaceId = try c.decode(String.self, forKey: .workspaceId, default: d.workspaceId)
+        region = try c.decode(String.self, forKey: .region, default: d.region)
+        model = try c.decode(String.self, forKey: .model, default: d.model)
+        semanticPunctuation = try c.decode(Bool.self, forKey: .semanticPunctuation, default: d.semanticPunctuation)
+        speechNoiseThreshold = try c.decode(Double.self, forKey: .speechNoiseThreshold, default: d.speechNoiseThreshold)
+        maxSentenceSilence = try c.decode(Int.self, forKey: .maxSentenceSilence, default: d.maxSentenceSilence)
+        autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
+        autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
+        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
+    }
+}
+
+extension ASRXunfeiConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ASRXunfeiConfig()
+        appId = try c.decode(String.self, forKey: .appId, default: d.appId)
+        apiKey = try c.decode(String.self, forKey: .apiKey, default: d.apiKey)
+        apiSecret = try c.decode(String.self, forKey: .apiSecret, default: d.apiSecret)
+        dynamicCorrection = try c.decode(Bool.self, forKey: .dynamicCorrection, default: d.dynamicCorrection)
+        autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
+        autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
+        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
+    }
+}
+
+extension ASRDeepgramConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = ASRDeepgramConfig()
+        apiKey = try c.decode(String.self, forKey: .apiKey, default: d.apiKey)
+        model = try c.decode(String.self, forKey: .model, default: d.model)
+        autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
+        autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
+        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
+    }
+}
+
+extension LLMModelDef {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMModelDef()
+        id = try c.decode(String.self, forKey: .id, default: d.id)
+        name = try c.decode(String.self, forKey: .name, default: d.name)
+        engine = try c.decode(String.self, forKey: .engine, default: d.engine)
+        baseUrl = try c.decode(String.self, forKey: .baseUrl, default: d.baseUrl)
+        apiKey = try c.decode(String.self, forKey: .apiKey, default: d.apiKey)
+        model = try c.decode(String.self, forKey: .model, default: d.model)
+        totalTokens = try c.decode(Int.self, forKey: .totalTokens, default: d.totalTokens)
+        usageCount = try c.decode(Int.self, forKey: .usageCount, default: d.usageCount)
+    }
+}
+
+extension LLMConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMConfig()
+        enabled = try c.decode(Bool.self, forKey: .enabled, default: d.enabled)
+        temperature = try c.decode(Double.self, forKey: .temperature, default: d.temperature)
+        selectedModelID = try c.decode(String.self, forKey: .selectedModelID, default: d.selectedModelID)
+        models = try c.decode([LLMModelDef].self, forKey: .models, default: d.models)
+        prompt = try c.decode(LLMPromptConfig.self, forKey: .prompt, default: d.prompt)
+        prompts = try c.decode([LLMPromptPreset].self, forKey: .prompts, default: d.prompts)
+        selectedPromptID = try c.decode(String.self, forKey: .selectedPromptID, default: d.selectedPromptID)
+        engine = try c.decode(String.self, forKey: .engine, default: d.engine)
+        ollama = try c.decode(LLMOllamaConfig.self, forKey: .ollama, default: d.ollama)
+        openai = try c.decode(LLMOpenAIConfig.self, forKey: .openai, default: d.openai)
+    }
+}
+
+extension LLMOllamaConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMOllamaConfig()
+        baseUrl = try c.decode(String.self, forKey: .baseUrl, default: d.baseUrl)
+        model = try c.decode(String.self, forKey: .model, default: d.model)
+        temperature = try c.decode(Double.self, forKey: .temperature, default: d.temperature)
+        numPredict = try c.decode(Int.self, forKey: .numPredict, default: d.numPredict)
+    }
+}
+
+extension LLMOpenAIConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMOpenAIConfig()
+        apiKey = try c.decode(String.self, forKey: .apiKey, default: d.apiKey)
+        model = try c.decode(String.self, forKey: .model, default: d.model)
+        baseUrl = try c.decode(String.self, forKey: .baseUrl, default: d.baseUrl)
+        temperature = try c.decode(Double.self, forKey: .temperature, default: d.temperature)
+    }
+}
+
+extension LLMPromptConfig {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMPromptConfig()
+        system = try c.decode(String.self, forKey: .system, default: d.system)
+        user = try c.decode(String.self, forKey: .user, default: d.user)
+    }
+}
+
+extension LLMPromptPreset {
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let d = LLMPromptPreset()
+        id = try c.decode(String.self, forKey: .id, default: d.id)
+        name = try c.decode(String.self, forKey: .name, default: d.name)
+        system = try c.decode(String.self, forKey: .system, default: d.system)
+        user = try c.decode(String.self, forKey: .user, default: d.user)
+    }
+}

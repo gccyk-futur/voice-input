@@ -41,7 +41,7 @@ final class OpenAICompatibleEngine: LLMEngine, @unchecked Sendable {
 #if APP_STORE
         guard let base = URL(string: urlStr) else {
             return AsyncThrowingStream { continuation in
-                continuation.finish(throwing: NSError(domain: "LLM", code: -1, userInfo: [NSLocalizedDescriptionKey: "未配置有效的 API 地址"]))
+                continuation.finish(throwing: NSError(domain: "LLM", code: -1, userInfo: [NSLocalizedDescriptionKey: VoiceKitLocalization.string("未配置有效的 API 地址")]))
             }
         }
 #else

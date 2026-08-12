@@ -13,6 +13,8 @@ private enum ContactInfo {
 }
 
 struct SettingsView: View {
+    /// 窗口控制器桥：同步未保存变更状态，接收红叉关闭的确认请求
+    var bridge: SettingsWindowBridge? = nil
     var onDone: () -> Void = {}
     var onTabChange: (Int) -> Void = { _ in }
 
@@ -22,6 +24,13 @@ struct SettingsView: View {
     @AppStorage("voicekit.settings.selectedPane") private var selectedPaneRawValue = SettingsPane.general.rawValue
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @AppStorage("voicekit.ui.appearance") private var appearanceRawValue = VoiceKitAppearance.system.rawValue
+    /// 界面语言偏好：空字符串 = 跟随系统；否则为 lproj 目录名（zh-Hans/en/…）。
+    /// 与外观/文字大小一样是即时生效的 UI 偏好，但语言包在下次启动才加载，
+    /// 所以改动后提示重启（NSLocalizedString 由系统按 AppleLanguages 解析）。
+    @AppStorage("voicekit.ui.language") private var languageRawValue = ""
+    /// 本次启动时的语言偏好，用于判断改动后是否需要提示重启
+    private let launchedLanguageRawValue = UserDefaults.standard.string(forKey: "voicekit.ui.language") ?? ""
+    @State private var languageNeedsRestart = false
     @State private var selectedPane = SettingsPane.general
     @State private var showAPIKey = false
     @State private var permissionRefreshID = UUID()
@@ -66,72 +75,39 @@ struct SettingsView: View {
     @State private var showDiscardAlert = false
 
     var body: some View {
-        NavigationSplitView {
-            List(SettingsPane.allCases, selection: $selectedPane) { pane in
-                Label(pane.title, systemImage: pane.systemImage)
-                    .tag(pane)
-                    .padding(.leading, pane.isSubpane ? 16 : 0)
-            }
-            .listStyle(.sidebar)
-            .font(typography.body)
-            .navigationTitle("设置")
-            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
-        } detail: {
-            VStack(spacing: 0) {
-                if hasChanges {
-                    HStack(spacing: 6) {
-                        Image(systemName: "pencil.circle.fill")
-                        Text("有未保存的变更")
-                    }
-                    .font(typography.callout)
-                    .foregroundStyle(.orange)
-                    .padding(.vertical, 8)
-                    .padding(.horizontal, 14)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.orange.opacity(0.08))
-                }
-
-                // 内容列限宽居中，标题与分组卡片左缘对齐（系统设置的版式）
-                VStack(alignment: .leading, spacing: 0) {
-                    paneHeader
-                        .padding(.leading, 20)
-                        .padding(.top, 16)
-
-                    Form {
-                        paneContent
-                    }
-                    .formStyle(.grouped)
-                }
-                .frame(maxWidth: 640)
-                .frame(maxWidth: .infinity)
-
-                Divider()
-
-                // 带显式保存的偏好设置窗口惯例：操作按钮固定在右下角
-                HStack(spacing: 10) {
-                    Spacer()
-                    Button("关闭") { closeSettings() }
-                        .keyboardShortcut(.cancelAction)
-                    Button("保存") { save() }
-                        .disabled(!hasChanges)
-                        .keyboardShortcut(.defaultAction)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-            }
-            .font(typography.body)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        HStack(spacing: 0) {
+            sidebarColumn
+            Divider()
+            detailColumn
         }
         .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 580)
         .voiceKitTextScale(selectedTextScale)
-        .toolbar(removing: .sidebarToggle)
         .onAppear {
             selectedPane = SettingsPane.restored(from: selectedPaneRawValue)
             onTabChange(selectedPane.index)
+            bridge?.hasChanges = hasChanges
         }
         .onChange(of: selectedPane) { _, newPane in
             selectedPaneRawValue = newPane.rawValue
             onTabChange(newPane.index)
+        }
+        // 未保存变更状态同步给窗口控制器（红叉关闭确认用）
+        .onChange(of: hasChanges) { _, newValue in
+            bridge?.hasChanges = newValue
+        }
+        // 红叉/Cmd+W 被控制器拦截后，这里弹出与「关闭」按钮一致的确认框
+        .onChange(of: bridge?.discardConfirmationRequested ?? false) { _, requested in
+            guard requested else { return }
+            bridge?.discardConfirmationRequested = false
+            showDiscardAlert = true
+        }
+        // 设置页打开期间，状态栏菜单等外部路径改了配置：
+        // 没有本地未保存变更时刷新快照，避免保存时把外部修改覆盖回去。
+        .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
+            guard !hasChanges else { return }
+            let latest = ConfigStore.shared.config
+            draft = latest
+            originalConfig = latest
         }
         .alert("保存失败", isPresented: $showValidationAlert) {
             Button("好", role: .cancel) {}
@@ -229,6 +205,72 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - 布局
+
+    /// 侧边栏：SDK 原生 .sidebar 样式（选中态/分隔样式都在），
+    /// 但刻意不用 NavigationSplitView——它在 macOS 26 的手工 NSWindow 里
+    /// 会裁切侧栏首行，且折叠按钮要靠遍历 NSToolbar 的 hack 移除。
+    /// 固定宽度侧栏 + Divider + detail 的结构更稳定，版式完全可控。
+    private var sidebarColumn: some View {
+        List(SettingsPane.allCases, selection: $selectedPane) { pane in
+            Label(pane.title, systemImage: pane.systemImage)
+                .tag(pane)
+                .padding(.leading, pane.isSubpane ? 16 : 0)
+        }
+        .listStyle(.sidebar)
+        .font(typography.body)
+        .frame(width: 200 * selectedTextScale.multiplier)
+    }
+
+    private var detailColumn: some View {
+        VStack(spacing: 0) {
+            if hasChanges {
+                HStack(spacing: 6) {
+                    Image(systemName: "pencil.circle.fill")
+                    Text("有未保存的变更")
+                }
+                .font(typography.callout)
+                .foregroundStyle(.orange)
+                .padding(.vertical, 8)
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.orange.opacity(0.08))
+            }
+
+            // 内容列限宽居中，标题与分组卡片左缘对齐（系统设置的版式）
+            VStack(alignment: .leading, spacing: 0) {
+                paneHeader
+                    .padding(.leading, 20)
+                    .padding(.top, 16)
+
+                Form {
+                    paneContent
+                }
+                .formStyle(.grouped)
+                // 切换页面时重建 Form：否则滚动位置/内部状态跨页残留，版式看起来错乱
+                .id(selectedPane)
+            }
+            .frame(maxWidth: 640)
+            .frame(maxWidth: .infinity)
+
+            Divider()
+
+            // 带显式保存的偏好设置窗口惯例：操作按钮固定在右下角
+            HStack(spacing: 10) {
+                Spacer()
+                Button("关闭") { closeSettings() }
+                    .keyboardShortcut(.cancelAction)
+                Button("保存") { save() }
+                    .disabled(!hasChanges)
+                    .keyboardShortcut(.defaultAction)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 10)
+        }
+        .font(typography.body)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
     private var selectedTextScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
     }
@@ -282,6 +324,34 @@ struct SettingsView: View {
         ("Submarine", "Submarine"), ("Tink", "Tink"),
     ]
 
+    // MARK: - 界面语言
+
+    /// 可选界面语言：code 为 lproj 目录名（即 AppleLanguages 取值），
+    /// name 用各语言自称（这部分不需要本地化）。
+    private static let availableLanguages: [(code: String, name: String)] = [
+        ("zh-Hans", "简体中文"),
+        ("zh-Hant", "繁體中文"),
+        ("en", "English"),
+        ("de", "Deutsch"),
+        ("es", "Español"),
+        ("fr", "Français"),
+        ("it", "Italiano"),
+        ("ja", "日本語"),
+        ("ko", "한국어"),
+        ("pt-BR", "Português (Brasil)"),
+    ]
+
+    /// 写入 AppleLanguages 覆盖系统语言；空值恢复跟随系统。
+    /// 语言包在下次启动时由系统解析，故改动后提示重启。
+    private func applyLanguagePreference(_ raw: String) {
+        if raw.isEmpty {
+            UserDefaults.standard.removeObject(forKey: "AppleLanguages")
+        } else {
+            UserDefaults.standard.set([raw], forKey: "AppleLanguages")
+        }
+        languageNeedsRestart = (raw != launchedLanguageRawValue)
+    }
+
     // MARK: - 常规
 
     private var generalTab: some View {
@@ -304,6 +374,24 @@ struct SettingsView: View {
             }
 
             Section {
+                Picker("语言", selection: $languageRawValue) {
+                    Text("跟随系统").tag("")
+                    ForEach(Self.availableLanguages, id: \.code) { lang in
+                        Text(lang.name).tag(lang.code)
+                    }
+                }
+                .onChange(of: languageRawValue) { _, newValue in
+                    applyLanguagePreference(newValue)
+                }
+                if languageNeedsRestart {
+                    HStack(spacing: 8) {
+                        Text("界面语言将在重启 VoiceKit 后生效。")
+                            .font(typography.callout)
+                            .foregroundStyle(.secondary)
+                        Spacer(minLength: 0)
+                        Button("现在重启 VoiceKit") { restartApplication() }
+                    }
+                }
                 Picker("外观", selection: $appearanceRawValue) {
                     ForEach(VoiceKitAppearance.allCases, id: \.rawValue) { appearance in
                         Text(appearance.title).tag(appearance.rawValue)
@@ -395,16 +483,16 @@ struct SettingsView: View {
             Section {
                 engineRow("system",
                           title: VoiceKitLocalization.string("系统听写"),
-                          desc: VoiceKitLocalization.string("macOS 内置语音识别，免费无需联网"))
+                          desc: VoiceKitLocalization.string("macOS 内置语音识别，免费、无需配置即可使用"))
                 engineRow("aliyun",
                           title: VoiceKitLocalization.string("阿里云 Fun-ASR"),
-                          desc: VoiceKitLocalization.string("高精度、自动标点，需阿里云百炼 API Key（需中国大陆实名）"))
+                          desc: VoiceKitLocalization.string("高精度、自动标点，支持长连续口述；需阿里云百炼 API Key"))
                 engineRow("xunfei",
                           title: VoiceKitLocalization.string("讯飞听写"),
-                          desc: VoiceKitLocalization.string("中文高精度、支持动态修正，需讯飞开放平台 AppID/APIKey/APISecret（需中国大陆手机号）"))
+                          desc: VoiceKitLocalization.string("中文高精度、支持动态修正；仅支持中/英文，单次会话约 60 秒上限（到时自动写入已识别内容）；需讯飞开放平台凭据"))
                 engineRow("deepgram",
                           title: "Deepgram",
-                          desc: VoiceKitLocalization.string("海外高精度实时识别，需 Deepgram API Key（邮箱注册）"))
+                          desc: VoiceKitLocalization.string("多语言高精度实时识别，支持长连续口述；需 Deepgram API Key"))
             } header: {
                 Text("识别引擎")
             } footer: {
@@ -589,7 +677,7 @@ struct SettingsView: View {
                 } header: {
                     Text("API 配置")
                 } footer: {
-                    Text("在 console.deepgram.com 注册后创建 API Key，新账号自带免费额度。")
+                    Text("在 console.deepgram.com 创建 API Key。")
                 }
             }
         }
@@ -893,7 +981,7 @@ struct SettingsView: View {
                 let engine = AppCoordinator.buildLLMEngine(from: model, temperature: temperature)
                 do {
                     var acc = ""
-                    let stream = engine.polish("ping", system: "回复 OK", userTemplate: "回复 OK")
+                    let stream = engine.polish("ping", system: VoiceKitLocalization.string("回复 OK"), userTemplate: VoiceKitLocalization.string("回复 OK"))
                     for try await chunk in stream { acc += chunk }
                     let elapsed = Int(Date().timeIntervalSince(start) * 1000)
                     let tokens = engine.lastPromptTokens + engine.lastCompletionTokens
@@ -1032,7 +1120,7 @@ struct SettingsView: View {
                     Image(systemName: "trash")
                 }
                 .buttonStyle(.borderless)
-                .accessibilityLabel("删除提示词 \(name)")
+                .accessibilityLabel(VoiceKitLocalization.format("删除提示词 %@", name))
             }
         }
         .padding(.vertical, 2)
@@ -1044,7 +1132,7 @@ struct SettingsView: View {
     private func addPromptPreset() {
         let base = draft.llm.activePrompt
         let new = LLMPromptPreset(
-            name: "提示词 \(draft.llm.prompts.count + 1)",
+            name: VoiceKitLocalization.format("提示词 %lld", draft.llm.prompts.count + 1),
             system: base.system,
             user: base.user
         )
@@ -1595,7 +1683,7 @@ struct SettingsView: View {
             }
             .buttonStyle(.borderless)
             .help("复制")
-            .accessibilityLabel("复制 \(value)")
+            .accessibilityLabel(VoiceKitLocalization.format("复制 %@", value))
         }
     }
 }
@@ -1615,7 +1703,7 @@ private struct PromptPreviewSheet: View {
 
     var body: some View {
         let tmpl = PromptTemplate(system: systemPrompt, user: userTemplate)
-        let (sys, usr) = tmpl.render(input: "今天天气真好我们出去走走吧", language: language, engine: engine)
+        let (sys, usr) = tmpl.render(input: VoiceKitLocalization.string("今天天气真好我们出去走走吧"), language: language, engine: engine)
 
         VStack(alignment: .leading, spacing: 12) {
             Text("提示词预览").font(typography.sectionTitle)
@@ -1740,7 +1828,7 @@ private struct LLMTestSheet: View {
                     acc += chunk
                 }
                 await MainActor.run {
-                    resultText = acc.isEmpty ? "(返回为空)" : acc
+                    resultText = acc.isEmpty ? VoiceKitLocalization.string("(返回为空)") : acc
                     isRunning = false
                 }
             } catch {

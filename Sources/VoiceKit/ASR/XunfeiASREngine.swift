@@ -18,6 +18,19 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     }
     private var _onFailure: (@Sendable (Error) -> Void)?
 
+    /// 连接状态变化回调（连接中…/已连接/已断开），供状态栏指示灯展示。
+    var onConnectionChange: (@Sendable (Bool, String) -> Void)? {
+        get { stateLock.withLock { _onConnectionChange } }
+        set { stateLock.withLock { _onConnectionChange = newValue } }
+    }
+    private var _onConnectionChange: (@Sendable (Bool, String) -> Void)?
+
+    /// 触发连接状态回调（锁外执行）
+    private func notifyConnectionChange(_ connected: Bool, _ status: String) {
+        let cb = stateLock.withLock { _onConnectionChange }
+        cb?(connected, status)
+    }
+
     // MARK: - 状态锁 — 保护所有跨线程访问的 mutable 状态
 
     private let stateLock = NSLock()
@@ -52,6 +65,9 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
     private var _receiveTask: Task<Void, Never>?
+    /// 启动期（_sessionActive 尚未置位）发生的致命错误：由 start() 抛出，
+    /// 走启动失败的单一错误通道，避免 onFailure 与 start 抛错双重上报。
+    private var _startupError: Error?
 
     init(appId: String, apiKey: String, apiSecret: String,
          dynamicCorrection: Bool = true,
@@ -104,6 +120,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
             _sessionActive = false
             _firstFrameSent = false
             _serverDone = false
+            _startupError = nil
             _language = lang
             _audioGate = gate
             _onPartial = onPartial
@@ -115,6 +132,12 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
         do {
             try await startAudioCapture(gate: gate)
             try await connect(timeout: 5)
+
+            // 启动期（连接建立前）发生的致命错误（预缓冲溢出、音频路由中断等）
+            // 已由 failSession 记录，这里抛出，走启动失败的单一错误通道。
+            if let startupError = stateLock.withLock({ _startupError }) {
+                throw startupError
+            }
 
             let stopWasRequested = stateLock.withLock {
                 _sessionActive = true
@@ -132,6 +155,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
             }
             Log.info("[Xunfei] 音频预缓冲已排空，进入实时发送")
         } catch {
+            capture.stop()
             gate.discard()
             stateLock.withLock {
                 if _audioGate === gate { _audioGate = nil }
@@ -184,6 +208,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
             self._isConnected = false
         }
         task.resume()
+        notifyConnectionChange(false, VoiceKitLocalization.string("连接中…"))
         Log.info("[Xunfei] 正在连接 WebSocket…")
 
         let timeoutTask = Task { [weak self] in
@@ -238,10 +263,14 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private func sendAudioData(_ bytes: Data) {
         let (task, isFirst, lang, wpgs) = stateLock.withLock { () -> (URLSessionWebSocketTask?, Bool, String, Bool) in
             let first = !_firstFrameSent
-            if first { _firstFrameSent = true }
             return (webSocketTask, first, _language, dynamicCorrection && _language == "zh_cn")
         }
+        // 首帧标志必须在确认 task 存在后才消耗：否则 teardown 恰好发生在排空窗口时，
+        // 含 common/business 的首帧没发出去但标志已置位，后续帧全是 status 1，服务端报错。
         guard let task else { return }
+        if isFirst {
+            stateLock.withLock { _firstFrameSent = true }
+        }
 
         var payload: [String: Any] = [
             "data": [
@@ -320,6 +349,8 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
         receiveTask?.cancel()
         wsTask?.cancel(with: .goingAway, reason: nil)
         urlSession?.invalidateAndCancel()
+        // 本地主动取消不一定触发 didClose，这里兜底一次断开状态
+        notifyConnectionChange(false, VoiceKitLocalization.string("已断开"))
     }
 
     // MARK: - 音频
@@ -360,10 +391,17 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     }
 
     /// 录音中发生不可恢复错误：停采集、解开等待者、通知上层。best-effort，不抛错。
+    /// 启动期（_sessionActive 未置位）不触发 onFailure——start() 尚未返回，
+    /// 错误记入 _startupError 由 start() 抛出，避免与 start 的错误通道双重上报。
     private func failSession(_ error: Error) {
         capture.stop()
         let (waiters, failureCB, wasActive) = stateLock.withLock { () -> ([CheckedContinuation<Void, Never>], (@Sendable (Error) -> Void)?, Bool) in
             let active = _sessionActive
+            if !active {
+                if _startupError == nil { _startupError = error }
+                _audioGate?.discard()
+                _audioGate = nil
+            }
             _sessionActive = false
             let w = _stopWaiters
             _stopWaiters.removeAll()
@@ -422,18 +460,28 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
         }
     }
 
-    /// 接收循环结束：正常收尾（stop 流程）不报错；录音中意外断开则 failSession。
+    /// 接收循环结束：正常收尾（stop 流程）不报错；录音中意外断开时，
+    /// 若已有识别文本（如讯飞 60s 会话上限被服务端强制断开），改走自动停止
+    /// 通道让上层按正常 finalize 保留文字；无文本才按失败上报。
     private func receiveLoopEnded() {
-        let (unexpected, failureCB) = stateLock.withLock { () -> (Bool, (@Sendable (Error) -> Void)?) in
+        let (unexpected, failureCB, autoStopCB, text) = stateLock.withLock {
+            () -> (Bool, (@Sendable (Error) -> Void)?, (@Sendable () -> Bool)?, String) in
             let unexpected = _sessionActive && !_stopRequested && !_serverDone
-            return (unexpected, _onFailure)
+            return (unexpected, _onFailure, _onAutoStop, _assembler.text)
         }
         resolveStopWaiters()
-        if unexpected {
-            capture.stop()
-            Log.error("[Xunfei] 录音中连接意外断开")
-            failureCB?(XunfeiASRError.notConnected)
+        guard unexpected else { return }
+        capture.stop()
+        if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+           let autoStopCB, autoStopCB() {
+            Log.info("[Xunfei] 连接意外断开但已有识别文本，转正常结束流程")
+            // 连接已死：直接 teardown，stop() 会走「非活跃」分支立即返回已识别文本，
+            // 不再向已断开的连接发 status 2 空等 3s。
+            teardownConnection()
+            return
         }
+        Log.error("[Xunfei] 录音中连接意外断开")
+        failureCB?(XunfeiASRError.notConnected)
     }
 }
 
@@ -449,6 +497,7 @@ extension XunfeiASREngine: URLSessionWebSocketDelegate {
         }
         guard isCurrent else { return }
         Log.info("[Xunfei] WebSocket 已连接")
+        notifyConnectionChange(true, VoiceKitLocalization.string("已连接"))
         var cont: CheckedContinuation<Void, Error>?
         stateLock.withLock {
             cont = _connectCont
@@ -468,6 +517,7 @@ extension XunfeiASREngine: URLSessionWebSocketDelegate {
         }
         guard isCurrent else { return }
         Log.info("[Xunfei] WebSocket 关闭 code=\(closeCode.rawValue)")
+        notifyConnectionChange(false, VoiceKitLocalization.string("已断开"))
         var cont: CheckedContinuation<Void, Error>?
         stateLock.withLock {
             cont = _connectCont
