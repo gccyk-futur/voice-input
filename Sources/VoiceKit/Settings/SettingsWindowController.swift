@@ -45,6 +45,12 @@ final class SettingsWindowController: NSObject {
                                                                onTabChange: { [weak self] tab in self?.updateTitle(for: tab) }))
         win.isReleasedWhenClosed = false
         win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        // Surge 式无边标题栏：内容延伸到窗口顶部，侧栏底灰透到红绿灯区域，
+        // 标题文字隐藏（各面板自带标题）。SwiftUI 根视图遵守安全区，
+        // 侧栏首行不会被红绿灯遮挡。
+        win.styleMask.insert(.fullSizeContentView)
+        win.titlebarAppearsTransparent = true
+        win.titleVisibility = .hidden
         // 与 SwiftUI 根视图的 .frame(minWidth: 760, minHeight: 520) 保持一致：
         // 此前 720×480 与内容最小尺寸冲突，Auto Layout 约束打架导致切换页面时版式错乱。
         win.minSize = NSSize(width: 760, height: 520)

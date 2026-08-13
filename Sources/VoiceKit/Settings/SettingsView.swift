@@ -77,9 +77,11 @@ struct SettingsView: View {
     var body: some View {
         HStack(spacing: 0) {
             sidebarColumn
-            Divider()
             detailColumn
+                // 内容区作为白色圆角卡片浮在窗口底色上（macOS 26 Finder 版式）
+                .padding(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
         }
+        .background(Color(nsColor: .windowBackgroundColor))
         .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 580)
         .voiceKitTextScale(selectedTextScale)
         .onAppear {
@@ -210,7 +212,8 @@ struct SettingsView: View {
     /// 侧边栏：SDK 原生 .sidebar 样式（选中态/分隔样式都在），
     /// 但刻意不用 NavigationSplitView——它在 macOS 26 的手工 NSWindow 里
     /// 会裁切侧栏首行，且折叠按钮要靠遍历 NSToolbar 的 hack 移除。
-    /// 固定宽度侧栏 + Divider + detail 的结构更稳定，版式完全可控。
+    /// 侧栏做成悬浮圆角面板（系统 .sidebar 材质），内容区为白色圆角卡片，
+    /// 即 macOS 26 Finder 的版式；结构稳定，版式完全可控。
     private var sidebarColumn: some View {
         List(SettingsPane.allCases, selection: $selectedPane) { pane in
             Label(pane.title, systemImage: pane.systemImage)
@@ -219,6 +222,19 @@ struct SettingsView: View {
         }
         .listStyle(.sidebar)
         .font(typography.body)
+        // 隐藏 List 自带背景，垫系统 .sidebar 材质（withinWindow 混合：
+        // 与窗口白底混合，颜色与 Finder/系统设置侧栏完全一致，
+        // 不透桌面、不受壁纸影响；跟随窗口激活态变浅灰是系统标准行为）
+        .scrollContentBackground(.hidden)
+        .background(SidebarMaterialBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
+        )
+        // 极轻投影制造「浮在窗口上」的层次
+        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .padding(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 0))
         .frame(width: 200 * selectedTextScale.multiplier)
     }
 
@@ -269,6 +285,13 @@ struct SettingsView: View {
         }
         .font(typography.body)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        // 圆角内容卡片：白色底 + 细描边（深色模式自动取深色语义色）
+        .background(Color(nsColor: .windowBackgroundColor),
+                    in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
     }
 
     private var selectedTextScale: VoiceKitTextScale {
@@ -2033,4 +2056,19 @@ private struct PromptEditorSheet: View {
             content()
         }
     }
+}
+
+/// 侧栏悬浮面板的背景：NSVisualEffectView 的 .sidebar 材质。
+/// withinWindow 混合（与窗口白底混合）= 与 Finder/系统设置侧栏完全同款颜色，
+/// 不透桌面、不受壁纸影响；跟随窗口激活态与深浅色外观。
+private struct SidebarMaterialBackground: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .sidebar
+        view.blendingMode = .withinWindow
+        view.state = .followsWindowActiveState
+        return view
+    }
+
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

@@ -19,6 +19,13 @@ SCHEME="VoiceKit"
 PROJECT="VoiceKit.xcodeproj"
 DERIVED_DATA=$(xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showBuildSettings 2>/dev/null | grep "BUILD_DIR" | head -1 | awk '{print $3}' || echo "")
 
+# 每次打包（含本地测试）构建号 +1：状态栏菜单显示版本号，
+# 自增确保随时能确认本机运行的是哪一次构建
+OLD_BUILD=$(grep -oE 'CFBundleVersion: "[0-9]+"' project.yml | grep -oE '[0-9]+' | head -1)
+NEW_BUILD=$((OLD_BUILD + 1))
+sed -i '' "s/CFBundleVersion: \"${OLD_BUILD}\"/CFBundleVersion: \"${NEW_BUILD}\"/" project.yml
+echo "📦 Build #: ${OLD_BUILD} → ${NEW_BUILD}"
+
 # xcodegen 生成工程
 if [ ! -d "$PROJECT" ]; then
     echo "🔧 生成 Xcode 工程..."
