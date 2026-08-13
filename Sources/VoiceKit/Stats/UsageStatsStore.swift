@@ -51,6 +51,11 @@ final class UsageStatsStore: @unchecked Sendable {
         /// 服务端未返回 usage（如 Ollama）时为 nil
         var promptTokens: Int?
         var completionTokens: Int?
+        /// 从发起请求到收到第一个 token 的耗时。
+        /// 本地模型（Ollama）冷启动要把权重读进内存，这段时间会全部落在首字上；
+        /// 与 latency 分开记录，才不会让「模型加载」污染「生成速度」的统计。
+        var firstTokenLatency: Double
+        /// 请求发起到流结束的总耗时（含首字等待）。
         var latency: Double
         var chars: Int
     }
@@ -76,7 +81,11 @@ final class UsageStatsStore: @unchecked Sendable {
         var asr = asr, llm = llm
         asr.duration = Self.round(asr.duration, 2)      // 10ms 分辨率足够
         asr.stopLatency = Self.round(asr.stopLatency, 3) // 毫秒级——丢字诊断要看这个
-        if var l = llm { l.latency = Self.round(l.latency, 2); llm = l }
+        if var l = llm {
+            l.latency = Self.round(l.latency, 2)
+            l.firstTokenLatency = Self.round(l.firstTokenLatency, 2)
+            llm = l
+        }
         let record = Record(ts: Self.timestamp(Date()), asr: asr, llm: llm)
         queue.async { [fileURL] in
             let encoder = JSONEncoder()

@@ -442,8 +442,10 @@ final class AppCoordinator {
             Log.info("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
             Log.info("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
             let llmStartedAt = Date()
+            var firstTokenAt: Date?
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
+                    if firstTokenAt == nil { firstTokenAt = Date() }
                     llmBuffer += chunk
                 }
                 stopDisplaySync()
@@ -462,6 +464,7 @@ final class AppCoordinator {
                     // 0 会被统计成「消耗为零」，nil 才是「未知」。
                     promptTokens: llm.lastPromptTokens > 0 ? llm.lastPromptTokens : nil,
                     completionTokens: llm.lastCompletionTokens > 0 ? llm.lastCompletionTokens : nil,
+                    firstTokenLatency: (firstTokenAt ?? Date()).timeIntervalSince(llmStartedAt),
                     latency: Date().timeIntervalSince(llmStartedAt),
                     chars: llmBuffer.count
                 )
