@@ -10,6 +10,17 @@ import Foundation
 /// - 不引入任何第三方依赖。
 enum Log {
     private static let queue = DispatchQueue(label: "com.voicemate.log")
+    /// 供设置页展示与清空（本地数据一览）。
+    static var currentFileURL: URL? { fileURL }
+
+    /// 清空日志文件。
+    static func clear() {
+        queue.async {
+            guard let url = fileURL else { return }
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
     private static let fileURL: URL? = {
         let fm = FileManager.default
         guard let logs = fm.urls(for: .libraryDirectory, in: .userDomainMask).first?

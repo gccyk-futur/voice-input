@@ -17,6 +17,10 @@ struct GeneralConfig: Codable, Equatable {
     var showSettingsOnLaunch: Bool = true
     var windowStyle: String = "vibrancy"
     var maxHistoryCount: Int = 50
+    /// 使用统计：仅记录时长、字数、引擎等元数据，不含任何文字内容，仅存本机。
+    /// 默认开启——统计模块依赖历史数据，默认关闭会导致功能上线时一片空白；
+    /// 且其敏感度低于始终开启的运行日志（后者含转录原文）。
+    var usageStatsEnabled: Bool = true
     var sound: SoundConfig = .init()
 }
 
@@ -213,6 +217,7 @@ extension GeneralConfig {
         showSettingsOnLaunch = try c.decode(Bool.self, forKey: .showSettingsOnLaunch, default: d.showSettingsOnLaunch)
         windowStyle = try c.decode(String.self, forKey: .windowStyle, default: d.windowStyle)
         maxHistoryCount = try c.decode(Int.self, forKey: .maxHistoryCount, default: d.maxHistoryCount)
+        usageStatsEnabled = try c.decode(Bool.self, forKey: .usageStatsEnabled, default: d.usageStatsEnabled)
         sound = try c.decode(SoundConfig.self, forKey: .sound, default: d.sound)
     }
 }

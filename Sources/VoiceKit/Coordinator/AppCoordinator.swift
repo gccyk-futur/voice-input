@@ -28,6 +28,10 @@ final class AppCoordinator {
     var recordingStartedAt: Date?
     /// 当前引擎的单次会话上限（秒），无上限为 nil。
     var sessionMaxDuration: TimeInterval?
+    /// 本次会话如何结束，用于使用统计：manual / silence / cancelled / failed。
+    private var stopReason: String = "manual"
+    /// 请求停止的时刻，用于统计「等待引擎返回最终文本」的耗时。
+    private var stopRequestedAt: Date?
     /// 当前选择的 ASR 引擎 id（"system" | "aliyun"）。
     var asrEngineChoice: String = "system"
     /// 阿里云是否已配置 apiKey/workspaceId（决定是否显示双引擎切换）。
@@ -278,6 +282,7 @@ final class AppCoordinator {
         let onSilence: (@Sendable () -> Bool)? = { [weak self] in
             Task { @MainActor [weak self] in
                 guard let self, self.sessionState == .recording else { return }
+                self.stopReason = "silence"
                 self.stopAndProcess()
             }
             return true
@@ -329,6 +334,7 @@ final class AppCoordinator {
                 }
                 self.recordingStartedAt = Date()
                 self.sessionMaxDuration = engine.maxSessionDuration
+                self.stopReason = "manual"
                 self.sessionState = .recording
                 self.statusText = VoiceKitLocalization.string("聆听中…")
                 self.recoveryNotice = nil
@@ -364,6 +370,7 @@ final class AppCoordinator {
             return
         }
         engineOperationInFlight = true
+        stopRequestedAt = Date()
         sessionState = .transcribing
         statusText = VoiceKitLocalization.string("转写中…")
         let pendingStart = engineStartTask
@@ -403,10 +410,19 @@ final class AppCoordinator {
 
     private func handleFinal(asr final: String) async {
         asrText = final
+        // 使用统计：在 reset() 清空状态前先把识别段的量取下来。
+        let statsEngine = asrEngine?.id ?? "unknown"
+        let statsDuration = recordingStartedAt.flatMap { start in
+            (stopRequestedAt ?? Date()).timeIntervalSince(start)
+        } ?? 0
+        let statsStopLatency = stopRequestedAt.map { Date().timeIntervalSince($0) } ?? 0
+        var statsLLM: UsageStatsStore.LLMSegment?
         // 未识别到任何内容：不进入润色/粘贴流程，直接关闭复位。
         // 既避免"空粘贴"打断用户，也避免空字符串写入/覆盖剪贴板。
         if final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Log.info("[Coordinator] ASR 结果为空，跳过润色/粘贴")
+            recordUsage(engine: statsEngine, duration: statsDuration, chars: 0,
+                        stopLatency: statsStopLatency, llm: nil)
             await MainActor.run {
                 self.reset()
                 self.statusText = VoiceKitLocalization.string("未识别到内容")
@@ -425,6 +441,7 @@ final class AppCoordinator {
             let (sys, usr) = tmpl.render(input: final, language: cfg.asr.system.language, engine: llm.id)
             Log.info("[LLM] 模型=\(cfg.llm.selectedModel?.name ?? "?") 引擎=\(llm.id) url=\(cfg.llm.selectedModel?.baseUrl ?? "?") model=\(cfg.llm.selectedModel?.model ?? "?")")
             Log.info("[LLM] system=\(sys.prefix(80))... user=\(usr.prefix(80))...")
+            let llmStartedAt = Date()
             do {
                 for try await chunk in llm.polish(final, system: sys, userTemplate: usr) {
                     llmBuffer += chunk
@@ -437,6 +454,17 @@ final class AppCoordinator {
                 if total > 0, !cfg.llm.selectedModelID.isEmpty {
                     configStore.addLLMTokenUsage(modelID: cfg.llm.selectedModelID, tokens: total)
                 }
+                statsLLM = UsageStatsStore.LLMSegment(
+                    model: cfg.llm.selectedModel?.model ?? cfg.llm.selectedModel?.name ?? llm.id,
+                    template: cfg.llm.prompts.first { $0.id == cfg.llm.selectedPromptID }?.name
+                        ?? VoiceKitLocalization.string("默认"),
+                    // Ollama 等不返回 usage 的服务记为 nil，而不是 0——
+                    // 0 会被统计成「消耗为零」，nil 才是「未知」。
+                    promptTokens: llm.lastPromptTokens > 0 ? llm.lastPromptTokens : nil,
+                    completionTokens: llm.lastCompletionTokens > 0 ? llm.lastCompletionTokens : nil,
+                    latency: Date().timeIntervalSince(llmStartedAt),
+                    chars: llmBuffer.count
+                )
             } catch {
                 stopDisplaySync()
                 Log.error("[LLM] 润色失败: \(error)")
@@ -446,12 +474,25 @@ final class AppCoordinator {
         } else {
             sessionState = .ready
         }
+        recordUsage(engine: statsEngine, duration: statsDuration, chars: final.count,
+                    stopLatency: statsStopLatency, llm: statsLLM)
         // 到达就绪态：自动粘贴
         await MainActor.run {
             let sound = self.configStore.config.general.sound
             self.playSound(named: sound.stopSound, enabled: sound.stop)
             self.confirmPaste()
         }
+    }
+
+    /// 写入一条使用统计（仅元数据，不含任何文字内容；用户可在设置中关闭）。
+    private func recordUsage(engine: String, duration: Double, chars: Int,
+                             stopLatency: Double, llm: UsageStatsStore.LLMSegment?) {
+        guard configStore.config.general.usageStatsEnabled else { return }
+        UsageStatsStore.shared.append(
+            asr: .init(engine: engine, duration: duration, chars: chars,
+                       stopReason: stopReason, stopLatency: stopLatency),
+            llm: llm
+        )
     }
 
     func confirmPaste() {

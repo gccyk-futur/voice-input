@@ -4,7 +4,10 @@
 
 ## 我们收集什么
 
-**什么都不收集。** VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不统计使用情况。
+**不向任何地方上传。** VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不会把语音、文字或使用数据发送给作者或第三方。
+
+下表中的文件全部只存在于你自己的 Mac 上。其中「使用统计」用于将来在应用内展示你自己的使用情况，
+默认开启、可随时在「设置 → 隐私 → 本地数据」中关闭、导出或清空。
 
 ## 数据存储在哪
 
@@ -14,6 +17,8 @@
 |------|------|------|
 | 配置（含 API Key） | `~/Library/Application Support/VoiceMate/config.json` | JSON 明文，仅本机用户有读取权限 |
 | 历史记录 | `~/Library/Application Support/VoiceMate/history.json` | 最近若干条识别结果 |
+| 运行日志 | `~/Library/Logs/VoiceKit/voicekit.log` | 用于排查问题，**含转录原文**；超过 2MB 自动覆盖较早内容 |
+| 使用统计 | `~/Library/Application Support/VoiceMate/stats.jsonl` | 仅时长、字数、引擎、耗时等元数据，**不含任何文字内容**；可在设置中关闭 |
 | Keychain | 未使用 | API Key 直接存于 config.json，不经过 macOS Keychain |
 
 App Store 版运行在沙盒中，上述文件位于应用自己的容器目录内，路径结构相同。
