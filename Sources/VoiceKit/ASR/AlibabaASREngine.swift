@@ -534,7 +534,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 _stopWaiters.append(cont)
                 if _stoppedTimeoutTask == nil {
                     _stoppedTimeoutTask = Task { [weak self] in
-                        try? await Task.sleep(nanoseconds: 5_000_000_000)
+                        try? await Task.sleep(nanoseconds: 8_000_000_000)   // 与讯飞/Deepgram 统一：宁可多等，不可丢字
                         guard !Task.isCancelled else { return }
                         self?.finishWaitTimedOut(taskID: taskID)
                     }

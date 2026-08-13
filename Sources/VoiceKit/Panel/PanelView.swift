@@ -28,20 +28,31 @@ struct PanelView: View {
             // ── 状态栏 ──
             HStack(spacing: 6) {
                 Circle().fill(statusColor).frame(width: 8, height: 8)
+                // 面板只保留两个字号层级：内容（状态行 + 转录正文，同为 body）
+                // 与边角信息（底部栏 metadata）。原先状态行用 callout（12pt），
+                // 与正文 13pt 只差一档——差别不够明显时不像层级，像失误，
+                // 也让人觉得「说着说着字变小了」。层级改由颜色承担。
+                // fixedSize 防止录音时被时长与音波挤压。
                 HStack(spacing: 4) {
                     Text(statusLabel)
-                        .font(typography.callout).foregroundStyle(.secondary)
+                        .font(typography.body).foregroundStyle(.secondary)
+                        .fixedSize()
                     if showHint {
                         Text(VoiceKitLocalization.string("请开始讲话"))
-                            .font(typography.callout).foregroundStyle(.secondary)
+                            .font(typography.body).foregroundStyle(.secondary)
+                            .fixedSize()
                     }
                 }
-                if coordinator.sessionState == .recording, let started = coordinator.recordingStartedAt {
-                    RecordingDuration(startedAt: started, limit: coordinator.sessionMaxDuration)
-                        .font(typography.callout)
-                }
                 Spacer()
+                // 时长贴着音波放在右侧，而不是跟在状态文案后面：
+                // 状态文案长度会随阶段变化（准备中…/聆听中…/正在识别…），
+                // 跟在它后面时长会左右跳动；靠右则位置恒定。
                 if coordinator.sessionState == .recording {
+                    if let started = coordinator.recordingStartedAt {
+                        RecordingDuration(startedAt: started, limit: coordinator.sessionMaxDuration)
+                            .font(typography.body)
+                            .fixedSize()
+                    }
                     HStack(spacing: 1) {
                         ForEach(0..<20, id: \.self) { i in
                             AudioBar(index: i, level: coordinator.audioLevel)
@@ -160,17 +171,24 @@ struct PanelView: View {
 }
 
 private struct RecoveryCard: View {
+    @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     let notice: RecordingRecoveryNotice
     let onAction: (RecordingRecoveryAction) -> Void
+
+    /// 此前这里硬编码 .headline / .body，完全绕开了字号设置——
+    /// 用户把界面字号调大后，唯独出错提示卡不跟着变。改用统一的排版令牌。
+    private var typography: VoiceKitTypography {
+        VoiceKitTypography(scale: VoiceKitTextScale.restored(from: textScaleRawValue))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Label(notice.title, systemImage: "exclamationmark.triangle.fill")
-                .font(.headline)
+                .font(typography.sectionTitle)
                 .foregroundStyle(.red)
 
             Text(notice.message)
-                .font(.body)
+                .font(typography.body)
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
 

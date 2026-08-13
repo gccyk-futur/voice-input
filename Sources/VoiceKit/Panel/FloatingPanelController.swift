@@ -114,6 +114,9 @@ final class FloatingPanelController {
         let hosting = NSHostingView(rootView: PanelView()
             .environment(coordinator))
         hosting.translatesAutoresizingMaskIntoConstraints = false
+        // .titled 样式即使标题栏透明、按钮已隐藏，仍会给内容留出一块标题栏安全区
+        // （约 28pt），使顶部留白明显大于底部。这里直接取消安全区，让内容真正贴顶。
+        hosting.safeAreaRegions = []
 
         panel.contentView = effect
         effect.addSubview(hosting)

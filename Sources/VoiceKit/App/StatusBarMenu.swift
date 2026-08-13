@@ -115,23 +115,18 @@ struct StatusBarMenuView: View {
                     .foregroundStyle(.primary)
                 Spacer(minLength: 4)
 
-                // 连接状态灯对全部云端引擎展示。语义差异：
-                // - 阿里云是常驻连接（预建连），断开即异常，红色警示；
-                // - 讯飞/Deepgram 是会话制连接，只在录音期间存在，
-                //   空闲时灰色「未连接」属正常，不作红色警示。
-                if coordinator.asrEngineChoice != "system" {
-                    let persistent = coordinator.asrEngineChoice == "aliyun"
-                    let connected = coordinator.wsConnected
+                // 连接状态灯只在「有问题」时出现，正常状态一律不显示：
+                // 用户并不区分常驻连接与会话制连接，一个只对某个引擎亮起的绿灯
+                // 只会让人疑惑；而永远亮着的绿灯也不传递任何可行动的信息。
+                // 阿里云是预建连，断开意味着按下热键会失败，值得提前告知 → 显示红点；
+                // 讯飞/Deepgram 录音时才建连，空闲无连接属正常 → 不显示。
+                if coordinator.asrEngineChoice == "aliyun", !coordinator.wsConnected {
                     Circle()
-                        .fill(connected ? Color.green : (persistent ? Color.red : Color.secondary))
+                        .fill(Color.red)
                         .frame(width: 5, height: 5)
-                    Text(connected
-                         ? VoiceKitLocalization.string("已连接")
-                         : VoiceKitLocalization.string("未连接"))
+                    Text(VoiceKitLocalization.string("未连接"))
                         .font(typography.metadata)
-                        .foregroundStyle(connected
-                                         ? VoiceKitSemanticColor.success
-                                         : (persistent ? VoiceKitSemanticColor.failure : .secondary))
+                        .foregroundStyle(VoiceKitSemanticColor.failure)
                         .lineLimit(1)
                         .fixedSize()
                         .accessibilityLabel(VoiceKitLocalization.string("连接状态"))

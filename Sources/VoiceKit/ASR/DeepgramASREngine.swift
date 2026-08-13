@@ -290,7 +290,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
                 try? await task.send(.string("{\"type\":\"CloseStream\"}"))
                 Log.info("[Deepgram] CloseStream sent")
                 // 超时兜底：服务端未关闭也放行
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: 8_000_000_000)   // 见讯飞引擎中同一常量的说明：宁可多等，不可丢字
                 self?.resolveStopWaiters()
             }
         }

@@ -59,6 +59,10 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _sessionActive = false
     private var _isConnected = false
     private var _firstFrameSent = false
+    /// 发出结束帧后等待服务端最终结果的上限。
+    /// 原为 3s，实测网络延迟偏高时会撞满超时，导致最后一两句被丢弃；
+    /// 等待造成的只是延迟，超时造成的是丢字，两害相权取其轻。
+    static let finalResultTimeoutNs: UInt64 = 8_000_000_000
     private var _serverDone = false
     private var _language: String = "zh_cn"
     private var _audioGate: AudioPreRollSendGate?
@@ -316,7 +320,10 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
                 let end = "{\"data\":{\"status\":2}}"
                 try? await task.send(.string(end))
                 Log.info("[Xunfei] status=2 sent")
-                try? await Task.sleep(nanoseconds: 3_000_000_000)
+                try? await Task.sleep(nanoseconds: Self.finalResultTimeoutNs)
+                if let self, self.stateLock.withLock({ !self._serverDone }) {
+                    Log.error("[Xunfei] 等待服务端最终结果超时（8s），尾部文字可能不完整")
+                }
                 self?.resolveStopWaiters()
             }
         }
@@ -464,12 +471,20 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     /// 若已有识别文本（如讯飞 60s 会话上限被服务端强制断开），改走自动停止
     /// 通道让上层按正常 finalize 保留文字；无文本才按失败上报。
     private func receiveLoopEnded() {
-        let (unexpected, failureCB, autoStopCB, text) = stateLock.withLock {
-            () -> (Bool, (@Sendable (Error) -> Void)?, (@Sendable () -> Bool)?, String) in
+        let (unexpected, serverDone, failureCB, autoStopCB, text) = stateLock.withLock {
+            () -> (Bool, Bool, (@Sendable (Error) -> Void)?, (@Sendable () -> Bool)?, String) in
             let unexpected = _sessionActive && !_stopRequested && !_serverDone
-            return (unexpected, _onFailure, _onAutoStop, _assembler.text)
+            return (unexpected, _serverDone, _onFailure, _onAutoStop, _assembler.text)
         }
-        resolveStopWaiters()
+        // 只有「服务端已给出最终结果」或「意外断开」才解除 stop 等待。
+        // 正常收尾时服务端收到 status=2 后随即关闭连接、接收循环跟着结束；
+        // 若在此无条件解除，就短路了 finishAndWait 特意留出的 3 秒宽限，
+        // 尚未到达的最终结果——通常正是最后一两句——会被直接丢弃。
+        if serverDone || unexpected {
+            resolveStopWaiters()
+        } else {
+            Log.info("[Xunfei] 接收循环已结束但服务端最终结果未到，保留等待宽限")
+        }
         guard unexpected else { return }
         capture.stop()
         if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,

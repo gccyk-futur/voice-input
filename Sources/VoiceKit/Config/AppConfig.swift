@@ -57,7 +57,7 @@ struct ASRAliyunConfig: Codable, Equatable {
     var speechNoiseThreshold: Double = 0.0
     var maxSentenceSilence: Int = 1300
     var autoStopEnabled: Bool = true
-    var autoStopTimeout: Double = 3.5
+    var autoStopTimeout: Double = 5.0
 }
 struct ASRXunfeiConfig: Codable, Equatable {
     var appId: String = ""
@@ -66,13 +66,13 @@ struct ASRXunfeiConfig: Codable, Equatable {
     /// 动态修正（wpgs）：已返回的中间结果可被后续结果修正，仅中文支持
     var dynamicCorrection: Bool = true
     var autoStopEnabled: Bool = true
-    var autoStopTimeout: Double = 3.5
+    var autoStopTimeout: Double = 5.0
 }
 struct ASRDeepgramConfig: Codable, Equatable {
     var apiKey: String = ""
     var model: String = "nova-3"
     var autoStopEnabled: Bool = true
-    var autoStopTimeout: Double = 3.5
+    var autoStopTimeout: Double = 5.0
 }
 /// LLM 模型定义：用户可自由增删多个模型配置。
 struct LLMModelDef: Codable, Identifiable, Equatable {
