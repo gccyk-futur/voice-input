@@ -573,12 +573,6 @@ struct SettingsView: View {
                     Toggle("静音自动停止", isOn: $draft.asr.aliyun.autoStopEnabled)
                     if draft.asr.aliyun.autoStopEnabled {
                         HStack {
-                            Text("静音阈值")
-                            Slider(value: $draft.asr.aliyun.autoStopThreshold, in: 0.005...0.1, step: 0.005)
-                            Text(String(format: "%.3f", draft.asr.aliyun.autoStopThreshold))
-                                .font(typography.callout).frame(width: 45, alignment: .trailing)
-                        }
-                        HStack {
                             Text("超时时间")
                             Slider(value: $draft.asr.aliyun.autoStopTimeout, in: 1...10, step: 0.5)
                             Text(String(format: "%.1fs", draft.asr.aliyun.autoStopTimeout))
@@ -586,7 +580,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。")
                 }
 
                 Section("API 配置") {
@@ -634,12 +628,6 @@ struct SettingsView: View {
                     Toggle("静音自动停止", isOn: $draft.asr.xunfei.autoStopEnabled)
                     if draft.asr.xunfei.autoStopEnabled {
                         HStack {
-                            Text("静音阈值")
-                            Slider(value: $draft.asr.xunfei.autoStopThreshold, in: 0.005...0.1, step: 0.005)
-                            Text(String(format: "%.3f", draft.asr.xunfei.autoStopThreshold))
-                                .font(typography.callout).frame(width: 45, alignment: .trailing)
-                        }
-                        HStack {
                             Text("超时时间")
                             Slider(value: $draft.asr.xunfei.autoStopTimeout, in: 1...10, step: 0.5)
                             Text(String(format: "%.1fs", draft.asr.xunfei.autoStopTimeout))
@@ -647,7 +635,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。")
                 }
 
                 Section {
@@ -673,12 +661,6 @@ struct SettingsView: View {
                     Toggle("静音自动停止", isOn: $draft.asr.deepgram.autoStopEnabled)
                     if draft.asr.deepgram.autoStopEnabled {
                         HStack {
-                            Text("静音阈值")
-                            Slider(value: $draft.asr.deepgram.autoStopThreshold, in: 0.005...0.1, step: 0.005)
-                            Text(String(format: "%.3f", draft.asr.deepgram.autoStopThreshold))
-                                .font(typography.callout).frame(width: 45, alignment: .trailing)
-                        }
-                        HStack {
                             Text("超时时间")
                             Slider(value: $draft.asr.deepgram.autoStopTimeout, in: 1...10, step: 0.5)
                             Text(String(format: "%.1fs", draft.asr.deepgram.autoStopTimeout))
@@ -686,7 +668,7 @@ struct SettingsView: View {
                         }
                     }
                 } footer: {
-                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键")
+                    Text("开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。")
                 }
 
                 Section {

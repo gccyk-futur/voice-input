@@ -39,7 +39,6 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     private let model: String
     private let autoStopEnabled: Bool
     private let autoStopTimeout: TimeInterval
-    private let autoStopThreshold: Float
 
     private let capture = AudioCapture()
     /// 每会话新建 session：避免跨会话复用连接（Deepgram 一条连接对应一次识别流）。
@@ -68,12 +67,11 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _startupError: Error?
 
     init(apiKey: String, model: String = "nova-3",
-         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5, autoStopThreshold: Float = 0.01) {
+         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5) {
         self.apiKey = apiKey
         self.model = model
         self.autoStopEnabled = autoStopEnabled
         self.autoStopTimeout = autoStopTimeout
-        self.autoStopThreshold = autoStopThreshold
         super.init()
     }
 
@@ -332,7 +330,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     private func startAudioCapture(gate: AudioPreRollSendGate) async throws {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
         let silence: SilenceConfig? = autoStopEnabled
-            ? SilenceConfig(threshold: autoStopThreshold, timeout: autoStopTimeout, gracePeriod: 1.0)
+            ? SilenceConfig(timeout: autoStopTimeout, gracePeriod: 1.0)
             : nil
         try capture.start(
             targetFormat: targetFormat,

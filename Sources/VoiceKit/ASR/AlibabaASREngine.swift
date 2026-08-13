@@ -40,7 +40,6 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private let maxSentenceSilence: Int
     private let autoStopEnabled: Bool
     private let autoStopTimeout: TimeInterval
-    private let autoStopThreshold: Float
 
     private let capture = AudioCapture()
     /// 常驻 URLSession：整个引擎生命周期复用，避免每次重连新建 session 导致连接/线程泄漏。
@@ -100,7 +99,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     init(apiKey: String, workspaceId: String, region: String, model: String,
          semanticPunctuation: Bool = true, speechNoiseThreshold: Double = 0, maxSentenceSilence: Int = 1300,
-         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5, autoStopThreshold: Float = 0.01) {
+         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5) {
         self.apiKey = apiKey
         self.workspaceId = workspaceId
         self.region = region
@@ -110,7 +109,6 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         self.maxSentenceSilence = maxSentenceSilence
         self.autoStopEnabled = autoStopEnabled
         self.autoStopTimeout = autoStopTimeout
-        self.autoStopThreshold = autoStopThreshold
         super.init()
         // session 在整个引擎生命周期复用；delegate 为 self（必须在 super.init 之后）
         let config = URLSessionConfiguration.default
@@ -621,7 +619,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private func startAudioCapture(gate: AudioPreRollSendGate, taskID: String) async throws {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
         let silence: SilenceConfig? = autoStopEnabled
-            ? SilenceConfig(threshold: autoStopThreshold, timeout: autoStopTimeout, gracePeriod: 1.0)
+            ? SilenceConfig(timeout: autoStopTimeout, gracePeriod: 1.0)
             : nil
 
         // onBuffer 外的锁保护回调读取；闭包把 self 状态拷出来再用，避免长锁。

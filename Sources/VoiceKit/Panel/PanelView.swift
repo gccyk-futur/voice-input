@@ -36,6 +36,10 @@ struct PanelView: View {
                             .font(typography.callout).foregroundStyle(.secondary)
                     }
                 }
+                if coordinator.sessionState == .recording, let started = coordinator.recordingStartedAt {
+                    RecordingDuration(startedAt: started, limit: coordinator.sessionMaxDuration)
+                        .font(typography.callout)
+                }
                 Spacer()
                 if coordinator.sessionState == .recording {
                     HStack(spacing: 1) {
@@ -225,5 +229,37 @@ private struct AudioBar: View {
                 .fill(VoiceKitSemanticColor.failure.opacity(0.75))
                 .frame(width: 3, height: h)
         }
+    }
+}
+
+/// 录制时长。对有服务端会话上限的引擎（讯飞 60s）额外显示上限并在临近时转为橙色，
+/// 让用户在被强制断开前主动收尾，而不是说到一半被掐断。
+private struct RecordingDuration: View {
+    let startedAt: Date
+    let limit: TimeInterval?
+
+    var body: some View {
+        TimelineView(.periodic(from: startedAt, by: 0.5)) { context in
+            let elapsed = max(0, context.date.timeIntervalSince(startedAt))
+            Text(text(elapsed))
+                .monospacedDigit()
+                .foregroundStyle(tint(elapsed))
+                .accessibilityLabel(Text(VoiceKitLocalization.string("已录制") + " " + mmss(elapsed)))
+        }
+    }
+
+    private func text(_ elapsed: TimeInterval) -> String {
+        guard let limit else { return mmss(elapsed) }
+        return "\(mmss(elapsed)) / \(mmss(limit))"
+    }
+
+    private func mmss(_ t: TimeInterval) -> String {
+        String(format: "%d:%02d", Int(t) / 60, Int(t) % 60)
+    }
+
+    /// 距上限不足 10 秒时转橙，提示该收尾了。
+    private func tint(_ elapsed: TimeInterval) -> Color {
+        guard let limit else { return .secondary }
+        return elapsed >= limit - 10 ? .orange : .secondary
     }
 }

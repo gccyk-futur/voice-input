@@ -23,6 +23,11 @@ final class AppCoordinator {
     var recoveryNotice: RecordingRecoveryNotice?
 
     // MARK: - 状态栏展示用的实时状态（@Observable 存储属性，变更驱动 UI 刷新）
+
+    /// 本次录音开始时刻；非录音状态为 nil。面板据此显示已录时长。
+    var recordingStartedAt: Date?
+    /// 当前引擎的单次会话上限（秒），无上限为 nil。
+    var sessionMaxDuration: TimeInterval?
     /// 当前选择的 ASR 引擎 id（"system" | "aliyun"）。
     var asrEngineChoice: String = "system"
     /// 阿里云是否已配置 apiKey/workspaceId（决定是否显示双引擎切换）。
@@ -250,10 +255,9 @@ final class AppCoordinator {
                 let cfg = configStore.config.asr.system
                 legacy.configureAutoStop(
                     enabled: cfg.silenceAutoStopEnabled,
-                    timeout: cfg.silenceTimeout,
-                    threshold: Float(cfg.silenceThreshold)
+                    timeout: cfg.silenceTimeout
                 )
-                Log.info("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s threshold=\(cfg.silenceThreshold)")
+                Log.info("[Coordinator] autoStop configured: enabled=\(cfg.silenceAutoStopEnabled) timeout=\(cfg.silenceTimeout)s（阈值由底噪自适应）")
             }
             panel.show(needsActivation: engine.requiresForeground)
             panel.makeKey()
@@ -323,6 +327,8 @@ final class AppCoordinator {
                     }
                     return
                 }
+                self.recordingStartedAt = Date()
+                self.sessionMaxDuration = engine.maxSessionDuration
                 self.sessionState = .recording
                 self.statusText = VoiceKitLocalization.string("聆听中…")
                 self.recoveryNotice = nil
@@ -693,6 +699,8 @@ final class AppCoordinator {
         asrText = ""
         llmText = ""
         recoveryNotice = nil
+        recordingStartedAt = nil
+        sessionMaxDuration = nil
         sessionState = .idle
         statusText = VoiceKitLocalization.string("按 ⌘⇧V 开始")
         panel.close()
@@ -792,8 +800,7 @@ final class AppCoordinator {
                     appId: cfg.appId, apiKey: cfg.apiKey, apiSecret: cfg.apiSecret,
                     dynamicCorrection: cfg.dynamicCorrection,
                     autoStopEnabled: cfg.autoStopEnabled,
-                    autoStopTimeout: cfg.autoStopTimeout,
-                    autoStopThreshold: Float(cfg.autoStopThreshold)
+                    autoStopTimeout: cfg.autoStopTimeout
                 )
             }
             Log.info("[Coordinator] 讯飞听写未配置 appId/apiKey/apiSecret，自动切回 system")
@@ -805,8 +812,7 @@ final class AppCoordinator {
                 return DeepgramASREngine(
                     apiKey: cfg.apiKey, model: cfg.model,
                     autoStopEnabled: cfg.autoStopEnabled,
-                    autoStopTimeout: cfg.autoStopTimeout,
-                    autoStopThreshold: Float(cfg.autoStopThreshold)
+                    autoStopTimeout: cfg.autoStopTimeout
                 )
             }
             Log.info("[Coordinator] Deepgram 未配置 apiKey，自动切回 system")
@@ -868,8 +874,7 @@ final class AppCoordinator {
             speechNoiseThreshold: cfg.speechNoiseThreshold,
             maxSentenceSilence: cfg.maxSentenceSilence,
             autoStopEnabled: cfg.autoStopEnabled,
-            autoStopTimeout: cfg.autoStopTimeout,
-            autoStopThreshold: Float(cfg.autoStopThreshold)
+            autoStopTimeout: cfg.autoStopTimeout
         )
         wireAliyunCallbacks(engine)
         return engine

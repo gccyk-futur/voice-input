@@ -92,6 +92,13 @@ final class FloatingPanelController {
         panel.titleVisibility = .hidden
         panel.titlebarAppearsTransparent = true
         panel.isReleasedWhenClosed = false
+        // 隐藏红黄绿三个标准按钮：它们是「文档窗口」的语言，暗示可最小化、可缩放、
+        // 会长期停留；而这是个说完就该消失的临时 HUD，关闭已有 ✕ 与 Esc 两条路。
+        // 只隐藏按钮而不改用 .borderless —— 后者会让 canBecomeKey 变为 false，
+        // 面板就收不到 Esc / Cmd+Return 了，为视觉去动键盘链路不划算。
+        for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            panel.standardWindowButton(button)?.isHidden = true
+        }
         let pdl = PanelDelegate { [weak self] in
             Task { @MainActor in self?.coordinator?.cancel() }
         }

@@ -39,9 +39,10 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private let apiKey: String
     private let apiSecret: String
     private let dynamicCorrection: Bool
+    /// 讯飞一条连接对应一次听写会话，服务端上限 60s。
+    let maxSessionDuration: TimeInterval? = 60
     private let autoStopEnabled: Bool
     private let autoStopTimeout: TimeInterval
-    private let autoStopThreshold: Float
 
     private let capture = AudioCapture()
     /// 每会话新建 session：讯飞一条连接对应一次听写会话（≤60s）。
@@ -71,14 +72,13 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
 
     init(appId: String, apiKey: String, apiSecret: String,
          dynamicCorrection: Bool = true,
-         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5, autoStopThreshold: Float = 0.01) {
+         autoStopEnabled: Bool = true, autoStopTimeout: TimeInterval = 3.5) {
         self.appId = appId
         self.apiKey = apiKey
         self.apiSecret = apiSecret
         self.dynamicCorrection = dynamicCorrection
         self.autoStopEnabled = autoStopEnabled
         self.autoStopTimeout = autoStopTimeout
-        self.autoStopThreshold = autoStopThreshold
         super.init()
     }
 
@@ -358,7 +358,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private func startAudioCapture(gate: AudioPreRollSendGate) async throws {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: false)!
         let silence: SilenceConfig? = autoStopEnabled
-            ? SilenceConfig(threshold: autoStopThreshold, timeout: autoStopTimeout, gracePeriod: 1.0)
+            ? SilenceConfig(timeout: autoStopTimeout, gracePeriod: 1.0)
             : nil
         try capture.start(
             targetFormat: targetFormat,

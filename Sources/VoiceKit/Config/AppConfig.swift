@@ -47,7 +47,6 @@ struct ASRSystemConfig: Codable, Equatable {
     var language: String = "zh-Hans-CN"
     var silenceAutoStopEnabled: Bool = false
     var silenceTimeout: Double = 2.0
-    var silenceThreshold: Double = 0.02
 }
 struct ASRAliyunConfig: Codable, Equatable {
     var apiKey: String = ""
@@ -59,7 +58,6 @@ struct ASRAliyunConfig: Codable, Equatable {
     var maxSentenceSilence: Int = 1300
     var autoStopEnabled: Bool = true
     var autoStopTimeout: Double = 3.5
-    var autoStopThreshold: Double = 0.01
 }
 struct ASRXunfeiConfig: Codable, Equatable {
     var appId: String = ""
@@ -69,14 +67,12 @@ struct ASRXunfeiConfig: Codable, Equatable {
     var dynamicCorrection: Bool = true
     var autoStopEnabled: Bool = true
     var autoStopTimeout: Double = 3.5
-    var autoStopThreshold: Double = 0.01
 }
 struct ASRDeepgramConfig: Codable, Equatable {
     var apiKey: String = ""
     var model: String = "nova-3"
     var autoStopEnabled: Bool = true
     var autoStopTimeout: Double = 3.5
-    var autoStopThreshold: Double = 0.01
 }
 /// LLM 模型定义：用户可自由增删多个模型配置。
 struct LLMModelDef: Codable, Identifiable, Equatable {
@@ -252,7 +248,6 @@ extension ASRSystemConfig {
         language = try c.decode(String.self, forKey: .language, default: d.language)
         silenceAutoStopEnabled = try c.decode(Bool.self, forKey: .silenceAutoStopEnabled, default: d.silenceAutoStopEnabled)
         silenceTimeout = try c.decode(Double.self, forKey: .silenceTimeout, default: d.silenceTimeout)
-        silenceThreshold = try c.decode(Double.self, forKey: .silenceThreshold, default: d.silenceThreshold)
     }
 }
 
@@ -269,7 +264,6 @@ extension ASRAliyunConfig {
         maxSentenceSilence = try c.decode(Int.self, forKey: .maxSentenceSilence, default: d.maxSentenceSilence)
         autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
         autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
-        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
     }
 }
 
@@ -283,7 +277,6 @@ extension ASRXunfeiConfig {
         dynamicCorrection = try c.decode(Bool.self, forKey: .dynamicCorrection, default: d.dynamicCorrection)
         autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
         autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
-        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
     }
 }
 
@@ -295,7 +288,6 @@ extension ASRDeepgramConfig {
         model = try c.decode(String.self, forKey: .model, default: d.model)
         autoStopEnabled = try c.decode(Bool.self, forKey: .autoStopEnabled, default: d.autoStopEnabled)
         autoStopTimeout = try c.decode(Double.self, forKey: .autoStopTimeout, default: d.autoStopTimeout)
-        autoStopThreshold = try c.decode(Double.self, forKey: .autoStopThreshold, default: d.autoStopThreshold)
     }
 }
 

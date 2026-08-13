@@ -9,6 +9,11 @@ protocol ASREngine: AnyObject, Sendable {
     /// DictationTranscriber 需要 app 在前台；SFSpeechRecognizer 不需要。
     var requiresForeground: Bool { get }
 
+    /// 单次会话的服务端硬上限（秒）。nil 表示没有上限。
+    /// 讯飞一条连接对应一次听写会话且 ≤60s，到点会被服务端强制断开——
+    /// 界面据此显示倒计时，让用户在被打断前先收尾。
+    var maxSessionDuration: TimeInterval? { get }
+
     /// 录音过程中发生的运行时错误（设备断开、云端连接中断等）。
     /// start() 抛出的是"起飞失败"；本回调覆盖"飞行中失败"。由 coordinator 设置，
     /// 触发后应把会话退回 idle 并提示用户。
@@ -24,6 +29,11 @@ protocol ASREngine: AnyObject, Sendable {
                onAudioLevel: (@Sendable (Float) -> Void)?,
                onAutoStop: (@Sendable () -> Bool)?) async throws
     func stop() async throws -> String
+}
+
+extension ASREngine {
+    /// 默认无上限：只有讯飞这类有服务端会话时长限制的引擎才需要覆盖。
+    var maxSessionDuration: TimeInterval? { nil }
 }
 
 /// ASR 相关错误：引擎启动/运行失败的统一错误类型。

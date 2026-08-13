@@ -28,16 +28,14 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     // 静音自动停止配置（由 AppCoordinator 在 start 之前调用 configureAutoStop 注入）
     private var silenceAutoStopEnabled = true
     private var silenceTimeout: TimeInterval = 2.0
-    private var silenceThreshold: Float = 0.02
 
     // 防止 complete(with:) 被多线程并发调用导致 Continuation 重复 resume
     private let finishLock = NSLock()
 
     /// 配置静音自动停止参数（由 AppCoordinator 在 start 之前调用）
-    func configureAutoStop(enabled: Bool, timeout: TimeInterval, threshold: Float) {
+    func configureAutoStop(enabled: Bool, timeout: TimeInterval) {
         self.silenceAutoStopEnabled = enabled
         self.silenceTimeout = timeout
-        self.silenceThreshold = threshold
     }
 
     func start(locale: Locale,
@@ -79,7 +77,6 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
         let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: 16000, channels: 1, interleaved: false)!
         let silence: SilenceConfig? = silenceAutoStopEnabled
             ? SilenceConfig(
-                threshold: silenceThreshold,
                 timeout: silenceTimeout,
                 gracePeriod: 1.0 // 启动后 1 秒内不触发静音检测，避免刚启动就被误判
             )

@@ -3,9 +3,11 @@ import Foundation
 import CoreAudio
 
 /// 静音自动停止配置。
+///
+/// 判定静音的电平阈值由程序按环境底噪自适应推导，不再让用户配置绝对值 ——
+/// 绝对阈值对麦克风增益与距离极其敏感：同一个数值，近讲时嫌迟钝，远讲时会把
+/// 说话全程判成静音，于是「话没说完就被自动结束」。
 struct SilenceConfig: Sendable {
-    /// RMS 低于该阈值视为静音（硬件 float32 原始值，通常 0.01~0.03）。
-    var threshold: Float
     /// 持续静音多久后触发 onAutoStop。
     var timeout: TimeInterval
     /// 启动后宽限期：这段时间内不计静音，避免刚启动就被误判。
@@ -28,6 +30,19 @@ final class AudioCapture: @unchecked Sendable {
     private let lock = NSLock()
     private var tapInstalled = false
     private var silenceStart: Date?
+    /// 环境底噪的滚动估计（受 lock 保护）。向下即时跟随，向上缓慢漂移。
+    private var noiseFloor: Float = .greatestFiniteMagnitude
+
+    /// 判定「有人在说话」的电平相对底噪的倍数。人声通常高出底噪一个数量级以上，
+    /// 取 3 倍是留足余量的保守值。
+    private static let speechOverNoise: Float = 3.0
+    /// 自适应阈值的下限：再低就会把电流底噪当人声，永远等不到自动停止。
+    private static let thresholdMin: Float = 0.002
+    /// 自适应阈值的上限：再高就可能把正常说话判成静音（这正是旧版把阈值拉满时的故障）。
+    private static let thresholdMax: Float = 0.05
+    /// 底噪每个 buffer 的向上漂移系数。buffer 约 21ms，对应时间常数约 10 秒，
+    /// 足以适应「空调启动」这类环境变化，又慢到不会被一段停顿带跑。
+    private static let noiseFloorRise: Float = 1.002
     /// 录音中被中断（设备断开/路由变更导致输入失效）时回调；引擎已先 stop，上层应结束会话并提示。
     private var onInterruption: (@Sendable (Error) -> Void)?
     private var configObserver: NSObjectProtocol?
@@ -75,7 +90,10 @@ final class AudioCapture: @unchecked Sendable {
             throw ASRError.converterInit
         }
 
-        lock.withLock { self.silenceStart = nil }
+        lock.withLock {
+            self.silenceStart = nil
+            self.noiseFloor = .greatestFiniteMagnitude
+        }
         let startTime = Date()
         // 在 tap block 内只读这些常量，避免并发读写可变状态
         let levelCB = onLevel
@@ -164,6 +182,7 @@ final class AudioCapture: @unchecked Sendable {
         let installed = tapInstalled
         tapInstalled = false
         silenceStart = nil
+        noiseFloor = .greatestFiniteMagnitude
         active = false
         onInterruption = nil
         let obs = configObserver
@@ -237,18 +256,35 @@ final class AudioCapture: @unchecked Sendable {
             if let cfg = silence, needsSilence {
                 let now = Date()
                 let inGrace = now.timeIntervalSince(startTime) < cfg.gracePeriod
-                if !inGrace, rms < cfg.threshold {
-                    var shouldStop = false
-                    lock.lock()
+                var shouldStop = false
+                var snapshot: (threshold: Float, floor: Float, silentFor: TimeInterval)?
+
+                lock.lock()
+                // 底噪跟踪：向下即时跟随（取最小），向上缓慢漂移。
+                // 说话时电平远高于底噪，所以取最小值天然不会被人声污染；
+                // 宽限期内的采样正好用来摸清这间屋子有多安静。
+                if rms < noiseFloor { noiseFloor = rms } else { noiseFloor *= Self.noiseFloorRise }
+                let threshold = min(max(noiseFloor * Self.speechOverNoise, Self.thresholdMin),
+                                    Self.thresholdMax)
+                if !inGrace, rms < threshold {
                     if silenceStart == nil { silenceStart = now }
                     if let s = silenceStart, now.timeIntervalSince(s) >= cfg.timeout {
+                        snapshot = (threshold, noiseFloor, now.timeIntervalSince(s))
                         silenceStart = nil
                         shouldStop = true
                     }
-                    lock.unlock()
-                    if shouldStop { _ = onAutoStop?() }
                 } else {
-                    lock.withLock { silenceStart = nil }
+                    silenceStart = nil
+                }
+                lock.unlock()
+
+                if shouldStop {
+                    if let s = snapshot {
+                        Log.info(String(format: "[AudioCapture] 静音自动停止：已静音 %.1fs（超时设定 %.1fs）"
+                                        + "，当前 rms=%.4f，自适应阈值=%.4f，环境底噪=%.4f",
+                                        s.silentFor, cfg.timeout, rms, s.threshold, s.floor))
+                    }
+                    _ = onAutoStop?()
                 }
             }
         }
