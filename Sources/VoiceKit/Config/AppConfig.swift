@@ -21,6 +21,10 @@ struct GeneralConfig: Codable, Equatable {
     /// 默认开启——统计模块依赖历史数据，默认关闭会导致功能上线时一片空白；
     /// 且其敏感度低于始终开启的运行日志（后者含转录原文）。
     var usageStatsEnabled: Bool = true
+    /// 识别文字在剪贴板中的保留时长（秒）；0 = 永不还原（等同普通复制，默认）。
+    /// 仅作用于"未自动投递、需用户手动 ⌘V"的路径（writeClipboardOnly）；
+    /// paste() 自动投递借用剪贴板的场景固定 8 秒还原，见 PasteDeliveryPolicy。
+    var clipboardRetentionSeconds: Double = 0
     var sound: SoundConfig = .init()
 }
 
@@ -218,6 +222,7 @@ extension GeneralConfig {
         windowStyle = try c.decode(String.self, forKey: .windowStyle, default: d.windowStyle)
         maxHistoryCount = try c.decode(Int.self, forKey: .maxHistoryCount, default: d.maxHistoryCount)
         usageStatsEnabled = try c.decode(Bool.self, forKey: .usageStatsEnabled, default: d.usageStatsEnabled)
+        clipboardRetentionSeconds = try c.decode(Double.self, forKey: .clipboardRetentionSeconds, default: d.clipboardRetentionSeconds)
         sound = try c.decode(SoundConfig.self, forKey: .sound, default: d.sound)
     }
 }

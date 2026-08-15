@@ -280,8 +280,7 @@ final class AudioCapture: @unchecked Sendable {
 
                 if shouldStop {
                     if let s = snapshot {
-                        Log.info(String(format: "[AudioCapture] 静音自动停止：已静音 %.1fs（超时设定 %.1fs）"
-                                        + "，当前 rms=%.4f，自适应阈值=%.4f，环境底噪=%.4f",
+                        Log.info(String(format: "[AudioCapture] silence auto-stop: silent=%.1fs (timeout=%.1fs), rms=%.4f, adaptiveThreshold=%.4f, noiseFloor=%.4f",
                                         s.silentFor, cfg.timeout, rms, s.threshold, s.floor))
                     }
                     _ = onAutoStop?()

@@ -399,6 +399,17 @@ struct SettingsView: View {
             }
 
             Section {
+                Picker("剪贴板保留时长", selection: $draft.general.clipboardRetentionSeconds) {
+                    Text("永不还原").tag(0.0)
+                    Text("15 秒").tag(15.0)
+                    Text("30 秒").tag(30.0)
+                    Text("60 秒").tag(60.0)
+                }
+            } footer: {
+                Text("需要手动按 ⌘V 粘贴时，识别文字会在剪贴板中保留此时长；超时后将还原为你原本的剪贴板内容。选「永不还原」则等同普通复制。")
+            }
+
+            Section {
                 Picker("语言", selection: $languageRawValue) {
                     Text("跟随系统").tag("")
                     ForEach(Self.availableLanguages, id: \.code) { lang in
@@ -1181,18 +1192,11 @@ struct SettingsView: View {
                 )
             }
 
-            // 合成键盘事件：仅 App Store 版显示（它是沙盒下唯一的自动写回授权）。
-            // 官网版不显示此行——辅助功能与键盘事件在系统设置中是同一面板，
-            // 不愿授 AX 的用户也不会单独授键盘事件；AX 未授权时的体验与提示
-            // 由「辅助功能」行的 ifDenied 文案（回退剪贴板手动 ⌘V）承载。
-#if APP_STORE
-            Section {
-                postEventPermissionRow
-            } footer: {
-                Text("此权限仅用于把识别结果写入你当前的输入框（由系统代为发送一次 ⌘V）。VoiceKit 不监听你的键盘输入，也不读取屏幕内容，可放心授权。")
-            }
-#else
-            // 辅助功能（仅官网版）
+            // 辅助功能（仅官网版）。App Store 版不展示任何辅助功能/键盘事件
+            // 引导行（Guideline 2.4.5：1.1.0 因主动请求键盘事件权限被拒审，
+            // 复审会盯此页）；沙盒版只做静默 preflight，用户在系统设置中
+            // 手动勾选后自动写回自然生效，无需 App 引导。
+#if !APP_STORE
             Section {
                 permissionRow(
                     icon: "rectangle.and.hand.point.up.left.fill",
@@ -1423,26 +1427,6 @@ struct SettingsView: View {
         }
     }
 
-#if APP_STORE
-    private var postEventStatus: VoiceKitPermissionState {
-        _ = permissionRefreshID
-        if PasteService.shared.canPostEvents { return .granted }
-        return postEventRequestAttempted ? .denied : .notDetermined
-    }
-
-    /// 键盘事件授权行（仅 App Store 版；官网版不展示，见 permissionTab 注释）
-    private var postEventPermissionRow: some View {
-        permissionRow(
-            icon: "keyboard.fill",
-            name: "自动写回（键盘事件）",
-            why: "允许 VoiceKit 在识别完成后尝试发送一次 ⌘V",
-            ifDenied: "不授权：文字仍会保留在剪贴板，请手动按 ⌘V",
-            status: postEventStatus,
-            action: requestPostEventPermission
-        )
-    }
-#endif
-
     private var distribution: VoiceKitDistribution {
 #if APP_STORE
         .appStore
@@ -1492,19 +1476,6 @@ struct SettingsView: View {
             await MainActor.run { permissionRefreshID = UUID() }
         }
     }
-
-#if APP_STORE
-    private func requestPostEventPermission() {
-        guard !PasteService.shared.canPostEvents else { return }
-        guard !postEventRequestAttempted else {
-            PasteService.shared.openPostEventSettings()
-            return
-        }
-        postEventRequestAttempted = true
-        _ = PasteService.shared.requestPostEventAccess()
-        permissionRefreshID = UUID()
-    }
-#endif
 
 #if !APP_STORE
     private var accessibilityStatus: VoiceKitPermissionState {

@@ -20,29 +20,41 @@ final class PasteService {
     private var savedClipboard: SavedClipboard?
     private var restoreWork: DispatchWorkItem?
 
-    /// 只写剪贴板（无目标 App / 仅复制场景）：写入后仍延迟还原，
-    /// 保证"临时用一下、用完还给用户"。
-    func writeClipboardOnly(_ text: String) {
+    /// 只写剪贴板（无目标 App / 需用户手动 ⌘V 的场景）。
+    /// retentionSeconds 来自「剪贴板保留时长」设置（general.clipboardRetentionSeconds）：
+    /// <= 0（默认）时文字等同普通复制，永久保留、绝不还原——否则用户超时后再按
+    /// ⌘V 会贴出旧内容；> 0 时快照原剪贴板，超时后若未被新内容覆盖则还原。
+    /// paste() 自动投递的"借用-归还"不受此设置影响，固定走 clipboardFallbackWindow。
+    func writeClipboardOnly(_ text: String, retentionSeconds: Double = 0) {
+        guard let delay = PasteDeliveryPolicy.manualRestoreDelay(retentionSeconds: retentionSeconds) else {
+            writeClipboard(text)
+            return
+        }
         let savedItems = snapshotCurrentClipboard()
         writeClipboard(text)
         // 关键：countAfterWrite 必须在写入之后记录（早于写入会导致还原恒被跳过）
         savedClipboard = SavedClipboard(items: savedItems, changeCountAfterWrite: NSPasteboard.general.changeCount)
         // 给用户留手动 ⌘V 的时间，之后再还原
-        scheduleRestore(delay: PasteDeliveryPolicy.clipboardFallbackWindow)
+        scheduleRestore(delay: delay)
     }
 
     /// Core Graphics 的合成键盘事件权限独立于 AX Accessibility 权限。
-    /// App Store 沙盒版也可以使用该能力，但必须由用户在系统中授权。
+    /// 只读检查（不会触发系统弹窗），两个渠道版本都可用。
     var canPostEvents: Bool {
         CGPreflightPostEventAccess()
     }
 
+#if !APP_STORE
+    /// 主动请求键盘事件权限（会触发系统授权弹窗）。
+    /// 仅官网版可用：App Store 版受 Guideline 2.4.5 限制，绝不主动请求，
+    /// 用户在系统设置中手动授权后由 canPostEvents 静默生效（同过审的 1.0 行为）。
     @discardableResult
     func requestPostEventAccess() -> Bool {
         let granted = CGRequestPostEventAccess()
         Log.info("[Paste] PostEvent permission request result=\(granted)")
         return granted
     }
+#endif
 
     @discardableResult
     func paste(_ text: String, to pid: pid_t) -> Bool {
@@ -178,10 +190,6 @@ final class PasteService {
 
     func openSpeechSettings() {
         openPane("Privacy_SpeechRecognition")
-    }
-
-    func openPostEventSettings() {
-        openPane("Privacy_Accessibility")
     }
 
     private func openPane(_ anchor: String) {

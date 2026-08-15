@@ -361,3 +361,13 @@
 "语音直接发送到你自己配置的讯飞开放平台账号。" = "El audio se envía directamente a tu propia cuenta de iFLYTEK Open Platform.";
 "语音直接发送到你自己配置的 Deepgram 账号。" = "El audio se envía directamente a tu propia cuenta de Deepgram.";
 "除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不会把语音、文字或任何使用数据上传到别处，也不追踪用户行为。" = "Aparte de los servicios de reconocimiento de voz e IA que configures tú mismo, VoiceKit no llama a ninguna otra API. No hay servidor propio; el audio, el texto y los datos de uso nunca se suben a ningún sitio, ni se rastrea el comportamiento del usuario.";
+"剪贴板保留时长" = "Tiempo de retención en el portapapeles";
+"永不还原" = "No restaurar nunca";
+"15 秒" = "15 s";
+"30 秒" = "30 s";
+"60 秒" = "60 s";
+"需要手动按 ⌘V 粘贴时，识别文字会在剪贴板中保留此时长；超时后将还原为你原本的剪贴板内容。选「永不还原」则等同普通复制。" = "Cuando necesites pegar manualmente con ⌘V, el texto reconocido permanece en el portapapeles durante este tiempo; después se restaura el contenido anterior. Elige «No restaurar nunca» para que funcione como una copia normal.";
+"已复制到剪贴板，请按 ⌘V 粘贴" = "Copiado al portapapeles — pega con ⌘V";
+"（%d 秒后还原为原剪贴板内容）" = " (el contenido anterior se restaura tras %d s)";
+"已录制" = "Tiempo grabado";
+"开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。" = "Al activarlo, el dictado termina automáticamente y pega el texto tras una pausa de la duración configurada, sin pulsar de nuevo el atajo. El umbral de silencio se adapta automáticamente al ruido ambiente; no requiere ajuste manual.";

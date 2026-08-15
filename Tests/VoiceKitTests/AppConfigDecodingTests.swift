@@ -56,7 +56,8 @@ final class AppConfigDecodingTests: XCTestCase {
         XCTAssertEqual(config.general.windowStyle, "vibrancy")
         XCTAssertEqual(config.general.sound, SoundConfig())
         XCTAssertTrue(config.asr.aliyun.autoStopEnabled)
-        XCTAssertEqual(config.asr.aliyun.autoStopTimeout, 3.5)
+        // 静音判定改自适应后，默认超时从 3.5 调整为 5.0（见 AppConfig 默认值）
+        XCTAssertEqual(config.asr.aliyun.autoStopTimeout, 5.0)
     }
 
     func testRoundTripProducesDecodableConfig() throws {
@@ -66,5 +67,22 @@ final class AppConfigDecodingTests: XCTestCase {
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
         XCTAssertEqual(decoded, config)
+    }
+
+    /// 旧版配置没有 clipboardRetentionSeconds：解码回退到 0（永不还原），
+    /// 不能因此导致整份配置解码失败被重置。
+    func testLegacyConfigWithoutClipboardRetentionDecodesToNeverRestore() throws {
+        let data = try XCTUnwrap(legacyJSON.data(using: .utf8))
+        let config = try JSONDecoder().decode(AppConfig.self, from: data)
+        XCTAssertEqual(config.general.clipboardRetentionSeconds, 0)
+    }
+
+    /// 用户选择的保留时长必须能完整持久化往返。
+    func testClipboardRetentionRoundTripPreservesUserChoice() throws {
+        var config = AppConfig()
+        config.general.clipboardRetentionSeconds = 30
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(AppConfig.self, from: data)
+        XCTAssertEqual(decoded.general.clipboardRetentionSeconds, 30)
     }
 }

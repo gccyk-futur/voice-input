@@ -361,3 +361,13 @@
 "语音直接发送到你自己配置的讯飞开放平台账号。" = "Audio is sent directly to your own iFLYTEK Open Platform account.";
 "语音直接发送到你自己配置的 Deepgram 账号。" = "Audio is sent directly to your own Deepgram account.";
 "除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不会把语音、文字或任何使用数据上传到别处，也不追踪用户行为。" = "Apart from the speech recognition and AI services you configure yourself, VoiceKit calls no other APIs. There is no backend server; audio, text, and usage data are never uploaded anywhere, and user behaviour is not tracked.";
+"剪贴板保留时长" = "Clipboard Retention";
+"永不还原" = "Never Restore";
+"15 秒" = "15 seconds";
+"30 秒" = "30 seconds";
+"60 秒" = "60 seconds";
+"需要手动按 ⌘V 粘贴时，识别文字会在剪贴板中保留此时长；超时后将还原为你原本的剪贴板内容。选「永不还原」则等同普通复制。" = "When you need to paste manually with ⌘V, the recognized text stays on the clipboard for this long; after that, your previous clipboard content is restored. Choose 'Never Restore' to keep it like a normal copy.";
+"已复制到剪贴板，请按 ⌘V 粘贴" = "Copied to clipboard — press ⌘V to paste";
+"（%d 秒后还原为原剪贴板内容）" = " (previous clipboard content restored after %d s)";
+"已录制" = "Recorded";
+"开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。" = "When enabled, dictation ends automatically and pastes the text after you pause for the configured time — no need to press the hotkey again. The silence threshold adapts automatically to ambient noise; no manual tuning needed.";

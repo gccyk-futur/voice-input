@@ -514,8 +514,11 @@ final class AppCoordinator {
 
         // 没有可用目标时只能保留剪贴板，不能声称已经写回。
         guard let target, !target.isTerminated else {
-            pasteService.writeClipboardOnly(text)
-            finalizeAndRecord(useLLM: useLLM, statusText: VoiceKitLocalization.string("已复制到剪贴板"))
+            pasteService.writeClipboardOnly(text, retentionSeconds: clipboardRetentionSeconds)
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: VoiceKitLocalization.string("已复制到剪贴板") + clipboardRetentionSuffix()
+            )
             return
         }
 
@@ -550,17 +553,25 @@ final class AppCoordinator {
         Log.info("[Paste] target active=\(target.isActive), activationAllowed=\(activationRequested)")
 
 #if APP_STORE
-        // Keep the channel build on the same automatic delivery path as the
-        // direct build. If automatic delivery is not selected, retain the
-        // clipboard and clearly ask the user to paste manually.
-        switch PasteDeliveryPolicy.mode(isAppStore: true) {
-        case .clipboardOnly:
-            pasteService.writeClipboardOnly(text)
-            finalizeAndRecord(useLLM: useLLM, statusText: VoiceKitLocalization.string("已复制到剪贴板（请手动 ⌘V）"))
-            return
-        case .automatic:
-            break
+        // App Store 版（Guideline 2.4.5）：绝不主动请求键盘事件权限——
+        // CGRequestPostEventAccess 会触发「Accessibility Access (Events)」
+        // 授权弹窗，1.1.0 因此被拒审。恢复过审的 1.0 行为：仅静默 preflight，
+        // 用户已在系统设置中手动授权时才投递 ⌘V，否则剪贴板兜底。
+        if pasteService.canPostEvents {
+            let pasteOK = pasteService.paste(text, to: targetPID)
+            Log.info("[Paste] Cmd+V event dispatched=\(pasteOK); insertion remains unverified")
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: pasteOK ? nil : VoiceKitLocalization.string("自动写回失败，文字仍在剪贴板，请按 ⌘V")
+            )
+        } else {
+            pasteService.writeClipboardOnly(text, retentionSeconds: clipboardRetentionSeconds)
+            finalizeAndRecord(
+                useLLM: useLLM,
+                statusText: VoiceKitLocalization.string("已复制到剪贴板，请按 ⌘V 粘贴") + clipboardRetentionSuffix()
+            )
         }
+        return
 #endif
 
 #if !APP_STORE
@@ -579,15 +590,15 @@ final class AppCoordinator {
             // 辅助功能能力真实不可用 → 不假装粘贴：只写剪贴板 + 诚实提示。
             // 此时 ⌘V 投递同样会被拦，做了也是假成功。
             Log.error("[Paste] 辅助功能未授权，仅复制到剪贴板并提示用户")
-            pasteService.writeClipboardOnly(text)
+            pasteService.writeClipboardOnly(text, retentionSeconds: clipboardRetentionSeconds)
             finalizeAndRecord(
                 useLLM: useLLM,
-                statusText: VoiceKitLocalization.string("已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）")
+                statusText: VoiceKitLocalization.string("已复制到剪贴板。未授权辅助功能，请按 ⌘V 手动粘贴（系统设置→隐私与安全性→辅助功能）") + clipboardRetentionSuffix()
             )
             return
         }
-#endif
 
+        // 官网版策略2：剪贴板 + postToPid ⌘V（未授权时主动请求一次权限）
         let preflightGranted = pasteService.canPostEvents
         let requestGranted = preflightGranted ? false : pasteService.requestPostEventAccess()
         let postEventDecision = PasteDeliveryPolicy.postEventDecision(
@@ -597,10 +608,10 @@ final class AppCoordinator {
         Log.info("[Paste] PostEvent access preflight=\(preflightGranted), request=\(requestGranted), decision=\(postEventDecision)")
 
         guard postEventDecision == .automatic else {
-            pasteService.writeClipboardOnly(text)
+            pasteService.writeClipboardOnly(text, retentionSeconds: clipboardRetentionSeconds)
             finalizeAndRecord(
                 useLLM: useLLM,
-                statusText: VoiceKitLocalization.string("已复制到剪贴板，请按 ⌘V；授权键盘事件后可自动写回")
+                statusText: VoiceKitLocalization.string("已复制到剪贴板，请按 ⌘V；授权键盘事件后可自动写回") + clipboardRetentionSuffix()
             )
             return
         }
@@ -616,6 +627,20 @@ final class AppCoordinator {
             useLLM: useLLM,
             statusText: pasteOK ? nil : VoiceKitLocalization.string("自动写回失败，文字仍在剪贴板，请按 ⌘V")
         )
+#endif
+    }
+
+    /// 「剪贴板保留时长」设置的当前值（秒）；0 = 永不还原。
+    private var clipboardRetentionSeconds: Double {
+        configStore.config.general.clipboardRetentionSeconds
+    }
+
+    /// 保留时长 > 0 时的提示后缀：告知用户超时后剪贴板将还原为原内容，
+    /// 避免"过了很久才按 ⌘V 却贴出旧内容"时毫无头绪。
+    private func clipboardRetentionSuffix() -> String {
+        let seconds = clipboardRetentionSeconds
+        guard seconds > 0 else { return "" }
+        return VoiceKitLocalization.format("（%d 秒后还原为原剪贴板内容）", Int(seconds))
     }
 
     private func finalizeAndRecord(useLLM: Bool, statusText: String?) {

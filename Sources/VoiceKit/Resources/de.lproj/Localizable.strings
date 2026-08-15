@@ -361,3 +361,13 @@
 "语音直接发送到你自己配置的讯飞开放平台账号。" = "Audio wird direkt an dein eigenes iFLYTEK-Open-Platform-Konto gesendet.";
 "语音直接发送到你自己配置的 Deepgram 账号。" = "Audio wird direkt an dein eigenes Deepgram-Konto gesendet.";
 "除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不会把语音、文字或任何使用数据上传到别处，也不追踪用户行为。" = "Abgesehen von den von dir selbst konfigurierten Spracherkennungs- und KI-Diensten ruft VoiceKit keine weiteren APIs auf. Es gibt keinen Backend-Server; Audio, Text und Nutzungsdaten werden nirgendwohin hochgeladen und das Nutzerverhalten wird nicht verfolgt.";
+"剪贴板保留时长" = "Aufbewahrungsdauer in der Zwischenablage";
+"永不还原" = "Nie wiederherstellen";
+"15 秒" = "15 s";
+"30 秒" = "30 s";
+"60 秒" = "60 s";
+"需要手动按 ⌘V 粘贴时，识别文字会在剪贴板中保留此时长；超时后将还原为你原本的剪贴板内容。选「永不还原」则等同普通复制。" = "Wenn du mit ⌘V manuell einfügen musst, bleibt der erkannte Text für diese Dauer in der Zwischenablage; danach wird der vorherige Inhalt wiederhergestellt. „Nie wiederherstellen“ entspricht einem normalen Kopieren.";
+"已复制到剪贴板，请按 ⌘V 粘贴" = "In die Zwischenablage kopiert — mit ⌘V einfügen";
+"（%d 秒后还原为原剪贴板内容）" = " (vorheriger Inhalt wird nach %d s wiederhergestellt)";
+"已录制" = "Aufnahmedauer";
+"开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。" = "Wenn aktiviert, endet das Diktat nach einer Sprechpause der eingestellten Dauer automatisch und fügt den Text ein – kein erneutes Drücken des Kurzbefehls nötig. Die Lautstärkenschwelle für Stille passt sich automatisch an die Umgebungsgeräusche an, ganz ohne manuelle Einstellung.";

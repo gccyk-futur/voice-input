@@ -4,7 +4,8 @@
     "hotkey": "Cmd+Shift+V",
     "windowStyle": "vibrancy",
     "launchAtStartup": false,
-    "maxHistoryCount": 50
+    "maxHistoryCount": 50,
+    "clipboardRetentionSeconds": 0
   },
   "asr": {
     "engine": "system",
@@ -20,8 +21,7 @@
       "speechNoiseThreshold": 0.0,
       "maxSentenceSilence": 1300,
       "autoStopEnabled": true,
-      "autoStopTimeout": 3.5,
-      "autoStopThreshold": 0.01
+      "autoStopTimeout": 5.0
     },
     "xunfei": {
       "appId": "your-app-id",
@@ -29,15 +29,13 @@
       "apiSecret": "your-api-secret",
       "dynamicCorrection": true,
       "autoStopEnabled": true,
-      "autoStopTimeout": 3.5,
-      "autoStopThreshold": 0.01
+      "autoStopTimeout": 5.0
     },
     "deepgram": {
       "apiKey": "your-deepgram-api-key",
       "model": "nova-3",
       "autoStopEnabled": true,
-      "autoStopTimeout": 3.5,
-      "autoStopThreshold": 0.01
+      "autoStopTimeout": 5.0
     }
   },
   "llm": {

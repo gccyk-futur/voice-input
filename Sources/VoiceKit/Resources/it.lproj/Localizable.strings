@@ -361,3 +361,13 @@
 "语音直接发送到你自己配置的讯飞开放平台账号。" = "L'audio viene inviato direttamente al tuo account iFLYTEK Open Platform.";
 "语音直接发送到你自己配置的 Deepgram 账号。" = "L'audio viene inviato direttamente al tuo account Deepgram.";
 "除了你自己配置的语音识别和 AI 服务，VoiceKit 不调用其他 API 服务。没有后台服务器，不会把语音、文字或任何使用数据上传到别处，也不追踪用户行为。" = "Oltre ai servizi di riconoscimento vocale e IA che configuri tu, VoiceKit non chiama altre API. Non esiste alcun server; audio, testo e dati d'uso non vengono mai caricati altrove e il comportamento dell'utente non viene tracciato.";
+"剪贴板保留时长" = "Durata di conservazione negli appunti";
+"永不还原" = "Non ripristinare mai";
+"15 秒" = "15 s";
+"30 秒" = "30 s";
+"60 秒" = "60 s";
+"需要手动按 ⌘V 粘贴时，识别文字会在剪贴板中保留此时长；超时后将还原为你原本的剪贴板内容。选「永不还原」则等同普通复制。" = "Quando devi incollare manualmente con ⌘V, il testo riconosciuto resta negli appunti per questa durata; dopo, il contenuto precedente viene ripristinato. Scegli «Non ripristinare mai» per un comportamento identico a una normale copia.";
+"已复制到剪贴板，请按 ⌘V 粘贴" = "Copiato negli appunti — incolla con ⌘V";
+"（%d 秒后还原为原剪贴板内容）" = " (contenuto precedente ripristinato dopo %d s)";
+"已录制" = "Tempo registrato";
+"开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。" = "Quando è attiva, la dettatura termina automaticamente e incolla il testo dopo una pausa della durata impostata, senza premere di nuovo la scorciatoia. La soglia di silenzio si adatta automaticamente al rumore ambientale, senza regolazione manuale.";
