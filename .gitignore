@@ -22,8 +22,9 @@ build/
 # Agent 运行时数据（非项目源码）
 .codebuddy/
 
-# 本地工作文档（个人检查表、踩坑笔记等，不入库）
+# 本地工作文档（个人检查表、踩坑笔记、规划讨论等，不入库）
 docs/*.local.md
+plans.local/
 
 # 说明：API Key 等敏感信息仅存于本地 Keychain，绝不入库
 icon*.png
