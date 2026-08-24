@@ -62,6 +62,8 @@ targets:
       - path: Sources/VoiceKit/Coordinator/RecordingFlowGate.swift
       - path: Sources/VoiceKit/Coordinator/RecordingRecovery.swift
       - path: Sources/VoiceKit/Settings/VoiceKitUIState.swift
+      - path: Sources/VoiceKit/Stats/UsageStatsSummary.swift
+      - path: Sources/VoiceKit/Stats/UsageStatsStore.swift
       - path: Sources/VoiceKit/ASR/AudioSendDrain.swift
       - path: Sources/VoiceKit/ASR/AudioPreRollBuffer.swift
       - path: Sources/VoiceKit/ASR/AudioPreRollSendGate.swift

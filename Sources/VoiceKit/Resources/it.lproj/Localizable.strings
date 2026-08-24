@@ -371,3 +371,36 @@
 "（%d 秒后还原为原剪贴板内容）" = " (contenuto precedente ripristinato dopo %d s)";
 "已录制" = "Tempo registrato";
 "开启后，说话停顿超过设定时间会自动结束听写并粘贴，不用再按一次热键。判定静音的音量高低由程序按环境噪音自动适应，无需手动设置。" = "Quando è attiva, la dettatura termina automaticamente e incolla il testo dopo una pausa della durata impostata, senza premere di nuovo la scorciatoia. La soglia di silenzio si adatta automaticamente al rumore ambientale, senza regolazione manuale.";
+
+// 使用统计面板
+"使用统计" = "Statistiche di utilizzo";
+"查看语音输入的使用概况；数据只保存在本机" = "Consulta un riepilogo dell'utilizzo della voce; i dati restano su questo Mac.";
+"阿里云" = "Alibaba Cloud";
+"讯飞" = "iFLYTEK";
+"总览" = "Riepilogo";
+"所有数据只保存在本机，VoiceKit 没有服务器。" = "Tutti i dati sono salvati solo su questo Mac; VoiceKit non ha server.";
+"本周" = "Questa settimana";
+"累计" = "Dal primo utilizzo";
+"活跃天数" = "Giorni attivi";
+"录音次数" = "Sessioni";
+"语音时长" = "Durata vocale";
+"识别字数" = "Caratteri riconosciuti";
+"引擎分布" = "Uso dei motori";
+"会话结束方式" = "Come terminano le sessioni";
+"已取消" = "Annullate";
+"从停止到出稿的平均耗时" = "Tempo medio dall'arresto al testo finale";
+"该耗时持续偏高说明尾部文字可能不完整，可尝试更换语音引擎。" = "Se questo tempo resta alto, la fine del testo potrebbe essere troncata; prova un altro motore vocale.";
+"暂无统计数据" = "Ancora nessuna statistica";
+"完成第一次语音输入后，这里会显示使用概况。" = "Il riepilogo apparirà qui dopo la prima dettatura.";
+"手动停止" = "Arresto manuale";
+"活跃天数 = 当天有至少一次录音的自然日；软件闲置不计数。" = "Giorni attivi = giorni con almeno una registrazione; il tempo di inattività non conta.";
+"润色次数" = "Sessioni migliorate";
+"润色字数" = "Caratteri migliorati";
+"Token 用量" = "Consumo di token";
+"总计" = "Totale";
+"引擎分布（次数）" = "Uso dei motori (sessioni)";
+"会话结束方式（次数）" = "Come terminano le sessioni (conteggio)";
+"毫秒" = "ms";
+"各引擎平均出稿耗时" = "Latenza media di finalizzazione per motore";
+"%lld 毫秒" = "%lld ms";
+"次数" = "Conteggio";

@@ -63,6 +63,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
     case prompts
     case permissions
     case privacy
+    case stats
     case about
 
     var id: String { rawValue }
@@ -91,6 +92,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .prompts: return VoiceKitLocalization.string("提示词管理")
         case .permissions: return VoiceKitLocalization.string("权限")
         case .privacy: return VoiceKitLocalization.string("数据隐私")
+        case .stats: return VoiceKitLocalization.string("使用统计")
         case .about: return VoiceKitLocalization.string("关于")
         }
     }
@@ -104,6 +106,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .prompts: return VoiceKitLocalization.string("管理 AI 润色使用的系统提示词和用户模板")
         case .permissions: return VoiceKitLocalization.string("管理 VoiceKit 使用的系统权限")
         case .privacy: return VoiceKitLocalization.string("了解数据如何流转，以及 VoiceKit 不会做什么")
+        case .stats: return VoiceKitLocalization.string("查看语音输入的使用概况；数据只保存在本机")
         case .about: return VoiceKitLocalization.string("版本、开源说明和联系方式")
         }
     }
@@ -117,6 +120,7 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         case .prompts: return "text.quote"
         case .permissions: return "hand.raised"
         case .privacy: return "lock.shield"
+        case .stats: return "chart.bar"
         case .about: return "info.circle"
         }
     }

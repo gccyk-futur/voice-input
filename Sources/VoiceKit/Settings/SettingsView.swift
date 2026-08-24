@@ -70,6 +70,10 @@ struct SettingsView: View {
 
     @State var showDiscardAlert = false
 
+    // 使用统计（StatsSection）
+    @State var statsSummary: UsageStatsSummary.Summary = .init()
+    @State var statsLoaded = false
+
     var body: some View {
         HStack(spacing: 0) {
             sidebarColumn
@@ -308,6 +312,7 @@ struct SettingsView: View {
         case .prompts: promptTab
         case .permissions: permissionTab
         case .privacy: privacyTab
+        case .stats: statsTab
         case .about: aboutTab
         }
     }
