@@ -132,33 +132,37 @@ struct LLMConfig: Codable, Equatable {
     }
 
     /// 从旧版单模型配置迁移到多模型数组（仅首次执行）。
+    /// 注意：不替换 llm.prompt 出厂默认——升级不改写用户配置里已生效的设置，
+    /// 新默认只服务新安装与「恢复默认设置」（产品决定，2026-08-25）。
     mutating func migrateFromLegacy() {
-        guard models.isEmpty else { return }
-        if engine == "openai", !openai.baseUrl.isEmpty {
+        if models.isEmpty {
+            if engine == "openai", !openai.baseUrl.isEmpty {
 #if APP_STORE
-            let m = LLMModelDef(
-                name: "云端 API", engine: "openai",
-                baseUrl: openai.baseUrl, apiKey: openai.apiKey,
-                model: openai.model
-            )
+                let m = LLMModelDef(
+                    name: "云端 API", engine: "openai",
+                    baseUrl: openai.baseUrl, apiKey: openai.apiKey,
+                    model: openai.model
+                )
 #else
-            let m = LLMModelDef(
-                name: "OpenAI", engine: "openai",
-                baseUrl: openai.baseUrl, apiKey: openai.apiKey,
-                model: openai.model
-            )
+                let m = LLMModelDef(
+                    name: "OpenAI", engine: "openai",
+                    baseUrl: openai.baseUrl, apiKey: openai.apiKey,
+                    model: openai.model
+                )
 #endif
-            models.append(m)
-            selectedModelID = m.id
-        } else if engine == "ollama", !ollama.baseUrl.isEmpty {
-            let m = LLMModelDef(
-                name: "Ollama", engine: "ollama",
-                baseUrl: ollama.baseUrl, apiKey: "",
-                model: ollama.model
-            )
-            models.append(m)
-            selectedModelID = m.id
+                models.append(m)
+                selectedModelID = m.id
+            } else if engine == "ollama", !ollama.baseUrl.isEmpty {
+                let m = LLMModelDef(
+                    name: "Ollama", engine: "ollama",
+                    baseUrl: ollama.baseUrl, apiKey: "",
+                    model: ollama.model
+                )
+                models.append(m)
+                selectedModelID = m.id
+            }
         }
+        BuiltinPromptPresets.syncImportedPresets(&prompts)
     }
 }
 struct LLMOllamaConfig: Codable, Equatable {
@@ -179,16 +183,31 @@ struct LLMOpenAIConfig: Codable, Equatable {
     var temperature: Double = 0.7
 }
 struct LLMPromptConfig: Codable, Equatable {
-    var system: String = VoiceKitLocalization.string("你是一个专业的文字润色助手，负责将语音转写的口语内容改写为规范、自然的书面中文。改写规则：\n1. 去掉「嗯、啊、那个、就是说、其实」等口头禅和语气词\n2. 修正错别字、语病和明显的语音识别错误\n3. 保持原意不变，不新增、不遗漏信息\n4. 只输出改写后的文本本身，不要任何解释、前缀或引号")
-    var user: String = VoiceKitLocalization.string("口语内容：{{input}}")
+    /// 出厂默认：统一英文正文 + 跟随输入语言输出，多语言只维护这一套。
+    /// 中性定位——清理口语（去填充词/错字/语病），不强制书面化改写、不重排结构。
+    /// 旧版出厂默认（10 语言本地化正文 + v1 英文版）见 LegacyFactoryPolishPrompt，仅用于迁移比对。
+    var system: String = """
+    You are an assistant that cleans up spoken transcripts.
+    Rules:
+    1. Remove filler words, hesitations, and repetitions.
+    2. Fix obvious transcription errors, grammar issues, and punctuation.
+    3. Keep the original meaning, tone, and sentence structure — do not reorder, reorganize, add, or omit anything.
+    4. Output only the cleaned text itself — no explanations, prefixes, or quotes.
+    Always respond in the same language as the input transcript.
+    """
+    var user: String = "Transcript: {{input}}"
 }
 
 /// 提示词预设：用户可维护多套提示词并在设置/状态栏菜单中快速切换。
+/// builtinID 非空表示导入自内置预设库；builtinVersion 记录导入时的库版本，
+/// 供「未自定义则跟随库更新」的浮动机制使用。
 struct LLMPromptPreset: Codable, Identifiable, Equatable {
     var id: String = UUID().uuidString
     var name: String = "默认"
     var system: String = ""
     var user: String = ""
+    var builtinID: String? = nil
+    var builtinVersion: Int? = nil
 }
 
 // MARK: - 宽容解码（向后兼容旧版 config.json）
@@ -376,5 +395,7 @@ extension LLMPromptPreset {
         name = try c.decode(String.self, forKey: .name, default: d.name)
         system = try c.decode(String.self, forKey: .system, default: d.system)
         user = try c.decode(String.self, forKey: .user, default: d.user)
+        builtinID = try c.decodeIfPresent(String.self, forKey: .builtinID) ?? d.builtinID
+        builtinVersion = try c.decodeIfPresent(Int.self, forKey: .builtinVersion) ?? d.builtinVersion
     }
 }

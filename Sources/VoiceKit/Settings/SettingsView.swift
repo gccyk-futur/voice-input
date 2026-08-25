@@ -44,6 +44,8 @@ struct SettingsView: View {
 
     // 提示词预览
     @State var showPromptPreview = false
+    /// 内置预设库 gallery
+    @State var showPresetGallery = false
 
     // LLM 润色测试
     @State var showLLMTest = false
@@ -151,6 +153,13 @@ struct SettingsView: View {
                                userTemplate: draft.llm.activePrompt.user,
                                language: draft.asr.system.language,
                                engine: draft.llm.selectedModel?.engine ?? "openai")
+        }
+        .sheet(isPresented: $showPresetGallery) {
+            PresetGallerySheet(
+                llm: $draft.llm,
+                language: draft.asr.system.language,
+                engine: draft.llm.selectedModel?.engine ?? "openai"
+            )
         }
         .sheet(isPresented: $showLLMTest) {
             LLMTestSheet(llmConfig: draft.llm, language: draft.asr.system.language)

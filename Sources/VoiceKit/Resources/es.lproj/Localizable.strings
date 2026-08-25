@@ -469,3 +469,31 @@
 "已使用默认配置启动。损坏的原文件已保留在配置目录中，可交给 AI 助手协助修复。" = "VoiceKit se inició con la configuración predeterminada. El archivo dañado se conservó en la carpeta de configuración; entrégalo a un asistente de IA para repararlo.";
 "打开配置文件夹" = "Abrir carpeta de configuración";
 "配置文件被外部修改但无法读取，已保持当前配置。" = "El archivo de configuración se modificó externamente pero no se pudo leer. Se mantuvo la configuración actual.";
+
+// 提示词预设库
+"深度润色" = "Reescritura profunda";
+"在清理口语的基础上重组语句、理顺逻辑，输出更成形的文字。" = "Más allá de la limpieza: reorganiza frases y lógica para un texto más elaborado.";
+"会议纪要" = "Acta de reunión";
+"把口语内容整理成带要点的结构化纪要。" = "Convierte el contenido oral en un acta estructurada con puntos clave.";
+"要点清单" = "Puntos clave";
+"把口语内容提炼成一行一条的要点列表。" = "Destila el contenido oral en una lista de puntos, uno por línea.";
+"翻译成英文 · 日常" = "Inglés · Cotidiano";
+"译成自然日常口吻的英文，适合聊天和社交。" = "Traduce a un inglés natural y cotidiano, ideal para chats y lo social.";
+"翻译成英文 · 商务" = "Inglés · Negocios";
+"译成正式得体的商务英文，适合邮件和职场沟通。" = "Traduce a un inglés de negocios formal, ideal para correos y el trabajo.";
+"正式公文" = "Documento formal";
+"改写为措辞严谨、格式规范的正式公文或邮件。" = "Reescribe como documento formal o correo oficial con redacción precisa.";
+"预设库" = "Biblioteca de preajustes";
+"从预设库导入…" = "Importar desde biblioteca…";
+"导入" = "Importar";
+"已导入" = "Importado";
+"导入后会复制为你的提示词，可自由修改或删除。" = "Al importar, el preajuste se copia como tu propio prompt: edítalo o bórralo libremente.";
+"查看完整提示词" = "Ver prompt completo";
+
+"预设为软件内置，不联网更新；仅作快速上手的参考，未必完全贴合你的日常需求。" = "Los preajustes están integrados en la app y no se actualizan en línea: una referencia para empezar rápido que quizá no cubra todas tus necesidades.";
+
+// 默认提示词升级询问
+"默认提示词已改进" = "Prompt predeterminado mejorado";
+"新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "El nuevo prompt predeterminado es más neutro: solo limpia el lenguaje oral sin forzar un estilo formal y responde en el idioma de entrada. Solo se pregunta una vez si aún usas el antiguo valor de fábrica; tu contenido personalizado no se ve afectado. ¿Reemplazar?";
+"替换为新默认" = "Reemplazar por el nuevo";
+"保留当前" = "Conservar el actual";

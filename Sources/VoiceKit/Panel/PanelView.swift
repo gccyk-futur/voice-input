@@ -139,9 +139,10 @@ struct PanelView: View {
                     Text("·")
                         .font(typography.metadata)
                     Text(coordinator.llmEnabled
-                         ? VoiceKitLocalization.string("AI 润色")
+                         ? VoiceKitLocalization.string("AI 润色") + " · " + activePromptName
                          : VoiceKitLocalization.string("未润色"))
                         .font(typography.metadata)
+                        .voiceKitToolTip(activePromptFullName)
                 }
                 .foregroundStyle(.secondary)
 
@@ -157,6 +158,18 @@ struct PanelView: View {
         .padding(14)
         .frame(minWidth: 480, minHeight: 120, maxHeight: 500)
         .voiceKitTextScale(textScale)
+    }
+
+    /// 当前生效的提示词名（完整，供 tooltip）
+    private var activePromptFullName: String {
+        let llm = ConfigStore.shared.config.llm
+        return llm.selectedPrompt?.name ?? VoiceKitLocalization.string("默认")
+    }
+
+    /// 面板底栏显示用：最多 10 字，超出截断
+    private var activePromptName: String {
+        let name = activePromptFullName
+        return name.count > 10 ? String(name.prefix(10)) + "…" : name
     }
 
     /// 状态栏主文案（优先用 coordinator.statusText，兜底根据 sessionState 推断）

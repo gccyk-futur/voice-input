@@ -14,6 +14,9 @@ struct QuickInsertView: View {
     @State private var snapshots: [SnapshotItem] = SnapshotStore.shared.items
     @State private var history: [HistoryItem] = HistoryStore.shared.items
     @State private var selectedID: String?
+    /// 仅键盘导航（↑↓）置 true：选中变化时才滚动跟随；鼠标悬浮选中不滚动，
+    /// 否则指针划过列表会带着列表乱滚。
+    @State private var scrollToSelected = false
     @State private var toast: String?
     @FocusState private var searchFocused: Bool
 
@@ -206,10 +209,10 @@ struct QuickInsertView: View {
                     }
                 }
                 .onChange(of: selectedID) { _, id in
-                    if let id {
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            proxy.scrollTo(id, anchor: .center)
-                        }
+                    guard scrollToSelected, let id else { return }
+                    scrollToSelected = false
+                    withAnimation(.easeOut(duration: 0.1)) {
+                        proxy.scrollTo(id, anchor: .center)
                     }
                 }
             }
@@ -261,10 +264,12 @@ struct QuickInsertView: View {
         let all = rows
         guard !all.isEmpty else { return }
         guard let current = selectedID, let idx = all.firstIndex(where: { $0.id == current }) else {
+            scrollToSelected = true
             selectedID = delta > 0 ? all.first?.id : all.last?.id
             return
         }
         let next = max(0, min(all.count - 1, idx + delta))
+        scrollToSelected = true
         selectedID = all[next].id
     }
 

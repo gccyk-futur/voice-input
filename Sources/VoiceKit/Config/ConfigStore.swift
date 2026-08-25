@@ -160,6 +160,8 @@ final class ConfigStore {
                    let decoded = try? JSONDecoder().decode(AppConfig.self, from: data) {
                     Task { @MainActor in
                         ConfigStore.shared.config = decoded
+                        // 外部修改也要驱动 UI 刷新（状态栏菜单等监听 didChange）
+                        NotificationCenter.default.post(name: ConfigStore.didChange, object: ConfigStore.shared)
                     }
                     return
                 }

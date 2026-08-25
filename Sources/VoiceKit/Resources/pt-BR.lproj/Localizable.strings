@@ -469,3 +469,31 @@
 "已使用默认配置启动。损坏的原文件已保留在配置目录中，可交给 AI 助手协助修复。" = "O VoiceKit foi iniciado com as configurações padrão. O arquivo corrompido foi mantido na pasta de configuração — entregue-o a um assistente de IA para repará-lo.";
 "打开配置文件夹" = "Abrir pasta de configuração";
 "配置文件被外部修改但无法读取，已保持当前配置。" = "O arquivo de configuração foi modificado externamente e não pôde ser lido. As configurações atuais foram mantidas.";
+
+// 提示词预设库
+"深度润色" = "Revisão profunda";
+"在清理口语的基础上重组语句、理顺逻辑，输出更成形的文字。" = "Além da limpeza: reorganiza frases e lógica para um texto mais acabado.";
+"会议纪要" = "Ata de reunião";
+"把口语内容整理成带要点的结构化纪要。" = "Transforma o conteúdo falado em uma ata estruturada com pontos-chave.";
+"要点清单" = "Pontos-chave";
+"把口语内容提炼成一行一条的要点列表。" = "Destila o conteúdo falado em uma lista de pontos, um por linha.";
+"翻译成英文 · 日常" = "Inglês · Casual";
+"译成自然日常口吻的英文，适合聊天和社交。" = "Traduz para um inglês natural e cotidiano, ideal para conversas.";
+"翻译成英文 · 商务" = "Inglês · Comercial";
+"译成正式得体的商务英文，适合邮件和职场沟通。" = "Traduz para um inglês comercial formal, ideal para e-mails e trabalho.";
+"正式公文" = "Documento formal";
+"改写为措辞严谨、格式规范的正式公文或邮件。" = "Reescreve como documento formal ou e-mail oficial com redação precisa.";
+"预设库" = "Biblioteca de predefinições";
+"从预设库导入…" = "Importar da biblioteca…";
+"导入" = "Importar";
+"已导入" = "Importado";
+"导入后会复制为你的提示词，可自由修改或删除。" = "A importação copia a predefinição como seu próprio prompt — edite ou exclua livremente.";
+"查看完整提示词" = "Ver prompt completo";
+
+"预设为软件内置，不联网更新；仅作快速上手的参考，未必完全贴合你的日常需求。" = "As predefinições são integradas ao app e não são atualizadas online — uma referência para começar rápido, que pode não cobrir todas as necessidades.";
+
+// 默认提示词升级询问
+"默认提示词已改进" = "Prompt padrão aprimorado";
+"新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "O novo prompt padrão é mais neutro: apenas limpa a fala sem forçar um estilo formal e responde no idioma de entrada. A pergunta aparece apenas uma vez se você ainda usa o padrão antigo de fábrica; seu conteúdo personalizado não é afetado. Substituir?";
+"替换为新默认" = "Substituir pelo novo";
+"保留当前" = "Manter atual";

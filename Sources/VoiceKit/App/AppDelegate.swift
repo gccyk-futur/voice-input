@@ -66,6 +66,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if ConfigStore.shared.config.general.showSettingsOnLaunch {
             SettingsWindowController.shared.show()
         }
+
+        // 一次性询问：仍在用旧出厂默认提示词的老用户可选择替换为新默认
+        PromptUpgradeOffer.presentIfNeeded()
     }
 
     /// 发现已有实例时的处理。需要区分两种场景：
@@ -168,6 +171,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             popover.close()
             removePopoverDismissMonitors()
         } else {
+            // 每次打开重建内容视图：SwiftUI @State 快照可能过期（如设置页保存后），
+            // 新建 hosting 视图保证引擎/模型/提示词/历史都读到最新状态
+            popover.contentViewController = NSHostingController(rootView: StatusBarMenuView())
             popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
             // 外观在窗口层应用（popover 的窗口在 show 后才存在）
             popover.contentViewController?.view.window?.appearance = VoiceKitAppearance.current.nsAppearance

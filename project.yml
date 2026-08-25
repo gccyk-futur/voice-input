@@ -79,6 +79,9 @@ targets:
       - path: Sources/VoiceKit/Config/AppConfig.swift
       - path: Sources/VoiceKit/Config/ConfigRecovery.swift
       - path: Sources/VoiceKit/History/HistoryStore.swift
+      - path: Sources/VoiceKit/Prompt/PromptTemplate.swift
+      - path: Sources/VoiceKit/Prompt/BuiltinPromptPresets.swift
+      - path: Sources/VoiceKit/Prompt/PromptUpgradeOffer.swift
       - path: Sources/VoiceKit/Support/VoiceKitLocalization.swift
       - path: Sources/VoiceKit/ASR/XunfeiAuth.swift
       - path: Sources/VoiceKit/ASR/XunfeiResultAssembler.swift

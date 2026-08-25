@@ -353,6 +353,103 @@ struct PromptEditorSheet: View {
     }
 }
 
+// MARK: - 内置预设库 Gallery Sheet
+
+/// 内置提示词预设库：导入即拷贝为用户普通预设（可改可删，App 升级不触碰）。
+struct PresetGallerySheet: View {
+    @Binding var llm: LLMConfig
+    let language: String
+    let engine: String
+
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.voiceKitTextScale) private var textScale
+    @State private var previewing: BuiltinPromptPreset?
+
+    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
+
+    private func isImported(_ preset: BuiltinPromptPreset) -> Bool {
+        llm.prompts.contains { $0.builtinID == preset.id }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("预设库").font(typography.sectionTitle)
+            Text("导入后会复制为你的提示词，可自由修改或删除。")
+                .font(typography.callout)
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                VStack(spacing: VoiceKitDesign.Spacing.md) {
+                    ForEach(BuiltinPromptPresets.all) { preset in
+                        card(preset)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+
+            HStack {
+                Text("预设为软件内置，不联网更新；仅作快速上手的参考，未必完全贴合你的日常需求。")
+                    .font(typography.metadata)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button("关闭") { dismiss() }
+            }
+        }
+        .padding(20)
+        .frame(width: 560, height: 540)
+        .sheet(item: $previewing) { preset in
+            PromptPreviewSheet(systemPrompt: preset.system, userTemplate: preset.user,
+                               language: language, engine: engine)
+        }
+    }
+
+    private func card(_ preset: BuiltinPromptPreset) -> some View {
+        HStack(alignment: .center, spacing: VoiceKitDesign.Spacing.lg) {
+            VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.xs) {
+                Text(preset.name)
+                    .font(typography.body)
+                    .foregroundStyle(.primary)
+                Text(preset.summary)
+                    .font(typography.metadata)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: VoiceKitDesign.Spacing.md)
+            Button("预览") { previewing = preset }
+                .buttonStyle(.borderless)
+                .voiceKitToolTip(VoiceKitLocalization.string("查看完整提示词"))
+            if isImported(preset) {
+                Text("已导入")
+                    .font(typography.metadata)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(.quaternary, in: Capsule())
+            } else {
+                Button("导入") { importPreset(preset) }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+            }
+        }
+        .padding(VoiceKitDesign.Spacing.lg)
+        .background(.quaternary.opacity(0.6), in: RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.card))
+    }
+
+    /// 导入 = 拷贝一份为用户预设；builtinID 记录来源防重复导入。
+    /// 不自动切换选中项——静默改变润色行为会让用户困惑（导入只是想试试，
+    /// 结果中文输入变英文输出）。要用哪套由用户显式点击选择。
+    private func importPreset(_ preset: BuiltinPromptPreset) {
+        let new = LLMPromptPreset(
+            name: preset.name,
+            system: preset.system,
+            user: preset.user,
+            builtinID: preset.id,
+            builtinVersion: preset.version
+        )
+        llm.prompts.append(new)
+    }
+}
+
 /// 侧栏悬浮面板的背景：NSVisualEffectView 的 .sidebar 材质。
 /// withinWindow 混合（与窗口白底混合）= 与 Finder/系统设置侧栏完全同款颜色，
 /// 不透桌面、不受壁纸影响；跟随窗口激活态与深浅色外观。

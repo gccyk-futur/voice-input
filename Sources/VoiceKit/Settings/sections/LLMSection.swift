@@ -288,6 +288,7 @@ extension SettingsView {
                 }
                 HStack(spacing: 8) {
                     Button("新建（复制当前）") { addPromptPreset() }
+                    Button("从预设库导入…") { showPresetGallery = true }
                     Spacer()
                     Button("预览") { showPromptPreview = true }
                     Button("测试润色效果") { showLLMTest = true }

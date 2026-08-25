@@ -469,3 +469,31 @@
 "已使用默认配置启动。损坏的原文件已保留在配置目录中，可交给 AI 助手协助修复。" = "VoiceKit è stato avviato con le impostazioni predefinite. Il file danneggiato è stato conservato nella cartella di configurazione: consegnalo a un assistente AI per ripararlo.";
 "打开配置文件夹" = "Apri cartella di configurazione";
 "配置文件被外部修改但无法读取，已保持当前配置。" = "Il file di configurazione è stato modificato dall'esterno ma non è leggibile. Le impostazioni attuali sono state mantenute.";
+
+// 提示词预设库
+"深度润色" = "Riscrittura approfondita";
+"在清理口语的基础上重组语句、理顺逻辑，输出更成形的文字。" = "Oltre alla pulizia: riorganizza frasi e logica per un testo più raffinato.";
+"会议纪要" = "Verbale di riunione";
+"把口语内容整理成带要点的结构化纪要。" = "Trasforma il contenuto parlato in un verbale strutturato con punti chiave.";
+"要点清单" = "Punti chiave";
+"把口语内容提炼成一行一条的要点列表。" = "Distilla il contenuto parlato in un elenco puntato, uno per riga.";
+"翻译成英文 · 日常" = "Inglese · Quotidiano";
+"译成自然日常口吻的英文，适合聊天和社交。" = "Traduce in un inglese naturale e quotidiano, per chat e uso sociale.";
+"翻译成英文 · 商务" = "Inglese · Business";
+"译成正式得体的商务英文，适合邮件和职场沟通。" = "Traduce in un inglese professionale formale, per email e lavoro.";
+"正式公文" = "Documento formale";
+"改写为措辞严谨、格式规范的正式公文或邮件。" = "Riscrive come documento formale o email ufficiale con formulazione precisa.";
+"预设库" = "Libreria predefiniti";
+"从预设库导入…" = "Importa dalla libreria…";
+"导入" = "Importa";
+"已导入" = "Importato";
+"导入后会复制为你的提示词，可自由修改或删除。" = "L'importazione copia il predefinito come tuo prompt: modificabile ed eliminabile.";
+"查看完整提示词" = "Vedi prompt completo";
+
+"预设为软件内置，不联网更新；仅作快速上手的参考，未必完全贴合你的日常需求。" = "I predefiniti sono integrati nell'app, senza aggiornamenti online: un riferimento per iniziare subito, che potrebbe non coprire ogni esigenza.";
+
+// 默认提示词升级询问
+"默认提示词已改进" = "Prompt predefinito migliorato";
+"新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "Il nuovo prompt predefinito è più neutro: ripulisce solo il parlato senza forzare uno stile formale e risponde nella lingua di input. La richiesta appare una sola volta se usi ancora il vecchio predefinito; i contenuti personalizzati non sono interessati. Sostituire?";
+"替换为新默认" = "Sostituisci con il nuovo";
+"保留当前" = "Mantieni attuale";
