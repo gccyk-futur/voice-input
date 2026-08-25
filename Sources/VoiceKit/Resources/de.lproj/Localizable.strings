@@ -462,3 +462,10 @@
 "插入" = "Einfügen";
 "选择" = "Auswählen";
 "切换" = "Wechseln";
+
+// 配置防御
+"配置异常，已从备份恢复。" = "Konfigurationsfehler – aus Backup wiederhergestellt.";
+"配置文件已损坏" = "Konfigurationsdatei beschädigt";
+"已使用默认配置启动。损坏的原文件已保留在配置目录中，可交给 AI 助手协助修复。" = "VoiceKit wurde mit Standardeinstellungen gestartet. Die beschädigte Datei wurde im Konfigurationsordner behalten und kann mithilfe eines KI-Assistenten repariert werden.";
+"打开配置文件夹" = "Konfigurationsordner öffnen";
+"配置文件被外部修改但无法读取，已保持当前配置。" = "Die Konfigurationsdatei wurde extern geändert und konnte nicht gelesen werden. Die aktuellen Einstellungen wurden beibehalten.";

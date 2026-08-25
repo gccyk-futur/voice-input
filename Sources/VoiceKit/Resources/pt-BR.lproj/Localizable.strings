@@ -462,3 +462,10 @@
 "插入" = "Inserir";
 "选择" = "Selecionar";
 "切换" = "Alternar";
+
+// 配置防御
+"配置异常，已从备份恢复。" = "Erro de configuração — restaurado do backup.";
+"配置文件已损坏" = "Arquivo de configuração corrompido";
+"已使用默认配置启动。损坏的原文件已保留在配置目录中，可交给 AI 助手协助修复。" = "O VoiceKit foi iniciado com as configurações padrão. O arquivo corrompido foi mantido na pasta de configuração — entregue-o a um assistente de IA para repará-lo.";
+"打开配置文件夹" = "Abrir pasta de configuração";
+"配置文件被外部修改但无法读取，已保持当前配置。" = "O arquivo de configuração foi modificado externamente e não pôde ser lido. As configurações atuais foram mantidas.";
