@@ -32,6 +32,8 @@ struct SnapshotManageView: View {
                 } description: {
                     Text("在历史条目上点「加为快照」，或在下方手动添加一段文字。")
                 }
+                // 同 HistoryBrowseView：空态必须显式撑满，否则内容区垂直居中漂移
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List {
                     ForEach(filtered) { item in

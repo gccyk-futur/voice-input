@@ -501,3 +501,8 @@
 // 关于页链接
 "点击网站链接可在浏览器中打开；其他信息可用右侧按钮复制。\n\nCopyright © 2026 VoiceKit. MIT License." = "Klicke auf den Website-Link, um ihn im Browser zu öffnen; die anderen Einträge kannst du rechts über die Schaltfläche kopieren.\n\nCopyright © 2026 VoiceKit. MIT License.";
 "在浏览器中打开" = "Im Browser öffnen";
+
+// 收藏标签的清除动作
+"取消全部收藏" = "Alle Favoriten entfernen";
+"取消全部收藏？" = "Alle Favoriten entfernen?";
+"记录会保留在「全部」中，仅移除收藏标记。" = "Die Einträge bleiben in „Alle“ erhalten; nur die Favoriten-Markierung wird entfernt.";

@@ -72,6 +72,13 @@ final class HistoryStore {
         }
     }
 
+    /// 取消全部收藏：记录保留在「全部」中，仅移除收藏标记。
+    func unfavoriteAll() {
+        guard items.contains(where: \.favorite) else { return }
+        for idx in items.indices { items[idx].favorite = false }
+        save()
+    }
+
     func clear() {
         items.removeAll()
         save()

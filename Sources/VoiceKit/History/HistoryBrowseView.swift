@@ -87,9 +87,18 @@ struct HistoryBrowseView: View {
             }
         }
         .voiceKitTextScale(textScale)
-        .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
-            Button("清空", role: .destructive, action: clearAll)
-            Button("取消", role: .cancel) {}
+        .alert(favoritesOnly ? "取消全部收藏？" : "清空全部历史记录？", isPresented: $showClearConfirm) {
+            if favoritesOnly {
+                Button("取消全部收藏", action: unfavoriteAll)
+                Button("取消", role: .cancel) {}
+            } else {
+                Button("清空", role: .destructive, action: clearAll)
+                Button("取消", role: .cancel) {}
+            }
+        } message: {
+            if favoritesOnly {
+                Text("记录会保留在「全部」中，仅移除收藏标记。")
+            }
         }
         .alert("已导出", isPresented: $showExportSuccess) {
             Button("好", role: .cancel) {}
@@ -119,9 +128,16 @@ struct HistoryBrowseView: View {
                 withAnimation { expandAll.toggle() }
             }
             exportMenu
-            Button("清空全部", role: .destructive, action: { showClearConfirm = true })
-                .buttonStyle(.borderless).foregroundStyle(.red)
-                .disabled(items.isEmpty)
+            // 清除动作按标签分语义：「收藏」里只移除收藏标记，绝不能清掉全部历史
+            if favoritesOnly {
+                Button("取消全部收藏", action: { showClearConfirm = true })
+                    .buttonStyle(.borderless)
+                    .disabled(!items.contains(where: \.favorite))
+            } else {
+                Button("清空全部", role: .destructive, action: { showClearConfirm = true })
+                    .buttonStyle(.borderless).foregroundStyle(.red)
+                    .disabled(items.isEmpty)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -136,6 +152,9 @@ struct HistoryBrowseView: View {
                  ? "点击条目上的 ★ 即可收藏，方便快速找回常用内容。"
                  : "识别结果会自动保留在这里，可直接复制、收藏或重新粘贴。")
         }
+        // ContentUnavailableView 在 VStack 里不会自动撑满：不撑满会让整个内容区
+        // 垂直居中漂移（空态版式错乱），显式撑满
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - 操作
@@ -173,6 +192,7 @@ struct HistoryBrowseView: View {
     private func toggleFavorite(_ item: HistoryItem) { HistoryStore.shared.toggleFavorite(item) }
     private func delete(_ item: HistoryItem) { HistoryStore.shared.remove(item) }
     private func clearAll() { HistoryStore.shared.clear() }
+    private func unfavoriteAll() { HistoryStore.shared.unfavoriteAll() }
 
     // MARK: - 导出
 
