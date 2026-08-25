@@ -249,7 +249,6 @@
 "配置阿里云引擎 →" = "Configure Alibaba Cloud engine →";
 "重启 VoiceKit，让刚授权的直接写入能力完整生效。" = "Restart VoiceKit so the newly authorized direct-writing capability takes full effect.";
 "重新尝试" = "Try Again";
-"链接仅作为信息展示；使用右侧复制按钮后，可在浏览器或邮件客户端中使用。\n\nCopyright © 2026 VoiceKit. MIT License." = "Links are shown for information only. Use the copy button on the right, then open them in a browser or mail client.\n\nCopyright © 2026 VoiceKit. MIT License.";
 "阿里云 Fun-ASR 的 API Key 不能为空" = "Alibaba Cloud Fun-ASR API Key cannot be empty";
 "阿里云 Fun-ASR 的 Workspace ID 不能为空" = "Alibaba Cloud Fun-ASR Workspace ID cannot be empty";
 "阿里云 Fun-ASR" = "Alibaba Cloud Fun-ASR";
@@ -498,5 +497,7 @@
 "替换为新默认" = "Replace with New Default";
 "保留当前" = "Keep Current";
 
-// 使用帮助入口
-"帮助" = "Help";
+
+// 关于页链接
+"点击网站链接可在浏览器中打开；其他信息可用右侧按钮复制。\n\nCopyright © 2026 VoiceKit. MIT License." = "Click the website link to open it in your browser; use the button on the right to copy the others.\n\nCopyright © 2026 VoiceKit. MIT License.";
+"在浏览器中打开" = "Open in Browser";

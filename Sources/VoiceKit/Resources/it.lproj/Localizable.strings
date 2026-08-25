@@ -290,7 +290,6 @@
 "部分模型支持，启用后先深度推理再输出。请确保所选模型支持此功能。" = "Supportato da alcuni modelli: se attivato, prima ragiona in profondità e poi risponde. Verifica che il modello scelto supporti questa funzione.";
 "配置阿里云引擎 →" = "Configura motore Alibaba Cloud →";
 "重启 VoiceKit，让刚授权的直接写入能力完整生效。" = "Riavvia VoiceKit per rendere pienamente effettiva la scrittura diretta appena autorizzata.";
-"链接仅作为信息展示；使用右侧复制按钮后，可在浏览器或邮件客户端中使用。\n\nCopyright © 2026 VoiceKit. MIT License." = "Il link è solo informativo; dopo aver usato il pulsante di copia a destra puoi utilizzarlo nel browser o nel client di posta.\n\nCopyright © 2026 VoiceKit. MIT License.";
 "阿里云 ASR WebSocket URL 无效" = "URL WebSocket di Alibaba Cloud ASR non valido";
 "阿里云 ASR 上一个任务尚未结束，请稍后重试" = "L'attività precedente di Alibaba Cloud ASR non è ancora terminata; riprova più tardi";
 "阿里云 ASR 任务失败：%@" = "Attività di Alibaba Cloud ASR non riuscita: %@";
@@ -498,5 +497,7 @@
 "替换为新默认" = "Sostituisci con il nuovo";
 "保留当前" = "Mantieni attuale";
 
-// 使用帮助入口
-"帮助" = "Aiuto";
+
+// 关于页链接
+"点击网站链接可在浏览器中打开；其他信息可用右侧按钮复制。\n\nCopyright © 2026 VoiceKit. MIT License." = "Fai clic sul link del sito per aprirlo nel browser; usa il pulsante a destra per copiare gli altri.\n\nCopyright © 2026 VoiceKit. MIT License.";
+"在浏览器中打开" = "Apri nel browser";

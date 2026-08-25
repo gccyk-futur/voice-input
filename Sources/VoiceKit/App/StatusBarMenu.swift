@@ -11,6 +11,7 @@ struct StatusBarMenuView: View {
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
     @State private var hoveredItemID: String?
+    @State private var hoveringVersion = false
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -37,8 +38,21 @@ struct StatusBarMenuView: View {
                         .fill(statusColor)
                         .frame(width: 6, height: 6)
                 }
-                Text(VoiceKitDesign.versionLine)
-                    .font(typography.metadata).foregroundStyle(.tertiary)
+                // 版本号即官网入口：点击打开独立站产品主页
+                Button {
+                    NSWorkspace.shared.open(Self.homepageURL)
+                } label: {
+                    Text(VoiceKitDesign.versionLine)
+                        .font(typography.metadata)
+                        .foregroundStyle(hoveringVersion ? .secondary : .tertiary)
+                        .underline(hoveringVersion)
+                }
+                .buttonStyle(.plain)
+                .voiceKitToolTip("ckai.me/voice-kit")
+                .onHover { hovering in
+                    hoveringVersion = hovering
+                    if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
             }
             .padding(.horizontal, 6)
 
@@ -77,11 +91,6 @@ struct StatusBarMenuView: View {
                 BottomButton(title: VoiceKitLocalization.string("设置…"),
                              systemImage: "gearshape") {
                     SettingsWindowController.shared.show()
-                    dismissMenuBarExtra()
-                }
-                BottomButton(title: VoiceKitLocalization.string("帮助"),
-                             systemImage: "questionmark.circle") {
-                    NSWorkspace.shared.open(Self.helpURL)
                     dismissMenuBarExtra()
                 }
                 BottomButton(title: VoiceKitLocalization.string("退出"),
@@ -382,12 +391,8 @@ struct StatusBarMenuView: View {
 
     // MARK: - 辅助
 
-    /// 使用帮助（独立站；按系统首选语言跳中/英文版）
-    private static var helpURL: URL {
-        let lang = Locale.preferredLanguages.first ?? "en"
-        let page = lang.hasPrefix("zh") ? "help.html" : "help-en.html"
-        return URL(string: "https://ckai.me/voice-kit/\(page)")!
-    }
+    /// 官网主页（独立站产品页）
+    private static let homepageURL = URL(string: "https://ckai.me/voice-kit")!
 
     /// 与设置页必填校验口径一致：判断引擎凭据是否已填写，
     /// 用于状态栏切换时提示「未配置将回退系统听写」。

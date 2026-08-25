@@ -9,6 +9,7 @@ import ApplicationServices
 private enum ContactInfo {
     static let email = "voicekit@ckai.me"
     static let website = "ckai.me/voice-kit"
+    static let websiteURL = "https://ckai.me/voice-kit"
     static let github = "github.com/gccyk-futur/voice-input"
 }
 
@@ -56,12 +57,12 @@ extension SettingsView {
             // 联系与更新
             Section {
                 contactRow(icon: "envelope.fill", value: ContactInfo.email)
-                contactRow(icon: "safari.fill", value: ContactInfo.website)
+                contactRow(icon: "safari.fill", value: ContactInfo.website, url: ContactInfo.websiteURL)
                 contactRow(icon: "chevron.left.forwardslash.chevron.right", value: ContactInfo.github)
             } header: {
                 Label("联系与更新", systemImage: "envelope")
             } footer: {
-                Text("链接仅作为信息展示；使用右侧复制按钮后，可在浏览器或邮件客户端中使用。\n\nCopyright © 2026 VoiceKit. MIT License.")
+                Text("点击网站链接可在浏览器中打开；其他信息可用右侧按钮复制。\n\nCopyright © 2026 VoiceKit. MIT License.")
             }
         }
     }
@@ -73,16 +74,50 @@ extension SettingsView {
         return VoiceKitLocalization.format("版本 %@ (build %@)", ver, build)
     }
 
-    func contactRow(icon: String, value: String) -> some View {
+    /// 联系行：传了 url 时值本身可点击（浏览器打开），否则纯展示 + 右侧复制。
+    func contactRow(icon: String, value: String, url: String? = nil) -> some View {
+        ContactRow(icon: icon, value: value, url: url)
+    }
+}
+
+/// 联系行的值视图：可点击时用 Button + 悬浮下划线/手型光标表达链接心智。
+private struct ContactRow: View {
+    let icon: String
+    let value: String
+    let url: String?
+
+    @Environment(\.voiceKitTextScale) private var textScale
+    @State private var hovering = false
+
+    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
+
+    var body: some View {
         HStack(spacing: 8) {
             Image(systemName: icon)
                 .font(typography.callout)
                 .foregroundStyle(.secondary)
                 .frame(width: 18)
-            Text(value)
-                .font(typography.callout)
-                .foregroundStyle(.primary)
-                .textSelection(.enabled)
+            if let url, let target = URL(string: url) {
+                Button {
+                    NSWorkspace.shared.open(target)
+                } label: {
+                    Text(value)
+                        .font(typography.callout)
+                        .foregroundStyle(hovering ? Color.accentColor : Color.primary)
+                        .underline(hovering)
+                }
+                .buttonStyle(.plain)
+                .voiceKitToolTip(VoiceKitLocalization.string("在浏览器中打开"))
+                .onHover { h in
+                    hovering = h
+                    if h { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+                }
+            } else {
+                Text(value)
+                    .font(typography.callout)
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+            }
             Spacer()
             Button {
                 NSPasteboard.general.clearContents()
