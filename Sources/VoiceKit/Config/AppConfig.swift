@@ -13,6 +13,9 @@ struct AppConfig: Codable, Equatable {
 
 struct GeneralConfig: Codable, Equatable {
     var hotkey: String = "Cmd+Shift+V"
+    /// 呼出「速插浮层」的全局热键（与听写热键相互独立）。
+    /// 用 Shift 组合而非 F 键：笔记本 F 键需按 Fn，体验差。
+    var quickInsertHotkey: String = "Cmd+Shift+I"
     var launchAtStartup: Bool = false
     var showSettingsOnLaunch: Bool = true
     var windowStyle: String = "vibrancy"
@@ -217,6 +220,7 @@ extension GeneralConfig {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let d = GeneralConfig()
         hotkey = try c.decode(String.self, forKey: .hotkey, default: d.hotkey)
+        quickInsertHotkey = try c.decode(String.self, forKey: .quickInsertHotkey, default: d.quickInsertHotkey)
         launchAtStartup = try c.decode(Bool.self, forKey: .launchAtStartup, default: d.launchAtStartup)
         showSettingsOnLaunch = try c.decode(Bool.self, forKey: .showSettingsOnLaunch, default: d.showSettingsOnLaunch)
         windowStyle = try c.decode(String.self, forKey: .windowStyle, default: d.windowStyle)

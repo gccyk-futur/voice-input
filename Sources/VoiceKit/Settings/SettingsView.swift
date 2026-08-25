@@ -70,6 +70,10 @@ struct SettingsView: View {
 
     @State var showDiscardAlert = false
 
+    // 本地数据「清空」确认（不可逆操作）
+    @State var pendingClearTitle = ""
+    @State var pendingClearAction: (() -> Void)?
+
     // 使用统计（StatsSection）
     @State var statsSummary: UsageStatsSummary.Summary = .init()
     @State var statsLoaded = false
@@ -127,6 +131,20 @@ struct SettingsView: View {
             Button("放弃更改", role: .destructive) { onDone() }
         } message: {
             Text("关闭后，尚未保存的设置将不会生效。")
+        }
+        .confirmationDialog(
+            pendingClearTitle,
+            isPresented: Binding(
+                get: { pendingClearAction != nil },
+                set: { if !$0 { pendingClearAction = nil } }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("清空", role: .destructive) {
+                pendingClearAction?()
+                pendingClearAction = nil
+            }
+            Button("取消", role: .cancel) { pendingClearAction = nil }
         }
         .sheet(isPresented: $showPromptPreview) {
             PromptPreviewSheet(systemPrompt: draft.llm.activePrompt.system,
@@ -216,12 +234,13 @@ struct SettingsView: View {
     /// 即 macOS 26 Finder 的版式；结构稳定，版式完全可控。
     var sidebarColumn: some View {
         List(SettingsPane.allCases, selection: $selectedPane) { pane in
+            // 字号打在行内容上：.sidebar 样式忽略 List 级 .font（字体缩放不生效的根因）
             Label(pane.title, systemImage: pane.systemImage)
+                .font(typography.body)
                 .tag(pane)
                 .padding(.leading, pane.isSubpane ? 16 : 0)
         }
         .listStyle(.sidebar)
-        .font(typography.body)
         // 隐藏 List 自带背景，垫系统 .sidebar 材质（withinWindow 混合：
         // 与窗口白底混合，颜色与 Finder/系统设置侧栏完全一致，
         // 不透桌面、不受壁纸影响；跟随窗口激活态变浅灰是系统标准行为）
@@ -313,6 +332,7 @@ struct SettingsView: View {
         case .permissions: permissionTab
         case .privacy: privacyTab
         case .stats: statsTab
+        case .history: historySettingsTab
         case .about: aboutTab
         }
     }
@@ -459,6 +479,7 @@ struct SettingsView: View {
             return
         }
         HotkeyManager.shared.register(hotkeyString: draft.general.hotkey)
+        HotkeyManager.shared.registerSecondary(hotkeyString: draft.general.quickInsertHotkey)
         originalConfig = draft
         DispatchQueue.main.async {
             self.onDone()

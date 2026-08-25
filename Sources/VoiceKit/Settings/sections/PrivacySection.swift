@@ -46,6 +46,10 @@ extension SettingsView {
                 localDataRow(title: "历史记录", file: "history.json",
                              detail: "最近若干条识别原文与润色结果",
                              url: Self.supportFileURL("history.json"), clearable: true)
+                localDataRow(title: "快照", file: "snapshots.json",
+                             detail: "你手动保存、可反复速插的文本片段，不会自动清理",
+                             url: Self.supportFileURL("snapshots.json"), clearable: true,
+                             clear: { SnapshotStore.shared.clear(); refreshLocalDataSizes() })
                 localDataRow(title: "运行日志", file: "voicekit.log",
                              detail: "含转录原文，仅用于排查问题，超过 2MB 自动覆盖较早内容",
                              url: Log.currentFileURL, clearable: true,
@@ -73,8 +77,11 @@ extension SettingsView {
                     Button(VoiceKitLocalization.string("导出…")) { exportUsageStats() }
                         .controlSize(.small)
                     Button(VoiceKitLocalization.string("清空")) {
-                        UsageStatsStore.shared.clear()
-                        refreshLocalDataSizes()
+                        pendingClearTitle = VoiceKitLocalization.format("确定要清空「%@」吗？此操作不可逆。", VoiceKitLocalization.string("统计文件"))
+                        pendingClearAction = {
+                            UsageStatsStore.shared.clear()
+                            refreshLocalDataSizes()
+                        }
                     }
                     .controlSize(.small)
                 }
@@ -112,6 +119,7 @@ extension SettingsView {
         localDataSizes = [
             "config.json": size(Self.supportFileURL("config.json")),
             "history.json": size(Self.supportFileURL("history.json")),
+            "snapshots.json": size(Self.supportFileURL("snapshots.json")),
             "voicekit.log": size(Log.currentFileURL),
             "stats": UsageStatsStore.shared.fileSize
         ]
@@ -147,9 +155,13 @@ extension SettingsView {
             }
             if clearable {
                 Button(VoiceKitLocalization.string("清空")) {
-                    if let clear { clear() } else if let url {
-                        try? FileManager.default.removeItem(at: url)
-                        refreshLocalDataSizes()
+                    pendingClearTitle = VoiceKitLocalization.format("确定要清空「%@」吗？此操作不可逆。", title)
+                    pendingClearAction = {
+                        if let clear { clear() }
+                        else if let url {
+                            try? FileManager.default.removeItem(at: url)
+                            refreshLocalDataSizes()
+                        }
                     }
                 }
                 .controlSize(.small)

@@ -1,167 +1,127 @@
 import SwiftUI
+import AppKit
 
-/// 历史记录窗口内容：浏览、复制、收藏、删除、清空。
-/// 实时跟随 HistoryStore（store 变更会发 VoiceMateHistoryDidChange 通知）。
+/// 历史窗口容器：与设置窗口同一版式——悬浮圆角侧栏（List .sidebar 样式 + 系统 .sidebar 材质）
+/// + 白色圆角内容卡片（macOS 26 Finder 版式）。
+/// 侧栏固定宽度，内容区稳定 → 切换标签不漂移；记住上次选中的标签。
 @MainActor
 struct HistoryView: View {
+    @AppStorage("voicekit.history.lastTab") private var lastTabRaw = HistoryTab.all.rawValue
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
-    @State private var items: [HistoryItem] = HistoryStore.shared.items
-    @State private var selectedID: HistoryItem.ID?
-    @State private var searchText = ""
-    @State private var showClearConfirm = false
+    @State private var tab: HistoryTab?
+    @State private var historyItems: [HistoryItem] = HistoryStore.shared.items
+    @State private var snapshotCount = SnapshotStore.shared.items.count
 
-    private var textScale: VoiceKitTextScale {
-        VoiceKitTextScale.restored(from: textScaleRawValue)
-    }
+    private var textScale: VoiceKitTextScale { VoiceKitTextScale.restored(from: textScaleRawValue) }
+    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
+    private var currentTab: HistoryTab { tab ?? .all }
 
-    private var typography: VoiceKitTypography {
-        VoiceKitTypography(scale: textScale)
-    }
-
-    /// 搜索过滤：匹配识别原文或润色结果，大小写不敏感
-    private var filteredItems: [HistoryItem] {
-        let query = searchText.trimmingCharacters(in: .whitespaces)
-        guard !query.isEmpty else { return items }
-        return items.filter {
-            $0.asrResult.localizedCaseInsensitiveContains(query) ||
-            ($0.llmResult?.localizedCaseInsensitiveContains(query) ?? false)
+    private enum HistoryTab: String, CaseIterable, Identifiable {
+        case all, favorites, snapshots
+        var id: String { rawValue }
+        var title: String {
+            switch self {
+            case .all: return VoiceKitLocalization.string("全部")
+            case .favorites: return VoiceKitLocalization.string("收藏")
+            case .snapshots: return VoiceKitLocalization.string("快照")
+            }
+        }
+        var icon: String {
+            switch self {
+            case .all: return "clock"
+            case .favorites: return "star"
+            case .snapshots: return "square.and.arrow.down.on.square"
+            }
         }
     }
 
     var body: some View {
-        Group {
-            if filteredItems.isEmpty {
-                if searchText.isEmpty {
-                    ContentUnavailableView("暂无记录",
-                                           systemImage: "tray",
-                                           description: Text("识别结果会自动保留在这里，可直接复制或收藏"))
-                } else {
-                    ContentUnavailableView.search(text: searchText)
-                }
-            } else {
-                List(selection: $selectedID) {
-                    ForEach(filteredItems) { item in
-                        HistoryRow(
-                            item: item,
-                            onCopy: { copy(item) },
-                            onFavorite: { toggleFavorite(item) },
-                            onDelete: { delete(item) }
-                        )
-                        .tag(item.id)
-                    }
-                }
-                .listStyle(.inset)
-            }
+        HStack(spacing: 0) {
+            sidebarColumn
+            content
+                // 内容区作为白色圆角卡片浮在窗口底色上（与设置窗口一致）
+                .padding(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 10))
         }
-        .frame(minWidth: 480, idealWidth: 560, minHeight: 360, idealHeight: 520)
-        .searchable(text: $searchText, placement: .toolbar, prompt: "搜索历史")
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Text(VoiceKitLocalization.format("%lld 条记录", items.count))
-                    .font(typography.callout)
-                    .foregroundStyle(.secondary)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Button("清空全部", role: .destructive, action: { showClearConfirm = true })
-                    .disabled(items.isEmpty)
-            }
-        }
+        .background(Color(nsColor: .windowBackgroundColor))
+        .frame(minWidth: 760, idealWidth: 860, minHeight: 520, idealHeight: 580)
         .voiceKitTextScale(textScale)
-        .alert("清空全部历史记录？", isPresented: $showClearConfirm) {
-            Button("清空", role: .destructive, action: clearAll)
-            Button("取消", role: .cancel) {}
+        .onAppear { tab = HistoryTab(rawValue: lastTabRaw) ?? .all }
+        .onChange(of: tab) { _, newTab in
+            if let newTab { lastTabRaw = newTab.rawValue }
         }
-        .onAppear(perform: reload)
-        .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reload() }
-    }
-
-    private func reload() {
-        items = HistoryStore.shared.items
-    }
-
-    private func copy(_ item: HistoryItem) {
-        let text = item.llmResult ?? item.asrResult
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-
-    private func toggleFavorite(_ item: HistoryItem) {
-        HistoryStore.shared.toggleFavorite(item)
-    }
-
-    private func delete(_ item: HistoryItem) {
-        HistoryStore.shared.remove(item)
-        if selectedID == item.id { selectedID = nil }
-    }
-
-    private func clearAll() {
-        HistoryStore.shared.clear()
-    }
-}
-
-private struct HistoryRow: View {
-    let item: HistoryItem
-    let onCopy: () -> Void
-    let onFavorite: () -> Void
-    let onDelete: () -> Void
-
-    @Environment(\.voiceKitTextScale) private var textScale
-
-    private var typography: VoiceKitTypography {
-        VoiceKitTypography(scale: textScale)
-    }
-
-    private var timeLabel: String {
-        if let d = ISO8601DateFormatter().date(from: item.timestamp) {
-            let f = DateFormatter()
-            f.dateStyle = .short
-            f.timeStyle = .short
-            return f.string(from: d)
+        .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in
+            historyItems = HistoryStore.shared.items
         }
-        return item.timestamp
+        .onReceive(NotificationCenter.default.publisher(for: SnapshotStore.didChange)) { _ in
+            snapshotCount = SnapshotStore.shared.items.count
+        }
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Button(action: onFavorite) {
-                    Image(systemName: item.favorite ? "star.fill" : "star")
-                        .foregroundStyle(item.favorite ? .yellow : .secondary)
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.favorite
-                                    ? VoiceKitLocalization.string("取消收藏")
-                                    : VoiceKitLocalization.string("收藏"))
+    // MARK: - 侧栏
 
-                Text(timeLabel).font(typography.callout).foregroundStyle(.secondary)
+    private func count(for item: HistoryTab) -> Int {
+        switch item {
+        case .all: return historyItems.count
+        case .favorites: return historyItems.filter(\.favorite).count
+        case .snapshots: return snapshotCount
+        }
+    }
 
-                Text(item.engine).font(typography.metadata)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(.quaternary, in: Capsule())
-
-                if item.llmEngine != nil {
-                    Text("已润色").font(typography.metadata).foregroundStyle(.tint)
-                }
-
+    private var sidebarColumn: some View {
+        List(HistoryTab.allCases, selection: $tab) { t in
+            HStack {
+                // 字号直接打在行内容上：.sidebar 样式会忽略 List 级的 .font，
+                // 否则调文字大小只撑大行高、字体不变
+                Label(t.title, systemImage: t.icon)
+                    .font(typography.body)
                 Spacer()
-
-                Button(action: onCopy) { Image(systemName: "doc.on.doc") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(VoiceKitLocalization.string("复制"))
-                    .help(VoiceKitLocalization.string("复制"))
-                Button(action: onDelete) { Image(systemName: "trash") }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(VoiceKitLocalization.string("删除"))
-                    .help(VoiceKitLocalization.string("删除"))
-                    .foregroundStyle(.red)
+                let n = count(for: t)
+                if n > 0 {
+                    Text("\(n)")
+                        .font(typography.metadata)
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
             }
-
-            Text(item.llmResult ?? item.asrResult)
-                .lineLimit(3)
-                .font(typography.body)
-                .textSelection(.enabled)
+            .tag(t)
         }
-        .padding(.vertical, 4)
+        .listStyle(.sidebar)
+        // 隐藏 List 自带背景，垫系统 .sidebar 材质（与设置窗口完全一致的侧栏观感）
+        .scrollContentBackground(.hidden)
+        .background(VoiceKitSidebarBackground())
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.1), lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.06), radius: 4, y: 2)
+        .padding(EdgeInsets(top: 10, leading: 10, bottom: 10, trailing: 0))
+        .frame(width: 190 * textScale.multiplier)
+    }
+
+    // MARK: - 内容区
+
+    @ViewBuilder
+    private var content: some View {
+        Group {
+            switch currentTab {
+            case .all:
+                HistoryBrowseView(favoritesOnly: false)
+            case .favorites:
+                HistoryBrowseView(favoritesOnly: true)
+            case .snapshots:
+                SnapshotManageView()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            Color(nsColor: .windowBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }

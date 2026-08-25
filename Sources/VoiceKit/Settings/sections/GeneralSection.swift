@@ -33,13 +33,6 @@ extension SettingsView {
             }
 
             Section {
-                Picker("保留历史", selection: $draft.general.maxHistoryCount) {
-                    Text("20 条").tag(20); Text("50 条").tag(50)
-                    Text("100 条").tag(100); Text("200 条").tag(200)
-                }
-            }
-
-            Section {
                 Picker("剪贴板保留时长", selection: $draft.general.clipboardRetentionSeconds) {
                     Text("永不还原").tag(0.0)
                     Text("15 秒").tag(15.0)

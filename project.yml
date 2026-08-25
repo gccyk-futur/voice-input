@@ -63,6 +63,10 @@ targets:
       - path: Sources/VoiceKit/Coordinator/RecordingRecovery.swift
       - path: Sources/VoiceKit/Settings/VoiceKitUIState.swift
       - path: Sources/VoiceKit/Stats/UsageStatsSummary.swift
+      - path: Sources/VoiceKit/History/HistoryDateGroup.swift
+      - path: Sources/VoiceKit/History/HistoryItem.swift
+      - path: Sources/VoiceKit/Snapshot/SnapshotItem.swift
+      - path: Sources/VoiceKit/Snapshot/SnapshotStore.swift
       - path: Sources/VoiceKit/Stats/UsageStatsStore.swift
       - path: Sources/VoiceKit/ASR/AudioSendDrain.swift
       - path: Sources/VoiceKit/ASR/AudioPreRollBuffer.swift

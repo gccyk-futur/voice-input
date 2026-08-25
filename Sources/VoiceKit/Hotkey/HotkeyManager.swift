@@ -16,9 +16,11 @@ final class HotkeyManager {
 
     // Carbon 引擎
     private var hotKeyRef: EventHotKeyRef?
+    private var secondaryHotKeyRef: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private let signature: OSType = 0x564D5445 // 'VMTE'
     fileprivate let hotKeyIDValue: UInt32 = 1
+    fileprivate let secondaryHotKeyIDValue: UInt32 = 2
 
 #if !APP_STORE
     // NSEvent Global Monitor 引擎（官网版沙盒回退）
@@ -31,6 +33,8 @@ final class HotkeyManager {
 
     /// 热键触发回调（已调度到主线程）。
     var onActivate: (() -> Void)?
+    /// 二级热键（呼出速插浮层）触发回调。
+    var onSecondaryActivate: (() -> Void)?
     /// 热键触发瞬间的前台 app（回调里捕获，传给 AppCoordinator 作为粘贴目标）。
     nonisolated(unsafe) var capturedTargetApp: NSRunningApplication?
     /// 上次触发时间：用于过滤按键自动重复（auto-repeat）造成的二次触发。
@@ -77,12 +81,32 @@ final class HotkeyManager {
             UnregisterEventHotKey(ref)
             hotKeyRef = nil
         }
+        if let ref = secondaryHotKeyRef {
+            UnregisterEventHotKey(ref)
+            secondaryHotKeyRef = nil
+        }
 #if !APP_STORE
         if let monitor = globalMonitor {
             NSEvent.removeMonitor(monitor)
             globalMonitor = nil
         }
 #endif
+    }
+
+    /// 二级热键（呼出速插浮层）。与听写热键共用 Carbon handler，用不同 id 区分。
+    func registerSecondary(hotkeyString: String) {
+        if let ref = secondaryHotKeyRef {
+            UnregisterEventHotKey(ref)
+            secondaryHotKeyRef = nil
+        }
+        guard let (keyCode, modifiers) = Self.parse(hotkeyString) else {
+            print("[HotkeyManager] 无法解析二级热键：\(hotkeyString)")
+            return
+        }
+        installCarbonHandler()
+        let hotKeyID = EventHotKeyID(signature: signature, id: secondaryHotKeyIDValue)
+        let status = RegisterEventHotKey(keyCode, modifiers, hotKeyID, GetApplicationEventTarget(), 0, &secondaryHotKeyRef)
+        print("[HotkeyManager] 二级热键注册 status=\(status) : \(hotkeyString)")
     }
 
     // MARK: - Carbon 事件处理
@@ -223,17 +247,25 @@ private func hotkeyEventHandler(
         nil,
         &hkID
     )
-    if status == noErr, hkID.id == manager.hotKeyIDValue {
-        manager.capturedTargetApp = NSWorkspace.shared.frontmostApplication
-        print("[Hotkey] captured targetApp=\(manager.capturedTargetApp?.localizedName ?? "nil")")
-        DispatchQueue.main.async {
-            let now = Date()
-            if now.timeIntervalSince(manager.lastActivation) < 0.4 {
-                print("[Hotkey] 忽略重复触发（auto-repeat 冷却中）")
-                return
+    if status == noErr {
+        switch hkID.id {
+        case manager.hotKeyIDValue:
+            manager.capturedTargetApp = NSWorkspace.shared.frontmostApplication
+            print("[Hotkey] captured targetApp=\(manager.capturedTargetApp?.localizedName ?? "nil")")
+            DispatchQueue.main.async {
+                if Date().timeIntervalSince(manager.lastActivation) < 0.4 {
+                    print("[Hotkey] 忽略重复触发（auto-repeat 冷却中）")
+                    return
+                }
+                manager.lastActivation = Date()
+                manager.onActivate?()
             }
-            manager.lastActivation = now
-            manager.onActivate?()
+        case manager.secondaryHotKeyIDValue:
+            DispatchQueue.main.async {
+                manager.onSecondaryActivate?()
+            }
+        default:
+            break
         }
     }
     return noErr

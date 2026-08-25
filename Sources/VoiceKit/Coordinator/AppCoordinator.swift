@@ -99,7 +99,13 @@ final class AppCoordinator {
         hotkey.onActivate = { [weak self] in
             Task { @MainActor in self?.toggleRecording() }
         }
+        hotkey.onSecondaryActivate = { [weak self] in
+            Task { @MainActor in
+                QuickInsertPanelController.shared.toggle()
+            }
+        }
         hotkey.register(hotkeyString: configStore.config.general.hotkey)
+        hotkey.registerSecondary(hotkeyString: configStore.config.general.quickInsertHotkey)
         panel.setCoordinator(self)
 
         // 配置变更（设置中保存、热重载）→ 同步状态栏展示状态

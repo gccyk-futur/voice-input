@@ -1,8 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// 状态栏弹出面板：Surge 风格，支持引擎切换、润色开关、历史记录行内复制。
-/// 使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
+/// 状态栏弹出面板：卡片式分区（引擎+AI 服务 / 历史记录），支持引擎切换、
+/// 润色开关、历史记录行内复制。使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
 struct StatusBarMenuView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @State private var config = ConfigStore.shared.config
@@ -21,78 +21,72 @@ struct StatusBarMenuView: View {
     }
 
     private var popoverMinWidth: CGFloat {
-        320 * textScale.multiplier
+        340 * textScale.multiplier
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // ── 标题栏 ──
+        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.md) {
+            // ── 标题栏：品牌 + 渠道版本（与浮层面板同一心智）──
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
                 Text("VoiceKit").font(typography.sectionTitle)
                 Spacer()
-                Text("\(channelName) · v\(versionString)")
-                    .font(typography.metadata).foregroundStyle(.secondary)
                 if coordinator.sessionState != .idle {
                     Circle()
                         .fill(statusColor)
                         .frame(width: 6, height: 6)
                 }
+                Text(VoiceKitDesign.versionLine)
+                    .font(typography.metadata).foregroundStyle(.tertiary)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 6)
 
-            Divider().padding(.horizontal, 10)
+            // ── 控制卡：语音引擎 + AI 服务 ──
+            VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.md) {
+                engineBlock
+                Divider()
+                llmBlock
+            }
+            .voiceKitCard()
 
-            // ── 引擎切换 ──
-            engineSection
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-
-            Divider().padding(.horizontal, 10)
-
-            // ── AI 服务 ──
-            llmSection
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
-
-            Divider().padding(.horizontal, 10)
-
-            // ── 历史记录 ──
-            historySection
-                .padding(.horizontal, 16)
-                .padding(.vertical, 10)
+            // ── 历史卡 ──
+            historyCard
 
             // ── Toast 提示 ──
             if let msg = toastMessage {
                 Text(msg)
                     .font(typography.callout)
                     .foregroundStyle(.orange)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 4)
+                    .padding(.horizontal, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
             // ── 底部操作区 ──
-            Divider().padding(.horizontal, 10)
-            HStack(spacing: 0) {
-                bottomButton("历史记录", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90") {
+            HStack(spacing: 2) {
+                BottomButton(title: VoiceKitLocalization.string("速插"),
+                             systemImage: "square.and.arrow.down.on.square") {
+                    QuickInsertPanelController.shared.show()
+                    dismissMenuBarExtra()
+                }
+                BottomButton(title: VoiceKitLocalization.string("历史记录"),
+                             systemImage: "clock") {
                     HistoryWindowController.shared.show()
+                    dismissMenuBarExtra()
                 }
-                Divider().frame(height: 20)
-                bottomButton("设置…", systemImage: "gearshape") {
+                BottomButton(title: VoiceKitLocalization.string("设置…"),
+                             systemImage: "gearshape") {
                     SettingsWindowController.shared.show()
+                    dismissMenuBarExtra()
                 }
-                Divider().frame(height: 20)
-                bottomButton("退出", systemImage: "xmark") {
-                    // bottomButton 内部会处理 terminate
+                BottomButton(title: VoiceKitLocalization.string("退出"),
+                             systemImage: "xmark") {
+                    // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
+                    NSApp.terminate(nil)
                 }
             }
-            .padding(.horizontal, 6)
-            .padding(.vertical, 4)
         }
+        .padding(10)
         .frame(width: popoverMinWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .voiceKitTextScale(textScale)
@@ -105,14 +99,19 @@ struct StatusBarMenuView: View {
 
     // MARK: - 引擎
 
-    private var engineSection: some View {
+    /// 卡片内的分组小标题
+    private func sectionTitle(_ key: String) -> some View {
+        Text(VoiceKitLocalization.string(key))
+            .font(typography.callout.weight(.semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    private var engineBlock: some View {
         // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
         // 不再依赖本地 config 快照——首次在设置中填好后无需重启即可切换。
-        return VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.sm) {
             HStack(spacing: 6) {
-                Text("语音引擎")
-                    .font(typography.sectionTitle)
-                    .foregroundStyle(.primary)
+                sectionTitle("语音引擎")
                 Spacer(minLength: 4)
 
                 // 连接状态灯只在「有问题」时出现，正常状态一律不显示：
@@ -131,7 +130,7 @@ struct StatusBarMenuView: View {
                         .fixedSize()
                         .accessibilityLabel(VoiceKitLocalization.string("连接状态"))
                         .accessibilityValue(coordinator.wsStatusText)
-                        .help(coordinator.wsStatusText)
+                        .voiceKitToolTip(coordinator.wsStatusText)
                 }
             }
 
@@ -166,7 +165,7 @@ struct StatusBarMenuView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
                 .background(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
                         .fill(Color.primary.opacity(0.06))
                 )
             }
@@ -201,57 +200,11 @@ struct StatusBarMenuView: View {
 
     // MARK: - AI 服务
 
-    private var llmSection: some View {
-        VStack(alignment: .leading, spacing: 6) {
+    private var llmBlock: some View {
+        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.sm) {
             HStack(spacing: 8) {
-                Text("AI 服务").font(typography.sectionTitle)
+                sectionTitle("AI 服务")
                 Spacer(minLength: 4)
-
-                // 开关开启后才出现：模型/提示词紧凑下拉，收进标题行
-                if config.llm.enabled {
-                    if !config.llm.models.isEmpty {
-                        Picker("", selection: Binding(
-                            get: { config.llm.selectedModelID },
-                            set: { v in
-                                var cfg = config
-                                cfg.llm.selectedModelID = v
-                                config = cfg
-                                ConfigStore.shared.update(cfg)
-                            }
-                        )) {
-                            ForEach(config.llm.models) { model in
-                                Text(model.name).tag(model.id)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 120 * textScale.multiplier)
-                        .accessibilityLabel(VoiceKitLocalization.string("选择润色模型"))
-                        .help(VoiceKitLocalization.string("选择润色模型"))
-                    }
-
-                    if !config.llm.prompts.isEmpty {
-                        Picker("", selection: Binding(
-                            get: { config.llm.selectedPromptID },
-                            set: { v in
-                                var cfg = config
-                                cfg.llm.selectedPromptID = v
-                                config = cfg
-                                ConfigStore.shared.update(cfg)
-                            }
-                        )) {
-                            Text("默认").tag("")
-                            ForEach(config.llm.prompts) { preset in
-                                Text(preset.name).tag(preset.id)
-                            }
-                        }
-                        .labelsHidden()
-                        .pickerStyle(.menu)
-                        .frame(maxWidth: 100 * textScale.multiplier)
-                        .accessibilityLabel(VoiceKitLocalization.string("选择提示词"))
-                        .help(VoiceKitLocalization.string("选择提示词"))
-                    }
-                }
 
                 Toggle("", isOn: Binding(
                     get: { config.llm.enabled },
@@ -290,24 +243,72 @@ struct StatusBarMenuView: View {
                     }
                 ))
                 .toggleStyle(.switch)
+                .controlSize(.small)
                 .labelsHidden()
+            }
+
+            // 开关开启后才出现：模型/提示词紧凑下拉
+            if config.llm.enabled {
+                HStack(spacing: 8) {
+                    if !config.llm.models.isEmpty {
+                        Picker("", selection: Binding(
+                            get: { config.llm.selectedModelID },
+                            set: { v in
+                                var cfg = config
+                                cfg.llm.selectedModelID = v
+                                config = cfg
+                                ConfigStore.shared.update(cfg)
+                            }
+                        )) {
+                            ForEach(config.llm.models) { model in
+                                Text(model.name).tag(model.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(VoiceKitLocalization.string("选择润色模型"))
+                        .voiceKitToolTip(VoiceKitLocalization.string("选择润色模型"))
+                    }
+
+                    if !config.llm.prompts.isEmpty {
+                        Picker("", selection: Binding(
+                            get: { config.llm.selectedPromptID },
+                            set: { v in
+                                var cfg = config
+                                cfg.llm.selectedPromptID = v
+                                config = cfg
+                                ConfigStore.shared.update(cfg)
+                            }
+                        )) {
+                            Text("默认").tag("")
+                            ForEach(config.llm.prompts) { preset in
+                                Text(preset.name).tag(preset.id)
+                            }
+                        }
+                        .labelsHidden()
+                        .pickerStyle(.menu)
+                        .controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .accessibilityLabel(VoiceKitLocalization.string("选择提示词"))
+                        .voiceKitToolTip(VoiceKitLocalization.string("选择提示词"))
+                    }
+                }
             }
         }
     }
 
     // MARK: - 历史记录（内联展开）
 
-    private var historySection: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            // 标题行：左侧分组标题，右侧保留数量
+    private var historyCard: some View {
+        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.xs) {
             HStack {
-                Text("历史记录")
-                    .font(typography.sectionTitle)
-                    .foregroundStyle(.primary)
+                sectionTitle("历史记录")
                 Spacer()
                 if !historyItems.isEmpty {
                     Text(VoiceKitLocalization.format("已记录 %lld/%lld 条", historyItems.count, config.general.maxHistoryCount))
-                        .font(typography.metadata).foregroundStyle(.secondary)
+                        .font(typography.metadata).foregroundStyle(.tertiary)
                 }
             }
             if historyItems.isEmpty {
@@ -316,13 +317,9 @@ struct StatusBarMenuView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 6)
             } else {
-                ForEach(Array(historyItems.prefix(5).enumerated()), id: \.element.id) { idx, item in
+                ForEach(historyItems.prefix(5)) { item in
                     Button(action: { copyItem(item) }) {
-                        HStack(spacing: 4) {
-                            Text("\(idx + 1).")
-                                .font(typography.callout)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 18, alignment: .leading)
+                        HStack(spacing: 6) {
                             Text(item.llmResult ?? item.asrResult)
                                 .font(typography.callout)
                                 .lineLimit(1)
@@ -335,22 +332,24 @@ struct StatusBarMenuView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
                         .background(
-                            RoundedRectangle(cornerRadius: 4)
+                            RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
                                 .fill(hoveredItemID == item.id ? Color.primary.opacity(0.08) : Color.clear)
                         )
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(VoiceKitLocalization.string("复制历史记录"))
-                    .help(VoiceKitLocalization.string("点击复制到剪贴板"))
+                    .voiceKitToolTip(VoiceKitLocalization.string("点击复制到剪贴板"))
                     .onHover { hovering in
                         hoveredItemID = hovering ? item.id : nil
                     }
                 }
             }
         }
+        .voiceKitCard()
     }
 
     private func copyItem(_ item: HistoryItem) {
@@ -358,32 +357,6 @@ struct StatusBarMenuView: View {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         showToast("已复制")
-    }
-
-    // MARK: - 底部操作
-
-    private func bottomButton(_ titleKey: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        let title = VoiceKitLocalization.string(titleKey)
-        return Button(action: {
-            // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
-            if titleKey == "退出" {
-                NSApp.terminate(nil)
-                return
-            }
-            action()
-            dismissMenuBarExtra()
-        }) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(typography.callout)
-                Text(title).font(typography.callout)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
     }
 
     /// 在面板内显示临时提示，3 秒后自动消失。
@@ -434,22 +407,37 @@ struct StatusBarMenuView: View {
     private func reloadHistory() {
         historyItems = HistoryStore.shared.items
     }
+}
 
-    // MARK: - 版本 / 渠道
+/// 底部操作按钮：图标 + 文字，悬浮底板反馈。
+private struct BottomButton: View {
+    let title: String
+    let systemImage: String
+    let action: () -> Void
 
-    /// 当前分发渠道：App Store 版（沙盒）或官网版。
-    private var channelName: String {
-#if APP_STORE
-        "App Store"
-#else
-        VoiceKitLocalization.string("官网版")
-#endif
-    }
+    @Environment(\.voiceKitTextScale) private var textScale
+    @State private var hovering = false
 
-    /// 版本号（如 1.0.0 · 30）。
-    private var versionString: String {
-        let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "?"
-        return "\(short) (\(build))"
+    private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(typography.callout)
+                Text(title).font(typography.callout)
+            }
+            .foregroundStyle(hovering ? .primary : .secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
+                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 }

@@ -19,3 +19,16 @@ struct HistoryItem: Codable, Identifiable {
         self.favorite = false
     }
 }
+
+extension HistoryItem {
+    /// 引擎 id → 面向用户的显示名（历史列表徽标、导出共用）。
+    var engineDisplayName: String {
+        switch engine {
+        case "system", "system-legacy": return VoiceKitLocalization.string("系统听写")
+        case "aliyun": return VoiceKitLocalization.string("阿里云")
+        case "xunfei": return VoiceKitLocalization.string("讯飞")
+        case "deepgram": return "Deepgram"
+        default: return engine
+        }
+    }
+}

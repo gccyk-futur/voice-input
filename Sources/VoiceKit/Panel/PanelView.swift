@@ -27,7 +27,8 @@ struct PanelView: View {
         VStack(alignment: .leading, spacing: 8) {
             // ── 状态栏 ──
             HStack(spacing: 6) {
-                Circle().fill(statusColor).frame(width: 8, height: 8)
+                // 状态灯 = REC 录音灯语义：录音中红色呼吸闪烁，准备/识别中橙，完成绿
+                StatusDot(color: statusColor, pulsing: coordinator.sessionState == .recording)
                 // 面板只保留两个字号层级：内容（状态行 + 转录正文，同为 body）
                 // 与边角信息（底部栏 metadata）。原先状态行用 callout（12pt），
                 // 与正文 13pt 只差一档——差别不够明显时不像层级，像失误，
@@ -65,7 +66,7 @@ struct PanelView: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(VoiceKitLocalization.string("取消听写"))
-                .help(VoiceKitLocalization.string("取消 (Esc)"))
+                .voiceKitToolTip(VoiceKitLocalization.string("取消 (Esc)"))
             }
 
             if let notice = coordinator.recoveryNotice {
@@ -115,15 +116,24 @@ struct PanelView: View {
                 }
             }
 
-            // ── 底部栏 ──
+            // ── 底部栏：左品牌名 + 渠道版本（与速插浮层一致），右提示 + 引擎状态 ──
             HStack(spacing: 0) {
-                Text(VoiceKitLocalization.string("Esc 退出"))
-                    .font(typography.metadata)
-                    .foregroundStyle(.secondary)
-                
+                HStack(spacing: 4) {
+                    Text("VoiceKit")
+                        .font(typography.metadata.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                    Text("· " + VoiceKitDesign.versionLine)
+                        .font(typography.metadata)
+                        .foregroundStyle(.quaternary)
+                }
+
                 Spacer()
 
                 HStack(spacing: 4) {
+                    Text(VoiceKitLocalization.string("Esc 退出"))
+                        .font(typography.metadata)
+                    Text("·")
+                        .font(typography.metadata)
                     Text(coordinator.engineDisplayName)
                         .font(typography.metadata)
                     Text("·")
@@ -217,6 +227,27 @@ private struct RecoveryCard: View {
                 .stroke(Color.red.opacity(0.22), lineWidth: 1)
         )
         .padding(.vertical, 12)
+    }
+}
+
+/// 状态灯：录音中红色呼吸闪烁（REC 灯语义），其他状态常亮。
+private struct StatusDot: View {
+    let color: Color
+    let pulsing: Bool
+
+    var body: some View {
+        if pulsing {
+            TimelineView(.animation) { timeline in
+                let phase = abs(sin(timeline.date.timeIntervalSinceReferenceDate * 2.5))
+                Circle()
+                    .fill(color.opacity(0.45 + 0.55 * phase))
+                    .frame(width: 8, height: 8)
+            }
+        } else {
+            Circle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+        }
     }
 }
 
