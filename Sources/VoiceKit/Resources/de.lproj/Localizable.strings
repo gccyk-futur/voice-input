@@ -497,3 +497,6 @@
 "新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "Der neue Standard-Prompt ist neutraler: Er bereinigt nur gesprochene Sprache, erzwingt keinen formellen Stil und antwortet in der Eingabesprache. Diese einmalige Frage erscheint nur, wenn noch der alte Standard aktiv ist; eigene Inhalte bleiben unberührt. Ersetzen?";
 "替换为新默认" = "Durch neuen Standard ersetzen";
 "保留当前" = "Aktuellen behalten";
+
+// 使用帮助入口
+"帮助" = "Hilfe";

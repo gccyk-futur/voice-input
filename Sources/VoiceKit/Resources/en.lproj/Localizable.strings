@@ -497,3 +497,6 @@
 "新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "The new default prompt is more neutral: it only cleans up speech without forcing a formal style, and responds in the input language. You're asked once because you're still using the old factory default; your custom content is not affected. Replace it?";
 "替换为新默认" = "Replace with New Default";
 "保留当前" = "Keep Current";
+
+// 使用帮助入口
+"帮助" = "Help";

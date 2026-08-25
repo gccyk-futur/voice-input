@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceKit 使用帮助</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; line-height: 1.6; }
+        .container { max-width: 680px; margin: 0 auto; padding: 60px 24px; }
+        h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { color: #86868b; font-size: 17px; margin-bottom: 12px; }
+        .lang { font-size: 13px; margin-bottom: 32px; }
+        .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+        h3 { font-size: 15px; font-weight: 600; margin: 14px 0 4px; }
+        p, li { font-size: 15px; color: #3a3a3c; }
+        ul, ol { padding-left: 20px; margin: 8px 0; }
+        li { margin-bottom: 4px; }
+        a { color: #0071e3; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        code { background: #f5f5f7; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+        kbd { background: #f5f5f7; border: 1px solid #d2d2d7; border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; font-size: 13px; font-family: inherit; }
+        .footer { margin-top: 40px; color: #86868b; font-size: 13px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VoiceKit 使用帮助</h1>
+        <p class="subtitle">macOS 语音输入助手 — 全局热键，说话即输入</p>
+        <p class="lang"><a href="help-en.html">English</a></p>
+
+        <div class="card">
+            <h2>快速上手</h2>
+            <ol>
+                <li>首次启动按提示完成三项授权：<strong>麦克风</strong>、<strong>语音识别</strong>、<strong>辅助功能</strong>（用于模拟粘贴）。都在 系统设置 → 隐私与安全性 中。</li>
+                <li>在任意 App 里按下<strong>热键</strong>开始说话，再按一次结束 —— 文字会自动粘贴到当前输入位置。</li>
+                <li>热键可在 设置 → 常规 中查看和修改；点击菜单栏的 VoiceKit 图标可随时切换引擎、查看历史。</li>
+            </ol>
+        </div>
+
+        <div class="card">
+            <h2>语音引擎</h2>
+            <p>VoiceKit 支持四种识别引擎，在状态栏菜单或 设置 → 语音引擎 中切换：</p>
+            <ul>
+                <li><strong>系统听写</strong>：macOS 内置，免费、无需联网配置，开箱即用。</li>
+                <li><strong>阿里云 Fun-ASR</strong>：高精度、自动标点，适合长连续口述；需配置阿里云百炼的 API Key 和 Workspace ID。</li>
+                <li><strong>讯飞听写</strong> / <strong>Deepgram</strong>：需各自平台的凭据。</li>
+            </ul>
+            <p>所选引擎未配置凭据时，录音会自动回退到系统听写，不会失败。</p>
+        </div>
+
+        <div class="card">
+            <h2>AI 润色</h2>
+            <p>开启后，识别结果会先经过大模型润色再粘贴：去口头禅、修语病，让口语变书面。</p>
+            <h3>配置模型</h3>
+            <p>设置 → AI 服务 / 模型管理 中添加模型，支持两类：</p>
+            <ul>
+                <li><strong>OpenAI 兼容协议</strong>：任何兼容 <code>/chat/completions</code> 的云端服务（OpenAI、DeepSeek、通义等）。</li>
+                <li><strong>Ollama 本地模型</strong>：完全离线，数据不出本机。</li>
+            </ul>
+            <h3>提示词</h3>
+            <p>润色效果由提示词决定。设置 → 提示词管理 中可以：</p>
+            <ul>
+                <li>编辑「默认」提示词，或新建自己的模板；</li>
+                <li>从<strong>内置预设库</strong>一键导入现成模板（要点清单、正式公文、商务英文等），导入后可自由修改；</li>
+                <li>用「测试润色效果」输入一段话试跑，满意再保存。</li>
+            </ul>
+            <p>录音时，右下角面板会显示当前生效的提示词名称；状态栏菜单里也能直接切换模型和提示词。</p>
+        </div>
+
+        <div class="card">
+            <h2>历史、收藏与快照</h2>
+            <ul>
+                <li><strong>历史</strong>：每次转写自动保存（上限可在 设置 → 历史与数据 调整），支持搜索、复制、再次插入、导出。</li>
+                <li><strong>收藏</strong>：常用内容标星，集中查看。</li>
+                <li><strong>快照</strong>：把选中的历史条目存成长期片段，适合模板、常用回复。</li>
+            </ul>
+            <h3>速插面板</h3>
+            <p>键盘优先的快速插入浮层（热键在 设置 → 常规 中配置）：</p>
+            <ul>
+                <li><kbd>⇥ Tab</kbd> 切换 快照 / 收藏 / 历史 标签</li>
+                <li><kbd>↑</kbd><kbd>↓</kbd> 选择，<kbd>↵</kbd> 插入到目标 App</li>
+                <li>直接打字即可搜索，<kbd>esc</kbd> 关闭</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>数据与配置</h2>
+            <ul>
+                <li>所有数据只存在本机 <code>~/Library/Application Support/VoiceMate/</code>，不经过任何第三方服务器。</li>
+                <li>配置每次保存前自动备份（<code>config.backup.json</code>）；配置损坏时自动从备份恢复，恢复不了会隔离坏文件并提示，不会崩溃。</li>
+                <li>设置 → 历史与数据 支持导出 / 导入配置，换机迁移很方便。</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>常见问题</h2>
+            <p><strong>Q: 热键不生效？</strong><br>
+            A: 检查 系统设置 → 隐私与安全性 → 辅助功能 中 VoiceKit 已授权。刚授权完需要重启一次 VoiceKit 才能识别到新权限（系统缓存限制）。</p>
+            <p style="margin-top: 12px;"><strong>Q: 按下热键没反应或无法识别？</strong><br>
+            A: 检查 麦克风 和 语音识别 两项权限；阿里云引擎还需确认 API Key、Workspace ID 填写正确且网络可用。</p>
+            <p style="margin-top: 12px;"><strong>Q: 在某个 App（如 Chrome）里粘贴出现重复文字？</strong><br>
+            A: 退出该 App 重新打开即可。这是目标 App 的辅助功能接口偶发状态异常，不是文字被录了两次。</p>
+            <p style="margin-top: 12px;"><strong>Q: AI 润色连不上？</strong><br>
+            A: 云端模型检查 Base URL 和 API Key；Ollama 确认本地服务已启动（<code>ollama serve</code>）且模型已拉取。</p>
+            <p style="margin-top: 12px;"><strong>Q: 界面语言/文字大小可以调吗？</strong><br>
+            A: 可以。设置 → 常规 中切换语言（跟随系统或手动指定 10 种语言之一）和文字大小。</p>
+        </div>
+
+        <div class="card">
+            <h2>联系与反馈</h2>
+            <p>📧 <a href="mailto:voicekit@ckai.me">voicekit@ckai.me</a></p>
+            <p>🌐 <a href="https://ckai.me/voice-kit">ckai.me/voice-kit</a></p>
+            <p>💻 <a href="https://github.com/gccyk-futur/voice-input">GitHub（开源，MIT License）</a></p>
+        </div>
+
+        <div class="footer">
+            VoiceKit · MIT License · Copyright © 2026
+        </div>
+    </div>
+</body>
+</html>

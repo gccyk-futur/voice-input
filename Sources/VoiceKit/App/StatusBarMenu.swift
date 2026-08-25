@@ -79,6 +79,11 @@ struct StatusBarMenuView: View {
                     SettingsWindowController.shared.show()
                     dismissMenuBarExtra()
                 }
+                BottomButton(title: VoiceKitLocalization.string("帮助"),
+                             systemImage: "questionmark.circle") {
+                    NSWorkspace.shared.open(Self.helpURL)
+                    dismissMenuBarExtra()
+                }
                 BottomButton(title: VoiceKitLocalization.string("退出"),
                              systemImage: "xmark") {
                     // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
@@ -376,6 +381,13 @@ struct StatusBarMenuView: View {
     }
 
     // MARK: - 辅助
+
+    /// 使用帮助（独立站；按系统首选语言跳中/英文版）
+    private static var helpURL: URL {
+        let lang = Locale.preferredLanguages.first ?? "en"
+        let page = lang.hasPrefix("zh") ? "help.html" : "help-en.html"
+        return URL(string: "https://ckai.me/voice-kit/\(page)")!
+    }
 
     /// 与设置页必填校验口径一致：判断引擎凭据是否已填写，
     /// 用于状态栏切换时提示「未配置将回退系统听写」。

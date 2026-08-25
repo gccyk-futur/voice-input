@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceKit Help</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f7; color: #1d1d1f; line-height: 1.6; }
+        .container { max-width: 680px; margin: 0 auto; padding: 60px 24px; }
+        h1 { font-size: 32px; font-weight: 700; margin-bottom: 8px; }
+        .subtitle { color: #86868b; font-size: 17px; margin-bottom: 12px; }
+        .lang { font-size: 13px; margin-bottom: 32px; }
+        .card { background: #fff; border-radius: 16px; padding: 28px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
+        h2 { font-size: 20px; font-weight: 600; margin-bottom: 12px; }
+        h3 { font-size: 15px; font-weight: 600; margin: 14px 0 4px; }
+        p, li { font-size: 15px; color: #3a3a3c; }
+        ul, ol { padding-left: 20px; margin: 8px 0; }
+        li { margin-bottom: 4px; }
+        a { color: #0071e3; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        code { background: #f5f5f7; border-radius: 4px; padding: 1px 5px; font-size: 13px; }
+        kbd { background: #f5f5f7; border: 1px solid #d2d2d7; border-bottom-width: 2px; border-radius: 5px; padding: 0 6px; font-size: 13px; font-family: inherit; }
+        .footer { margin-top: 40px; color: #86868b; font-size: 13px; text-align: center; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>VoiceKit Help</h1>
+        <p class="subtitle">Voice input for macOS — one global hotkey, speak and it's typed</p>
+        <p class="lang"><a href="help.html">中文</a></p>
+
+        <div class="card">
+            <h2>Getting Started</h2>
+            <ol>
+                <li>On first launch, grant three permissions when prompted: <strong>Microphone</strong>, <strong>Speech Recognition</strong>, and <strong>Accessibility</strong> (used to simulate pasting). All under System Settings → Privacy &amp; Security.</li>
+                <li>In any app, press the <strong>hotkey</strong> to start speaking, press again to stop — the text is pasted right where your cursor is.</li>
+                <li>View or change the hotkey in Settings → General. Click the VoiceKit icon in the menu bar anytime to switch engines or browse history.</li>
+            </ol>
+        </div>
+
+        <div class="card">
+            <h2>Speech Engines</h2>
+            <p>Four engines are available — switch in the menu bar panel or Settings → Speech Engine:</p>
+            <ul>
+                <li><strong>System Dictation</strong>: built into macOS, free, works out of the box.</li>
+                <li><strong>Aliyun Fun-ASR</strong>: high accuracy with automatic punctuation, great for long dictation; requires an Aliyun Bailian API Key and Workspace ID.</li>
+                <li><strong>iFLYTEK</strong> / <strong>Deepgram</strong>: require credentials from their respective platforms.</li>
+            </ul>
+            <p>If the selected engine has no credentials configured, recording falls back to System Dictation instead of failing.</p>
+        </div>
+
+        <div class="card">
+            <h2>AI Polish</h2>
+            <p>When enabled, transcripts are polished by an LLM before pasting: filler words removed, grammar fixed — speech becomes clean writing.</p>
+            <h3>Configure a Model</h3>
+            <p>Add models in Settings → AI Service / Model Management. Two kinds are supported:</p>
+            <ul>
+                <li><strong>OpenAI-compatible API</strong>: any service with a compatible <code>/chat/completions</code> endpoint (OpenAI, DeepSeek, Qwen, etc.).</li>
+                <li><strong>Ollama local models</strong>: fully offline, data never leaves your Mac.</li>
+            </ul>
+            <h3>Prompts</h3>
+            <p>The prompt drives the polish result. In Settings → Prompt Management you can:</p>
+            <ul>
+                <li>Edit the Default prompt, or create your own templates;</li>
+                <li>Import ready-made templates from the <strong>built-in preset library</strong> (key points, formal documents, business English, and more) — imported copies are yours to modify;</li>
+                <li>Use "Test Polish" to try a sample before saving.</li>
+            </ul>
+            <p>While recording, the panel shows the active prompt's name; you can also switch model and prompt directly from the menu bar panel.</p>
+        </div>
+
+        <div class="card">
+            <h2>History, Favorites &amp; Snapshots</h2>
+            <ul>
+                <li><strong>History</strong>: every transcript is saved automatically (limit adjustable in Settings → History &amp; Data), with search, copy, re-insert, and export.</li>
+                <li><strong>Favorites</strong>: star frequently used items to keep them together.</li>
+                <li><strong>Snapshots</strong>: save selected history items as long-lived snippets — perfect for templates and canned replies.</li>
+            </ul>
+            <h3>Quick Insert Panel</h3>
+            <p>A keyboard-first floating panel for fast insertion (hotkey configurable in Settings → General):</p>
+            <ul>
+                <li><kbd>⇥ Tab</kbd> switches between Snapshots / Favorites / History</li>
+                <li><kbd>↑</kbd><kbd>↓</kbd> to select, <kbd>↵</kbd> to insert into the target app</li>
+                <li>Just type to search, <kbd>esc</kbd> to close</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>Data &amp; Configuration</h2>
+            <ul>
+                <li>Everything stays on your Mac in <code>~/Library/Application Support/VoiceMate/</code> — nothing passes through third-party servers.</li>
+                <li>The config is backed up automatically before every save (<code>config.backup.json</code>). If the config is ever corrupted, VoiceKit restores from the backup; failing that, it isolates the bad file and tells you — no crash.</li>
+                <li>Settings → History &amp; Data supports exporting / importing the config, making migration to a new Mac easy.</li>
+            </ul>
+        </div>
+
+        <div class="card">
+            <h2>FAQ</h2>
+            <p><strong>Q: The hotkey doesn't work?</strong><br>
+            A: Make sure VoiceKit is granted under System Settings → Privacy &amp; Security → Accessibility. Right after granting, restart VoiceKit once — macOS caches the old permission state.</p>
+            <p style="margin-top: 12px;"><strong>Q: Nothing happens when I press the hotkey?</strong><br>
+            A: Check the Microphone and Speech Recognition permissions. For Aliyun, also verify the API Key, Workspace ID, and network.</p>
+            <p style="margin-top: 12px;"><strong>Q: Text got pasted twice in some app (e.g. Chrome)?</strong><br>
+            A: Quit and reopen that app. It's a transient state issue in the target app's accessibility interface — your text wasn't recorded twice.</p>
+            <p style="margin-top: 12px;"><strong>Q: AI Polish won't connect?</strong><br>
+            A: For cloud models, check the Base URL and API Key. For Ollama, make sure the local service is running (<code>ollama serve</code>) and the model is pulled.</p>
+            <p style="margin-top: 12px;"><strong>Q: Can I change the UI language or text size?</strong><br>
+            A: Yes. Settings → General lets you pick a language (follow system, or one of 10 languages) and adjust text size.</p>
+        </div>
+
+        <div class="card">
+            <h2>Contact &amp; Feedback</h2>
+            <p>📧 <a href="mailto:voicekit@ckai.me">voicekit@ckai.me</a></p>
+            <p>🌐 <a href="https://ckai.me/voice-kit">ckai.me/voice-kit</a></p>
+            <p>💻 <a href="https://github.com/gccyk-futur/voice-input">GitHub (open source, MIT License)</a></p>
+        </div>
+
+        <div class="footer">
+            VoiceKit · MIT License · Copyright © 2026
+        </div>
+    </div>
+</body>
+</html>

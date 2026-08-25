@@ -497,3 +497,6 @@
 "新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "Le nouveau prompt par défaut est plus neutre : il nettoie l'oral sans imposer un style formel et répond dans la langue d'entrée. Cette question n'apparaît qu'une fois si vous utilisez encore l'ancien prompt d'usine ; vos contenus personnalisés ne sont pas affectés. Le remplacer ?";
 "替换为新默认" = "Remplacer par le nouveau";
 "保留当前" = "Conserver l'actuel";
+
+// 使用帮助入口
+"帮助" = "Aide";

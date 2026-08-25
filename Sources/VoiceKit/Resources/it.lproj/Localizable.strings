@@ -497,3 +497,6 @@
 "新版默认提示词更中性：只清理口语、不强行书面化，并跟随输入语言输出。仅在检测到你仍在使用旧出厂默认时询问一次；自定义内容不受影响。是否替换？" = "Il nuovo prompt predefinito è più neutro: ripulisce solo il parlato senza forzare uno stile formale e risponde nella lingua di input. La richiesta appare una sola volta se usi ancora il vecchio predefinito; i contenuti personalizzati non sono interessati. Sostituire?";
 "替换为新默认" = "Sostituisci con il nuovo";
 "保留当前" = "Mantieni attuale";
+
+// 使用帮助入口
+"帮助" = "Aiuto";
