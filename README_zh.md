@@ -2,7 +2,7 @@
 
 [English](README.md) | 中文
 
-macOS 语音输入助手 — 全局热键呼出，说话即转文字，自动粘贴到当前光标。
+macOS 语音输入助手 — 全局热键呼出，说话即转文字，自动粘贴到当前光标。说过的内容自动沉淀为历史，可收藏、存快照、一键速插复用。
 
 **下载**: [GitHub Releases](https://github.com/gccyk-futur/voice-input/releases)
 
@@ -17,8 +17,12 @@ macOS 语音输入助手 — 全局热键呼出，说话即转文字，自动粘
   - Deepgram（在线流式，低延迟）
   - 未配置凭据的引擎自动回退到系统听写
 - **静音自动停止**：说完停顿几秒自动结束
-- **AI 润色**：接入 LLM（OpenAI / DeepSeek / Claude / Ollama），口语转书面语
-- **历史记录**：所有识别结果可回溯
+- **AI 润色**：接入 LLM（OpenAI / DeepSeek / Claude / Ollama），口语转书面语；内置提示词预设库（要点清单、正式公文等），一键导入开箱即用
+- **历史中心**：所有识别结果按天分组可回溯，支持搜索、收藏、Markdown/JSON 导出
+- **快照库**：高频片段长期保存，支持标题与编辑
+- **速插面板**（独立快捷键）：历史、收藏、快照键盘直达，回车即插入当前应用
+- **使用统计**：本地统计使用数据，不出设备
+- **配置防御**：配置保存自动备份，损坏自动恢复，绝不静默重置
 
 ## 多语言
 
@@ -83,13 +87,18 @@ VoiceKit/
 │   ├── Panel/            # 悬浮面板（NSPanel + 毛玻璃）
 │   ├── Hotkey/           # 全局热键（Carbon + NSEvent 双引擎）
 │   ├── Paste/            # 粘贴回写（Accessibility API + 剪贴板回退）
-│   ├── Config/           # 配置持久化
-│   ├── History/          # 历史记录
+│   ├── Config/           # 配置持久化（三层防御：自动备份 / 损坏恢复）
+│   ├── History/          # 历史中心（浏览 / 收藏 / 导出）
+│   ├── Snapshot/         # 快照库 + 速插面板
+│   ├── Stats/            # 使用统计
+│   ├── Design/           # 设计系统（排版刻度 / 统一控件）
+│   ├── Support/          # 使用帮助（中英双语说明书）
 │   ├── Settings/         # 设置界面
 │   ├── Coordinator/      # 应用中枢 + 状态机
-│   ├── Prompt/           # 提示词模板
+│   ├── Prompt/           # 提示词模板 + 内置预设库
 │   └── App/              # 应用入口
 ├── docs/                 # 技术文档
+├── skills/               # AI 助手技能（配置引导与排障手册）
 ├── scripts/              # 构建脚本（维护者用）
 ├── project.yml           # xcodegen 工程定义
 └── config.example.json   # 配置模板

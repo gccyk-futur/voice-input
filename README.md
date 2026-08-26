@@ -2,7 +2,7 @@
 
 [中文文档](README_zh.md)
 
-VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and your words are transcribed in real time and automatically pasted at the cursor.
+VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and your words are transcribed in real time and automatically pasted at the cursor. Everything you say is kept locally — browse history, favorite it, save snapshots, and quick-insert it again anywhere.
 
 **Download**: [GitHub Releases](https://github.com/gccyk-futur/voice-input/releases)
 
@@ -17,8 +17,12 @@ VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and you
   - Deepgram (cloud-based, low-latency streaming)
   - Unconfigured engines automatically fall back to Apple Dictation
 - **Silence auto-stop** — automatically finishes after a configurable pause
-- **AI polish** — send recognized text to an LLM (OpenAI / DeepSeek / Claude / Ollama) to convert spoken language into polished prose
-- **History** — browse all past transcriptions
+- **AI polish** — send recognized text to an LLM (OpenAI / DeepSeek / Claude / Ollama) to convert spoken language into polished prose; built-in prompt preset library (bullet points, formal documents, etc.), one-click import
+- **History center** — browse past transcriptions grouped by day, with search, favorites, and Markdown/JSON export
+- **Snapshot library** — keep frequently used snippets permanently, with optional titles and editing
+- **Quick-insert panel** (separate hotkey) — keyboard-first access to history, favorites, and snapshots; press Enter to insert into the current app
+- **Usage stats** — local-only usage statistics, never leaves your device
+- **Config resilience** — automatic backup on save, automatic recovery from corruption, never silently resets
 
 ## Languages
 
@@ -83,13 +87,18 @@ VoiceKit/
 │   ├── Panel/            # Floating panel (NSPanel + vibrancy)
 │   ├── Hotkey/           # Global hotkey (Carbon + NSEvent dual-engine)
 │   ├── Paste/            # Paste back (Accessibility API + clipboard fallback)
-│   ├── Config/           # Configuration persistence
-│   ├── History/          # History browser
+│   ├── Config/           # Configuration persistence (3-layer defense: auto-backup / corruption recovery)
+│   ├── History/          # History center (browse / favorites / export)
+│   ├── Snapshot/         # Snapshot library + quick-insert panel
+│   ├── Stats/            # Usage statistics
+│   ├── Design/           # Design system (typography scale / shared controls)
+│   ├── Support/          # User guide (bilingual, zh/en)
 │   ├── Settings/         # Settings UI
 │   ├── Coordinator/      # App coordinator + state machine
-│   ├── Prompt/           # Prompt templates
+│   ├── Prompt/           # Prompt templates + built-in preset library
 │   └── App/              # App entry point
 ├── docs/                 # Technical docs
+├── skills/               # AI assistant skill (config guide & troubleshooting)
 ├── scripts/              # Build scripts (maintainer use)
 ├── project.yml           # xcodegen project definition
 └── config.example.json   # Config template
