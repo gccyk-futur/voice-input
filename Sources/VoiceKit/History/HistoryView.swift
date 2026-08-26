@@ -8,13 +8,15 @@ import AppKit
 struct HistoryView: View {
     @AppStorage("voicekit.history.lastTab") private var lastTabRaw = HistoryTab.all.rawValue
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
-    @State private var tab: HistoryTab?
+    // 与设置窗口一致用非可选绑定：NSTableView 后端的 List 在刷新（计数变化、
+    // sheet 关闭）时可能把选中清空，nil 写不回非可选绑定，选中态才不会丢。
+    @State private var tab: HistoryTab = .all
     @State private var historyItems: [HistoryItem] = HistoryStore.shared.items
     @State private var snapshotCount = SnapshotStore.shared.items.count
 
     private var textScale: VoiceKitTextScale { VoiceKitTextScale.restored(from: textScaleRawValue) }
     private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
-    private var currentTab: HistoryTab { tab ?? .all }
+    private var currentTab: HistoryTab { tab }
 
     private enum HistoryTab: String, CaseIterable, Identifiable {
         case all, favorites, snapshots
@@ -47,7 +49,7 @@ struct HistoryView: View {
         .voiceKitTextScale(textScale)
         .onAppear { tab = HistoryTab(rawValue: lastTabRaw) ?? .all }
         .onChange(of: tab) { _, newTab in
-            if let newTab { lastTabRaw = newTab.rawValue }
+            lastTabRaw = newTab.rawValue
         }
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in
             historyItems = HistoryStore.shared.items
