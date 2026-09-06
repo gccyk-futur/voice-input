@@ -26,7 +26,7 @@ struct QuickInsertView: View {
         var title: String {
             switch self {
             case .snapshot: return VoiceKitLocalization.string("快照")
-            case .favorite: return VoiceKitLocalization.string("收藏")
+            case .favorite: return VoiceKitLocalization.string("收藏夹")
             case .recent: return VoiceKitLocalization.string("历史")
             }
         }

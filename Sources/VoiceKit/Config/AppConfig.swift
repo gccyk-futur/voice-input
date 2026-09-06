@@ -28,6 +28,16 @@ struct GeneralConfig: Codable, Equatable {
     /// 仅作用于"未自动投递、需用户手动 ⌘V"的路径（writeClipboardOnly）；
     /// paste() 自动投递借用剪贴板的场景固定 8 秒还原，见 PasteDeliveryPolicy。
     var clipboardRetentionSeconds: Double = 0
+    /// 历史记录是否保留语音留档（AAC，随历史删除/裁剪一并清理）。
+    /// 用途：「ASR 已连接但不出字」时可回放定位是没录上还是识别丢了，并可离线补识别。
+    var historyAudioEnabled: Bool = true
+    /// 词云快照：累计新增识别字数达到阈值时自动生成一份词频快照。
+    /// 快照只存词频聚合（词 + 次数），不含句子原文，仅存本机——默认开启。
+    var wordCloudSnapshotEnabled: Bool = true
+    /// 触发一张词云快照的新增字数阈值。
+    var wordCloudSnapshotCharThreshold: Int = 5000
+    /// 词云词数上限（当前词云与每张快照共用）。
+    var wordCloudWordLimit: Int = 60
     var sound: SoundConfig = .init()
 }
 
@@ -52,6 +62,8 @@ struct ASRConfig: Codable, Equatable {
     var aliyun: ASRAliyunConfig = .init()
     var xunfei: ASRXunfeiConfig = .init()
     var deepgram: ASRDeepgramConfig = .init()
+    /// 本地词汇纠正（引擎无关）：把固定误识别替换为正确写法，如 cloud code → Claude Code。
+    var correction: CorrectionConfig = .init()
 }
 
 struct ASRSystemConfig: Codable, Equatable {
@@ -246,6 +258,10 @@ extension GeneralConfig {
         maxHistoryCount = try c.decode(Int.self, forKey: .maxHistoryCount, default: d.maxHistoryCount)
         usageStatsEnabled = try c.decode(Bool.self, forKey: .usageStatsEnabled, default: d.usageStatsEnabled)
         clipboardRetentionSeconds = try c.decode(Double.self, forKey: .clipboardRetentionSeconds, default: d.clipboardRetentionSeconds)
+        historyAudioEnabled = try c.decode(Bool.self, forKey: .historyAudioEnabled, default: d.historyAudioEnabled)
+        wordCloudSnapshotEnabled = try c.decode(Bool.self, forKey: .wordCloudSnapshotEnabled, default: d.wordCloudSnapshotEnabled)
+        wordCloudSnapshotCharThreshold = try c.decode(Int.self, forKey: .wordCloudSnapshotCharThreshold, default: d.wordCloudSnapshotCharThreshold)
+        wordCloudWordLimit = try c.decode(Int.self, forKey: .wordCloudWordLimit, default: d.wordCloudWordLimit)
         sound = try c.decode(SoundConfig.self, forKey: .sound, default: d.sound)
     }
 }
@@ -271,6 +287,7 @@ extension ASRConfig {
         aliyun = try c.decode(ASRAliyunConfig.self, forKey: .aliyun, default: d.aliyun)
         xunfei = try c.decode(ASRXunfeiConfig.self, forKey: .xunfei, default: d.xunfei)
         deepgram = try c.decode(ASRDeepgramConfig.self, forKey: .deepgram, default: d.deepgram)
+        correction = try c.decode(CorrectionConfig.self, forKey: .correction, default: d.correction)
     }
 }
 

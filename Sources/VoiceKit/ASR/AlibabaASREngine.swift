@@ -74,6 +74,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _onPartial: (@Sendable (String) -> Void)?
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
+    private var _recordingURL: URL?
     private var _receiveTask: Task<Void, Never>?
     /// 重连指数退避计数器（0=首次连接）
     private var _reconnectAttempt: Int = 0
@@ -304,6 +305,10 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
         let waitID = UUID()
         let timeoutTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+            // didOpen 成功时会 cancel 本任务：取消只是让 sleep 提前返回，
+            // 不检查 isCancelled 就会把一个「已连上」误判成 connectTimeout
+            // （曾与 didOpen 的 resumeConnectWait 竞争并获胜，导致重识别秒失败）。
+            guard !Task.isCancelled else { return }
             guard let self else { return }
             var cont: CheckedContinuation<Void, Error>?
             self.stateLock.withLock {
@@ -369,7 +374,8 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws {
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws {
         // 没有麦克风时不要先向服务端创建一个必然 EmptyAudio 的 task。
         try capture.ensureInputAvailable()
 
@@ -413,6 +419,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 _onPartial = onPartial
                 _onAudioLevel = onAudioLevel
                 _onAutoStop = onAutoStop
+                _recordingURL = recordingURL
             }
             try await startAudioCapture(gate: audioGate, taskID: newTaskID)
 
@@ -623,6 +630,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
             : nil
 
         // onBuffer 外的锁保护回调读取；闭包把 self 状态拷出来再用，避免长锁。
+        let recordingURL = stateLock.withLock { _recordingURL }
         try capture.start(
             targetFormat: targetFormat,
             bufferSize: 1024,
@@ -638,6 +646,7 @@ final class AlibabaASREngine: NSObject, ASREngine, @unchecked Sendable {
                 return cb?() ?? false
             },
             onInterruption: { [weak self] error in self?.failSession(error) },
+            recordingURL: recordingURL,
             onBuffer: { [weak self] out in
                 guard let self else { return }
                 let len = Int(out.frameLength)
@@ -991,6 +1000,79 @@ enum AlibabaASRError: LocalizedError {
         case .startTimeout: return VoiceKitLocalization.string("阿里云 ASR 启动超时，请重试")
         case .audioPreRollOverflow: return VoiceKitLocalization.string("阿里云 ASR 启动较慢，请重试")
         case .taskFailed(_, let message): return VoiceKitLocalization.format("阿里云 ASR 任务失败：%@", message)
+        }
+    }
+}
+
+// MARK: - 留档文件补识别
+
+extension AlibabaASREngine {
+    /// 对留档语音补识别一次：把解码后的 PCM（16k/mono/int16）全速灌入一条全新 task，
+    /// 等待 task-finished 后返回整段文本（实测 26s 音频约 2~6s 出结果）。
+    /// 复用与实时录音完全相同的 run-task 参数；服务端断句行为与实时收听可能有轻微差异
+    /// （实测约 1 字级别），但补识别的定位是网络重试式补救，速度优先。
+    /// 引擎 init 即建常驻连接——调用方新建独立实例使用，跑完即弃。
+    func transcribePCM(_ pcm: Data, locale: Locale) async throws -> String {
+        let taskID = UUID().uuidString
+        let gate = AudioPreRollSendGate(sendQueue: sendQueue) { [weak self] data in
+            self?.sendAudioData(data, taskID: taskID)
+        }
+        var beginResult = tryBeginTask(taskID: taskID, gate: gate)
+        if case .rejected(.requiresReconnect) = beginResult {
+            try await ensureConnected(timeout: 8)
+            beginResult = tryBeginTask(taskID: taskID, gate: gate)
+        }
+        guard beginResult == .accepted else { throw AlibabaASRError.busy }
+
+        let runTask: [String: Any] = [
+            "header": ["action": "run-task", "task_id": taskID, "streaming": "duplex"],
+            "payload": [
+                "task_group": "audio", "task": "asr", "function": "recognition",
+                "model": model,
+                "parameters": [
+                    "format": "pcm", "sample_rate": 16000,
+                    "language_hints": [languageHint(for: locale)],
+                    "semantic_punctuation_enabled": semanticPunctuation,
+                    "speech_noise_threshold": speechNoiseThreshold,
+                    "max_sentence_silence": maxSentenceSilence
+                ],
+                "input": [:] as [String: Any]
+            ]
+        ]
+        let json = String(data: try JSONSerialization.data(withJSONObject: runTask), encoding: .utf8)!
+        do {
+            try await ensureConnected(timeout: 5)
+            // task-started 到达才返回；此后 _sessionActive 置位，允许 finish-task
+            try await sendRunTaskAndWait(json: json, taskID: taskID)
+            stateLock.withLock { _sessionActive = true }
+            Log.info("[AlibabaASR] task=\(taskID) 留档补识别开始，bytes=\(pcm.count)")
+
+            let chunkSize = 1280 // 40ms @16kHz int16
+            var offset = 0
+            while offset < pcm.count {
+                if Task.isCancelled { break }
+                let end = min(offset + chunkSize, pcm.count)
+                sendAudioData(Data(pcm[offset..<end]), taskID: taskID)
+                offset = end
+                // 全速发送，每 ~50 帧（约 2s 音频）让出一次协作线程，避免长音频堵住线程池
+                if offset % (chunkSize * 50) == 0 { try? await Task.sleep(nanoseconds: 1_000_000) }
+            }
+            stateLock.withLock { _ = _taskLifecycle.requestFinish(taskID: taskID) }
+            await finishTaskAndWait(taskID: taskID)
+            gate.discard()
+            let text = stateLock.withLock { _finalText }
+            Log.info("[AlibabaASR] task=\(taskID) 留档补识别结束，chars=\(text.count)")
+            return text
+        } catch {
+            gate.discard()
+            stateLock.withLock {
+                if case .starting = _taskLifecycle.phase {
+                    _ = _taskLifecycle.startFailed(taskID: taskID)
+                } else {
+                    _ = _taskLifecycle.taskFailed(taskID: taskID)
+                }
+            }
+            throw error
         }
     }
 }

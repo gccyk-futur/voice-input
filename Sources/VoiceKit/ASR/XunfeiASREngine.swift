@@ -69,6 +69,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _onPartial: (@Sendable (String) -> Void)?
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
+    private var _recordingURL: URL?
     private var _receiveTask: Task<Void, Never>?
     /// 启动期（_sessionActive 尚未置位）发生的致命错误：由 start() 抛出，
     /// 走启动失败的单一错误通道，避免 onFailure 与 start 抛错双重上报。
@@ -107,7 +108,8 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws {
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws {
         try capture.ensureInputAvailable()
 
         // 讯飞听写仅支持中/英（小语种需另行授权与独立域名），其余语言明确报错由上层提示。
@@ -130,6 +132,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
             _onPartial = onPartial
             _onAudioLevel = onAudioLevel
             _onAutoStop = onAutoStop
+            _recordingURL = recordingURL
         }
         Log.info("[Xunfei] 音频预缓冲已创建，language=\(lang)")
 
@@ -367,6 +370,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
         let silence: SilenceConfig? = autoStopEnabled
             ? SilenceConfig(timeout: autoStopTimeout, gracePeriod: 1.0)
             : nil
+        let recordingURL = stateLock.withLock { _recordingURL }
         try capture.start(
             targetFormat: targetFormat,
             // 讯飞建议 40ms/1280B 一帧
@@ -383,6 +387,7 @@ final class XunfeiASREngine: NSObject, ASREngine, @unchecked Sendable {
                 return cb?() ?? false
             },
             onInterruption: { [weak self] error in self?.failSession(error) },
+            recordingURL: recordingURL,
             onBuffer: { [weak self] out in
                 guard let self else { return }
                 let len = Int(out.frameLength)
@@ -539,6 +544,48 @@ extension XunfeiASREngine: URLSessionWebSocketDelegate {
             _connectCont = nil
         }
         cont?.resume(throwing: XunfeiASRError.notConnected)
+    }
+}
+
+// MARK: - 留档文件补识别
+
+extension XunfeiASREngine {
+    /// 对留档语音补识别一次：把解码后的 PCM（16k/mono/int16）全速灌入一条全新会话，
+    /// 等待服务端最终结果后返回整段文本。
+    /// 与实时录音共用同一套会话机制；补识别的定位是网络重试式补救，速度优先。
+    /// 调用方需新建独立引擎实例使用，跑完即弃。
+    func transcribePCM(_ pcm: Data, locale: Locale) async throws -> String {
+        guard let lang = Self.languageCode(for: locale) else {
+            throw ASRError.speechNotAvailable(locale: locale.identifier)
+        }
+        stateLock.withLock {
+            _assembler.reset()
+            _stopRequested = false
+            _sessionActive = false
+            _firstFrameSent = false
+            _serverDone = false
+            _startupError = nil
+            _language = lang
+            _onPartial = nil
+        }
+        try await connect(timeout: 5)
+        stateLock.withLock { _sessionActive = true }
+        Log.info("[Xunfei] 留档补识别开始，bytes=\(pcm.count)")
+
+        let chunkSize = 1280 // 40ms @16kHz int16
+        var offset = 0
+        while offset < pcm.count {
+            if Task.isCancelled { break }
+            let end = min(offset + chunkSize, pcm.count)
+            sendAudioData(Data(pcm[offset..<end]))
+            offset = end
+            // 全速发送，每 ~50 帧（约 2s 音频）让出一次协作线程，避免长音频堵住线程池
+            if offset % (chunkSize * 50) == 0 { try? await Task.sleep(nanoseconds: 1_000_000) }
+        }
+        await finishAndWait()
+        let text = stateLock.withLock { _assembler.text }
+        Log.info("[Xunfei] 留档补识别结束，chars=\(text.count)")
+        return text
     }
 }
 

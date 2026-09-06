@@ -335,12 +335,14 @@ struct SettingsView: View {
         switch selectedPane {
         case .general: generalTab
         case .input: asrTab
+        case .correction: correctionTab
         case .services: aiServiceOverviewTab
         case .models: modelTab
         case .prompts: promptTab
         case .permissions: permissionTab
         case .privacy: privacyTab
         case .stats: statsTab
+        case .wordcloud: wordCloudTab
         case .history: historySettingsTab
         case .about: aboutTab
         }

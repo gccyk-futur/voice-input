@@ -17,6 +17,12 @@ struct HistoryBrowseView: View {
     @State private var showExportFailure = false
     @State private var expandAll = false
     @State private var toast: String?
+    /// 正在离线补识别的记录 id（行内显示进度）。
+    @State private var retranscribingID: String?
+    /// 词云 Sheet 开关。
+    @State private var showWordCloud = false
+    /// 语音回放控制器（@Observable，行播放状态随它刷新）。
+    private let playback = AudioPlaybackController.shared
 
     private var textScale: VoiceKitTextScale { VoiceKitTextScale.restored(from: textScaleRawValue) }
     private var typography: VoiceKitTypography { VoiceKitTypography(scale: textScale) }
@@ -54,7 +60,11 @@ struct HistoryBrowseView: View {
                                     onSnapshot: { addSnapshot(item) },
                                     onFavorite: { toggleFavorite(item) },
                                     onDelete: { delete(item) },
-                                    onCopyText: { copyText($0) }
+                                    onCopyText: { copyText($0) },
+                                    onTogglePlayAudio: { togglePlayAudio(item) },
+                                    isPlayingAudio: playback.playingFile == item.audioFile,
+                                    onRetranscribe: { retranscribe(item) },
+                                    isRetranscribing: retranscribingID == item.id
                                 )
                             }
                         } header: {
@@ -108,6 +118,9 @@ struct HistoryBrowseView: View {
         }
         .onAppear(perform: reload)
         .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reload() }
+        .sheet(isPresented: $showWordCloud) {
+            WordCloudSheet()
+        }
     }
 
     // MARK: - 内容区顶部工具行
@@ -127,6 +140,13 @@ struct HistoryBrowseView: View {
             ) {
                 withAnimation { expandAll.toggle() }
             }
+            VoiceKitActionButton(
+                systemImage: "cloud",
+                help: VoiceKitLocalization.string("词云")
+            ) {
+                showWordCloud = true
+            }
+            .disabled(items.isEmpty)
             exportMenu
             // 清除动作按标签分语义：「收藏」里只移除收藏标记，绝不能清掉全部历史
             if favoritesOnly {
@@ -193,6 +213,54 @@ struct HistoryBrowseView: View {
     private func delete(_ item: HistoryItem) { HistoryStore.shared.remove(item) }
     private func clearAll() { HistoryStore.shared.clear() }
     private func unfavoriteAll() { HistoryStore.shared.unfavoriteAll() }
+
+    // MARK: - 语音留档：回放与离线补识别
+
+    private func togglePlayAudio(_ item: HistoryItem) {
+        guard let file = item.audioFile else { return }
+        guard AudioLibrary.fileExists(file) else {
+            showToast(VoiceKitLocalization.string("语音文件不存在（可能已被手动删除）"))
+            return
+        }
+        playback.toggle(file: file)
+    }
+
+    /// 用「当时使用的引擎」对留档补识别一次（类似网络不稳时的重试）。
+    /// 不覆盖已有文字：该条已有识别结果时，新结果只进剪贴板，原记录保持不动；
+    /// 该条为空（当时没识别出来）时才把结果写回这条历史。
+    private func retranscribe(_ item: HistoryItem) {
+        guard retranscribingID == nil, let file = item.audioFile else { return }
+        guard AudioLibrary.fileExists(file), let url = AudioLibrary.url(forFile: file) else {
+            showToast(VoiceKitLocalization.string("语音文件不存在（可能已被手动删除）"))
+            return
+        }
+        retranscribingID = item.id
+        playback.stop()
+        let language = ConfigStore.shared.config.asr.system.language
+        let hadText = !item.asrResult.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        Task {
+            do {
+                let text = try await AudioRetranscriber.transcribe(url: url, engine: item.engine, languageID: language)
+                // 补识别结果也过一次本地词汇纠正，与实时链路保持一致
+                let correction = ConfigStore.shared.config.asr.correction
+                let corrected = correction.enabled
+                    ? TextCorrectionApplier.apply(text, rules: correction.rules)
+                    : text
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(corrected, forType: .string)
+                retranscribingID = nil
+                if hadText {
+                    showToast(VoiceKitLocalization.string("已复制新识别结果，原记录未改动"))
+                } else {
+                    HistoryStore.shared.updateTranscription(id: item.id, asrText: corrected)
+                    showToast(VoiceKitLocalization.string("已重新识别并写回该条记录"))
+                }
+            } catch {
+                retranscribingID = nil
+                showToast(error.localizedDescription)
+            }
+        }
+    }
 
     // MARK: - 导出
 

@@ -506,3 +506,95 @@
 "取消全部收藏" = "Rimuovi tutti i preferiti";
 "取消全部收藏？" = "Rimuovere tutti i preferiti?";
 "记录会保留在「全部」中，仅移除收藏标记。" = "I record restano in \"Tutti\"; viene rimosso solo il contrassegno dei preferiti.";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"未识别到内容，语音已保留，可在历史记录中回放或重新识别" = "Nulla di riconosciuto. L'audio è stato conservato: riascoltalo o riprova il riconoscimento nella cronologia.";
+"本机语音识别当前不可用，请稍后再试" = "Il riconoscimento vocale on-device non è disponibile ora. Riprova più tardi.";
+"没有识别出内容——录音本身可能是静音或音量过低" = "Nulla di riconosciuto: la registrazione potrebbe essere muta o con volume troppo basso.";
+"识别超时，请稍后再试" = "Riconoscimento scaduto. Riprova più tardi.";
+"识别失败：%@" = "Riconoscimento non riuscito: %@";
+"（未识别到内容，可回放语音排查或重新识别）" = "(Nulla di riconosciuto: riascolta l'audio per verificare o riprova il riconoscimento)";
+"已纠正" = "Corretto";
+"识别文本经本地词汇纠正，展开可查看原始识别" = "Testo corretto dalla sostituzione locale — espandi per vedere la trascrizione originale.";
+"原始识别（纠正前）" = "Trascrizione originale (prima della correzione)";
+"播放语音" = "Riproduci audio";
+"停止播放" = "Interrompi riproduzione";
+"重新识别（用本机语音识别离线补一次）" = "Riprova riconoscimento (offline, con riconoscimento on-device)";
+"已重新识别并复制到剪贴板" = "Riconosciuto di nuovo e copiato negli appunti.";
+"词云" = "Nuvola di parole";
+"历史词云" = "Nuvola di parole della cronologia";
+"重新生成" = "Rigenera";
+"导出 HTML" = "Esporta HTML";
+"从历史记录的文本中提取高频词，生成一张词云图。" = "Estrae le parole frequenti dalla cronologia e le mostra come nuvola di parole.";
+"只在本机分析，不会上传任何内容。" = "L'analisi avviene interamente su questo Mac: nulla viene caricato.";
+"生成词云" = "Genera nuvola di parole";
+"可用的高频词太少，还画不出词云。" = "Non ci sono ancora abbastanza parole frequenti per creare la nuvola.";
+"多积累一些历史记录后再来试试。" = "Accumula altra cronologia e riprova.";
+"VoiceKit 词云" = "Nuvola di parole di VoiceKit";
+"完成" = "Fine";
+"启用词汇纠正" = "Attiva correzione parole";
+"%lld 条规则" = "%lld regole";
+"管理替换规则…" = "Gestisci regole di sostituzione…";
+"词汇纠正" = "Correzione parole";
+"把引擎容易听错的词自动替换为正确写法（如“cloud code”纠正为“Claude Code”），对所有识别引擎生效。" = "Sostituisce automaticamente le parole spesso fraintese con la grafia corretta (es. cloud code → Claude Code). Si applica a tutti i motori di riconoscimento.";
+"替换规则" = "Regole di sostituzione";
+"左侧填引擎容易听错的写法，右侧填要替换成的正确写法。" = "A sinistra come il motore lo sente male; a destra la grafia corretta.";
+"还没有规则" = "Ancora nessuna regola";
+"例如：识别为 cloud code → 替换为 Claude Code" = "Esempio: riconosciuto come cloud code → sostituito con Claude Code";
+"识别为" = "Riconosciuto come";
+"替换为" = "Sostituisci con";
+"删除规则" = "Elimina regola";
+"添加规则" = "Aggiungi regola";
+"保留语音" = "Conserva audio";
+"语音留档" = "Archivio audio";
+"每条历史同时保存当时的录音（仅存本机），可在历史中回放排查识别问题、或用本机语音识别重新识别。删除或裁剪历史时，对应语音一并删除。" = "Ogni voce conserva anche la registrazione (solo su questo Mac): riascoltala per diagnosticare problemi di riconoscimento o riprova il riconoscimento on-device. L'audio viene eliminato insieme alla voce.";
+"语音占用" = "Spazio audio";
+"无语音文件" = "Nessun file audio";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"收藏夹" = "Preferiti";
+"把引擎容易听错的词自动替换为正确写法" = "Sostituisce automaticamente le parole riconosciute male con la grafia corretta";
+"生成词云…" = "Genera nuvola di parole…";
+"从历史记录生成高频词云，可导出为 HTML 分享。" = "Genera una nuvola delle parole frequenti dalla cronologia, esportabile in HTML.";
+"每条历史附带的录音（audio/ 目录），删除或清空历史时一并删除" = "Registrazioni allegate alla cronologia (cartella audio/); eliminate con la cronologia";
+"语音文件不存在（可能已被手动删除）" = "File audio non trovato (forse eliminato manualmente).";
+"已复制新识别结果，原记录未改动" = "Nuova trascrizione copiata — la voce originale non è stata modificata.";
+"已重新识别并写回该条记录" = "Riconosciuto di nuovo e salvato in questa voce.";
+"「%@」的凭据未配置，无法用它重新识别" = "Le credenziali di \"%@\" non sono configurate; impossibile riprovare il riconoscimento.";
+"重新识别（用当时的引擎再试一次，不覆盖原文字）" = "Riconosci di nuovo (con lo stesso motore, senza sovrascrivere il testo)";
+"每条历史同时保存当时的录音（仅存本机），可在历史中回放排查识别问题、或用当时的引擎重新识别。删除或裁剪历史时，对应语音一并删除。" = "Ogni voce conserva la registrazione (solo su questo Mac): riascoltala per diagnosticare o riconoscila con il motore originale. Viene eliminata insieme alla voce.";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"从历史记录生成高频词云与定期快照，全部在本机完成" = "Nuvole di parole e istantanee periodiche dalla cronologia, elaborate solo su questo Mac";
+"自动快照" = "Istantanee automatiche";
+"自动生成词云快照" = "Genera automaticamente istantanee della nuvola di parole";
+"触发阈值（新增字数）" = "Soglia di attivazione (nuovi caratteri)";
+"每累计识别这么多字就自动切一张快照，方便回看用词随时间的变化。快照只存词频（词 + 次数），不含句子原文，全部留在本机。" = "Ogni volta che vengono riconosciuti tanti nuovi caratteri, viene creata un'istantanea per osservare l'evoluzione del lessico. Contiene solo frequenze (parola + conteggio), nessuna frase originale, tutto su questo Mac.";
+"当前词云" = "Nuvola attuale";
+"可用的高频词太少，还画不出词云。多积累一些历史记录后再来试试。" = "Non ci sono ancora abbastanza parole frequenti. Riprova quando la cronologia sarà più ricca.";
+"基于全部 %lld 条历史记录实时生成。" = "Generato al volo da tutte le %lld voci della cronologia.";
+"还没有快照。开启自动快照后，积累够新增字数会自动生成；也可以立即手动生成一张。" = "Nessuna istantanea. Con la generazione automatica ne viene creata una quando si accumulano abbastanza nuovi caratteri — oppure creala ora manualmente.";
+"%lld 个词 · 基于 %lld 条历史" = "%lld parole · da %lld voci";
+"立即生成一张快照" = "Crea istantanea ora";
+"清空快照" = "Elimina istantanee";
+"快照列表" = "Elenco istantanee";
+"词云快照" = "Istantanea nuvola di parole";
+"基于 %lld 条历史" = "Da %lld voci";
+"暂无可用词汇" = "Nessuna parola disponibile";
+"用词变化的时间切片（wordcloud/ 目录），只含词和次数，不含原文" = "Istantanee del lessico (cartella wordcloud/); solo parole e conteggi, senza testo originale";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"查看" = "Vedi";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"词云词数上限" = "Limite di parole della nuvola";
+"速插快照" = "Frammenti di inserimento rapido";
+"快照只存词频（词 + 次数），不含句子原文。自动快照的开关与触发阈值在「历史与数据」页。" = "Le istantanee contengono solo frequenze (parola + conteggio), mai frasi originali. Interruttore e soglia sono nella pagina Cronologia e dati.";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"实时生成 · 未保存为快照" = "Vista live · non salvata come istantanea";
+"存为快照" = "Salva come istantanea";
+
+// MARK: - 2.1 语音留档 / 词云 / 词汇纠正
+"本次录音已保留到历史记录，可回放或重新识别" = "Questa registrazione è stata salvata nella cronologia: riascoltala o riconoscila di nuovo.";
+"，录音已保留到历史记录" = ". Registrazione salvata nella cronologia";

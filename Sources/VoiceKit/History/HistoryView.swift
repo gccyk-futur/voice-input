@@ -24,7 +24,7 @@ struct HistoryView: View {
         var title: String {
             switch self {
             case .all: return VoiceKitLocalization.string("全部")
-            case .favorites: return VoiceKitLocalization.string("收藏")
+            case .favorites: return VoiceKitLocalization.string("收藏夹")
             case .snapshots: return VoiceKitLocalization.string("快照")
             }
         }

@@ -24,10 +24,12 @@ protocol ASREngine: AnyObject, Sendable {
     ///   - onPartial: 实时中间结果回调
     ///   - onAudioLevel: 音频电平回调（0.0~1.0），用于驱动波形；不需要可传 nil
     ///   - onAutoStop: 静音超时自动结束回调；不需要可传 nil。返回 true 表示已处理
+    ///   - recordingURL: 非 nil 时把本次会话的音频旁路录制成 AAC 文件（历史语音留档）
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws
     func stop() async throws -> String
 }
 

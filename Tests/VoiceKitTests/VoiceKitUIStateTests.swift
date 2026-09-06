@@ -42,12 +42,13 @@ final class VoiceKitUIStateTests: XCTestCase {
 
     func testSettingsPanesUseStableHIGNavigationOrder() {
         XCTAssertEqual(SettingsPane.allCases.map(\.title), [
-            "常规", "语音引擎", "AI 服务", "模型管理", "提示词管理", "历史与数据", "使用统计", "权限", "数据隐私", "关于"
+            "常规", "语音引擎", "词汇纠正", "AI 服务", "模型管理", "提示词管理", "历史与数据", "使用统计", "词云", "权限", "数据隐私", "关于"
         ])
         XCTAssertEqual(SettingsPane.models.systemImage, "cube")
-        XCTAssertEqual(SettingsPane.permissions.index, 7)
-        XCTAssertEqual(SettingsPane.history.index, 5)
-        XCTAssertEqual(SettingsPane.stats.index, 6)
+        XCTAssertEqual(SettingsPane.permissions.index, 9)
+        XCTAssertEqual(SettingsPane.history.index, 6)
+        XCTAssertEqual(SettingsPane.stats.index, 7)
+        XCTAssertEqual(SettingsPane.wordcloud.index, 8)
         XCTAssertTrue(SettingsPane.allCases.allSatisfy { !$0.description.isEmpty })
     }
 

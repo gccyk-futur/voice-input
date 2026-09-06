@@ -56,12 +56,19 @@ final class HistoryStore {
         items.insert(item, at: 0)
         let favorites = items.filter { $0.favorite }
         let nonFavorites = items.filter { !$0.favorite }
-        items = Array(nonFavorites.prefix(max(0, maxCount - favorites.count))) + favorites
+        let kept = Array(nonFavorites.prefix(max(0, maxCount - favorites.count)))
+        // 被上限裁剪掉的记录，其语音留档一并删除，避免磁盘只涨不消
+        let evicted = items.filter { old in !kept.contains(where: { $0.id == old.id }) && !old.favorite }
+        for item in evicted { AudioLibrary.delete(file: item.audioFile) }
+        items = kept + favorites
         save()
+        // 词云锚定快照：按识别原文字数累计，过阈值自动切一张（仅词频，不含原文）
+        WordCloudSnapshotter.noteAppended(chars: item.asrResult.count)
     }
 
     func remove(_ item: HistoryItem) {
         items.removeAll { $0.id == item.id }
+        AudioLibrary.delete(file: item.audioFile)
         save()
     }
 
@@ -81,6 +88,18 @@ final class HistoryStore {
 
     func clear() {
         items.removeAll()
+        AudioLibrary.deleteAll()
+        save()
+    }
+
+    /// 用「重新识别」的结果更新某条记录：替换识别文本、清掉旧的润色与纠正对照，
+    /// 语音留档保留（仍可回放对照）。
+    func updateTranscription(id: String, asrText: String) {
+        guard let idx = items.firstIndex(where: { $0.id == id }) else { return }
+        items[idx].asrResult = asrText
+        items[idx].llmResult = nil
+        items[idx].llmEngine = nil
+        items[idx].asrRaw = nil
         save()
     }
 }

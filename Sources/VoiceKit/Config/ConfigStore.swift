@@ -33,6 +33,11 @@ final class ConfigStore {
         self.recoveryState = recovery
         print("[ConfigStore] config loaded, asr.engine=\(loaded.asr.engine), llm.models=\(loaded.llm.models.count), recovery=\(recovery)")
         HistoryStore.shared.maxCount = config.general.maxHistoryCount
+        // 词云快照器从实时配置读开关与阈值（避免反向依赖，保持其可单测）
+        WordCloudSnapshotter.settingsProvider = {
+            let g = ConfigStore.shared.config.general
+            return (g.wordCloudSnapshotEnabled, g.wordCloudSnapshotCharThreshold, g.wordCloudWordLimit)
+        }
         startWatching()
         presentRecoveryUIIfNeeded()
     }

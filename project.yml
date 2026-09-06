@@ -41,8 +41,8 @@ targets:
         CFBundleName: VoiceKit
         CFBundleDisplayName: VoiceKit
         CFBundleIdentifier: me.ckai.VoiceMate
-        CFBundleVersion: "60"
-        CFBundleShortVersionString: "2.0.0"
+        CFBundleVersion: "61"
+        CFBundleShortVersionString: "2.1.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceKit
         CFBundleIconFile: AppIcon
@@ -79,6 +79,11 @@ targets:
       - path: Sources/VoiceKit/Config/AppConfig.swift
       - path: Sources/VoiceKit/Config/ConfigRecovery.swift
       - path: Sources/VoiceKit/History/HistoryStore.swift
+      - path: Sources/VoiceKit/History/AudioLibrary.swift
+      - path: Sources/VoiceKit/History/WordCloudModel.swift
+      - path: Sources/VoiceKit/History/WordCloudHTML.swift
+      - path: Sources/VoiceKit/History/WordCloudSnapshotter.swift
+      - path: Sources/VoiceKit/ASR/TextCorrectionApplier.swift
       - path: Sources/VoiceKit/Prompt/PromptTemplate.swift
       - path: Sources/VoiceKit/Prompt/BuiltinPromptPresets.swift
       - path: Sources/VoiceKit/Prompt/PromptUpgradeOffer.swift

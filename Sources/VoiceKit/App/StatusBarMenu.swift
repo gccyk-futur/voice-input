@@ -6,11 +6,9 @@ import AppKit
 struct StatusBarMenuView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @State private var config = ConfigStore.shared.config
-    @State private var historyItems: [HistoryItem] = []
     @State private var coordinator = AppCoordinator.shared
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
-    @State private var hoveredItemID: String?
     @State private var hoveringVersion = false
 
     private var textScale: VoiceKitTextScale {
@@ -22,7 +20,7 @@ struct StatusBarMenuView: View {
     }
 
     private var popoverMinWidth: CGFloat {
-        340 * textScale.multiplier
+        260 * textScale.multiplier
     }
 
     var body: some View {
@@ -64,9 +62,6 @@ struct StatusBarMenuView: View {
             }
             .voiceKitCard()
 
-            // ── 历史卡 ──
-            historyCard
-
             // ── Toast 提示 ──
             if let msg = toastMessage {
                 Text(msg)
@@ -76,7 +71,7 @@ struct StatusBarMenuView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
 
-            // ── 底部操作区 ──
+            // ── 底部操作区：纯图标四键（中文/英文都不折行），文字在 tooltip ──
             HStack(spacing: 2) {
                 BottomButton(title: VoiceKitLocalization.string("速插"),
                              systemImage: "square.and.arrow.down.on.square") {
@@ -94,7 +89,7 @@ struct StatusBarMenuView: View {
                     dismissMenuBarExtra()
                 }
                 BottomButton(title: VoiceKitLocalization.string("退出"),
-                             systemImage: "xmark") {
+                             systemImage: "power") {
                     // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
                     NSApp.terminate(nil)
                 }
@@ -104,8 +99,6 @@ struct StatusBarMenuView: View {
         .frame(width: popoverMinWidth, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
         .voiceKitTextScale(textScale)
-        .task { reloadHistory() }
-        .onReceive(NotificationCenter.default.publisher(for: HistoryStore.didChange)) { _ in reloadHistory() }
         .onReceive(NotificationCenter.default.publisher(for: ConfigStore.didChange)) { _ in
             config = ConfigStore.shared.config
         }
@@ -123,34 +116,26 @@ struct StatusBarMenuView: View {
     private var engineBlock: some View {
         // 使用 coordinator 的实时状态（由配置变更通知和连接回调驱动），
         // 不再依赖本地 config 快照——首次在设置中填好后无需重启即可切换。
-        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.sm) {
-            HStack(spacing: 6) {
-                sectionTitle("语音引擎")
-                Spacer(minLength: 4)
+        // 版式与 AI 服务行一致：左侧分组小标题、右侧紧凑下拉，不再用全宽选择框。
+        HStack(spacing: 8) {
+            sectionTitle("语音引擎")
 
-                // 连接状态灯只在「有问题」时出现，正常状态一律不显示：
-                // 用户并不区分常驻连接与会话制连接，一个只对某个引擎亮起的绿灯
-                // 只会让人疑惑；而永远亮着的绿灯也不传递任何可行动的信息。
-                // 阿里云是预建连，断开意味着按下热键会失败，值得提前告知 → 显示红点；
-                // 讯飞/Deepgram 录音时才建连，空闲无连接属正常 → 不显示。
-                if coordinator.asrEngineChoice == "aliyun", !coordinator.wsConnected {
-                    Circle()
-                        .fill(Color.red)
-                        .frame(width: 5, height: 5)
-                    Text(VoiceKitLocalization.string("未连接"))
-                        .font(typography.metadata)
-                        .foregroundStyle(VoiceKitSemanticColor.failure)
-                        .lineLimit(1)
-                        .fixedSize()
-                        .accessibilityLabel(VoiceKitLocalization.string("连接状态"))
-                        .accessibilityValue(coordinator.wsStatusText)
-                        .voiceKitToolTip(coordinator.wsStatusText)
-                }
+            // 连接状态灯只在「有问题」时出现，正常状态一律不显示：
+            // 用户并不区分常驻连接与会话制连接，一个只对某个引擎亮起的绿灯
+            // 只会让人疑惑；而永远亮着的绿灯也不传递任何可行动的信息。
+            // 阿里云是预建连，断开意味着按下热键会失败，值得提前告知 → 显示红点；
+            // 讯飞/Deepgram 录音时才建连，空闲无连接属正常 → 不显示。
+            if coordinator.asrEngineChoice == "aliyun", !coordinator.wsConnected {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 5, height: 5)
+                    .accessibilityLabel(VoiceKitLocalization.string("连接状态"))
+                    .accessibilityValue(coordinator.wsStatusText)
+                    .voiceKitToolTip(coordinator.wsStatusText)
             }
 
-            // 用 Menu + 自绘全宽 label 替代 .menu 样式的 Picker：
-            // macOS 26 上 Picker(.menu) 按钮只吃内容宽度、不响应 maxWidth 拉伸，
-            // 文字居中显得两侧空荡；Menu 的 label 可以完全控制布局。
+            Spacer(minLength: 4)
+
             Menu {
                 ForEach(Self.engineOptions, id: \.id) { option in
                     Button {
@@ -165,27 +150,20 @@ struct StatusBarMenuView: View {
                     }
                 }
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 3) {
                     Text(Self.engineOptions.first { $0.id == coordinator.asrEngineChoice }?.title
                          ?? VoiceKitLocalization.string("系统听写"))
-                        .font(typography.body)
-                    Spacer(minLength: 4)
+                        .font(typography.callout)
                     Image(systemName: "chevron.up.chevron.down")
                         .font(typography.metadata)
                         .foregroundStyle(.secondary)
                 }
-                .padding(.horizontal, 10)
-                .padding(.vertical, 5)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(.primary)
                 .contentShape(Rectangle())
-                .background(
-                    RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
-                        .fill(Color.primary.opacity(0.06))
-                )
             }
             .menuIndicator(.hidden)
             .menuStyle(.borderlessButton)
-            .frame(maxWidth: .infinity)
+            .fixedSize()
         }
     }
 
@@ -313,65 +291,7 @@ struct StatusBarMenuView: View {
         }
     }
 
-    // MARK: - 历史记录（内联展开）
-
-    private var historyCard: some View {
-        VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.xs) {
-            HStack {
-                sectionTitle("历史记录")
-                Spacer()
-                if !historyItems.isEmpty {
-                    Text(VoiceKitLocalization.format("已记录 %lld/%lld 条", historyItems.count, config.general.maxHistoryCount))
-                        .font(typography.metadata).foregroundStyle(.tertiary)
-                }
-            }
-            if historyItems.isEmpty {
-                Text("暂无记录")
-                    .font(typography.body).foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 6)
-            } else {
-                ForEach(historyItems.prefix(5)) { item in
-                    Button(action: { copyItem(item) }) {
-                        HStack(spacing: 6) {
-                            Text(item.llmResult ?? item.asrResult)
-                                .font(typography.callout)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
-                            Spacer(minLength: 0)
-                            // 悬停时露出复制图标，让「点击复制」可被发现
-                            if hoveredItemID == item.id {
-                                Image(systemName: "doc.on.doc")
-                                    .font(typography.metadata)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 3)
-                        .background(
-                            RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
-                                .fill(hoveredItemID == item.id ? Color.primary.opacity(0.08) : Color.clear)
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(VoiceKitLocalization.string("复制历史记录"))
-                    .voiceKitToolTip(VoiceKitLocalization.string("点击复制到剪贴板"))
-                    .onHover { hovering in
-                        hoveredItemID = hovering ? item.id : nil
-                    }
-                }
-            }
-        }
-        .voiceKitCard()
-    }
-
-    private func copyItem(_ item: HistoryItem) {
-        let text = item.llmResult ?? item.asrResult
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-        showToast("已复制")
-    }
+    // MARK: - 辅助
 
     /// 在面板内显示临时提示，3 秒后自动消失。
     private func showToast(_ messageKey: String) {
@@ -388,8 +308,6 @@ struct StatusBarMenuView: View {
             delegate.dismissPopover()
         }
     }
-
-    // MARK: - 辅助
 
     /// 官网主页（独立站产品页）
     private static let homepageURL = URL(string: "https://ckai.me/voice-kit")!
@@ -420,13 +338,9 @@ struct StatusBarMenuView: View {
         default: return .gray
         }
     }
-
-    private func reloadHistory() {
-        historyItems = HistoryStore.shared.items
-    }
 }
 
-/// 底部操作按钮：图标 + 文字，悬浮底板反馈。
+/// 底部操作按钮：纯图标（中文/英文都不折行），文字走 tooltip 与无障碍标签。
 private struct BottomButton: View {
     let title: String
     let systemImage: String
@@ -439,21 +353,20 @@ private struct BottomButton: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 4) {
-                Image(systemName: systemImage)
-                    .font(typography.callout)
-                Text(title).font(typography.callout)
-            }
-            .foregroundStyle(hovering ? .primary : .secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
-                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
-            )
-            .contentShape(Rectangle())
+            Image(systemName: systemImage)
+                .font(typography.body)
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 5)
+                .background(
+                    RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
+                        .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(title)
+        .voiceKitToolTip(title)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
     }

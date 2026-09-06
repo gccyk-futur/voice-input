@@ -41,7 +41,8 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws {
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws {
         // 语音识别授权
         guard await ensureSpeechAuth() else { throw ASRError.speechNotAuthorized }
 
@@ -88,6 +89,7 @@ final class LegacyDictationEngine: ASREngine, @unchecked Sendable {
             onLevel: onAudioLevel,
             onAutoStop: onAutoStop,
             onInterruption: { [weak self] error in self?.onFailure?(error) },
+            recordingURL: recordingURL,
             onBuffer: { [weak self] outBuffer in
                 guard let self else { return }
                 let request = self.request

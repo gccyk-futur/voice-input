@@ -58,11 +58,13 @@ enum VoiceKitPermissionState: Equatable, Sendable {
 enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
     case general
     case input
+    case correction
     case services
     case models
     case prompts
     case history
     case stats
+    case wordcloud
     case permissions
     case privacy
     case about
@@ -72,6 +74,8 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
     var isSubpane: Bool {
         switch self {
         case .models, .prompts: return true
+        // 使用统计与词云都是「历史与数据」下辖的本地数据洞察
+        case .stats, .wordcloud: return true
         default: return false
         }
     }
@@ -88,12 +92,14 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .general: return VoiceKitLocalization.string("常规")
         case .input: return VoiceKitLocalization.string("语音引擎")
+        case .correction: return VoiceKitLocalization.string("词汇纠正")
         case .services: return VoiceKitLocalization.string("AI 服务")
         case .models: return VoiceKitLocalization.string("模型管理")
         case .prompts: return VoiceKitLocalization.string("提示词管理")
         case .permissions: return VoiceKitLocalization.string("权限")
         case .privacy: return VoiceKitLocalization.string("数据隐私")
         case .stats: return VoiceKitLocalization.string("使用统计")
+        case .wordcloud: return VoiceKitLocalization.string("词云")
         case .history: return VoiceKitLocalization.string("历史与数据")
         case .about: return VoiceKitLocalization.string("关于")
         }
@@ -103,12 +109,14 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .general: return VoiceKitLocalization.string("快捷键、启动方式、声音和历史记录")
         case .input: return VoiceKitLocalization.string("选择语音引擎、语言和实时听写行为")
+        case .correction: return VoiceKitLocalization.string("把引擎容易听错的词自动替换为正确写法")
         case .services: return VoiceKitLocalization.string("了解 AI 润色如何工作，以及当前是否启用")
         case .models: return VoiceKitLocalization.string("管理云端 API 和本地模型")
         case .prompts: return VoiceKitLocalization.string("管理 AI 润色使用的系统提示词和用户模板")
         case .permissions: return VoiceKitLocalization.string("管理 VoiceKit 使用的系统权限")
         case .privacy: return VoiceKitLocalization.string("了解数据如何流转，以及 VoiceKit 不会做什么")
         case .stats: return VoiceKitLocalization.string("查看语音输入的使用概况；数据只保存在本机")
+        case .wordcloud: return VoiceKitLocalization.string("从历史记录生成高频词云与定期快照，全部在本机完成")
         case .history: return VoiceKitLocalization.string("管理历史记录、收藏与快照")
         case .about: return VoiceKitLocalization.string("版本、开源说明和联系方式")
         }
@@ -118,12 +126,14 @@ enum SettingsPane: String, CaseIterable, Identifiable, Hashable, Sendable {
         switch self {
         case .general: return "gearshape"
         case .input: return "waveform"
+        case .correction: return "character.textbox"
         case .services: return "sparkles"
         case .models: return "cube"
         case .prompts: return "text.quote"
         case .permissions: return "hand.raised"
         case .privacy: return "lock.shield"
         case .stats: return "chart.bar"
+        case .wordcloud: return "cloud"
         case .history: return "clock.arrow.trianglehead.counterclockwise.rotate.90"
         case .about: return "info.circle"
         }

@@ -47,6 +47,8 @@ final class AudioCapture: @unchecked Sendable {
     private var onInterruption: (@Sendable (Error) -> Void)?
     private var configObserver: NSObjectProtocol?
     private var active = false
+    /// 本次会话的语音留档（AAC .m4a）；nil 表示不留档。随 stop() 一并 finalize。
+    private var recorder: AudioSessionRecorder?
 
     /// 执行可能抛 NSException 的代码，返回 Swift.Error（来自桥接的 NSError）；
     /// 正常返回 nil。ObjC 的 `BOOL...error:` 被 Swift 导入为 `throws`。
@@ -79,6 +81,7 @@ final class AudioCapture: @unchecked Sendable {
                onLevel: (@Sendable (Float) -> Void)? = nil,
                onAutoStop: (@Sendable () -> Bool)? = nil,
                onInterruption: (@Sendable (Error) -> Void)? = nil,
+               recordingURL: URL? = nil,
                onBuffer: @escaping @Sendable (AVAudioPCMBuffer) -> Void) throws {
         // ① 设备预检：CoreAudio + AVAudioInputNode 确认默认输入设备和硬件格式存在
         try ensureInputAvailable()
@@ -88,6 +91,11 @@ final class AudioCapture: @unchecked Sendable {
         // ② 格式转换器
         guard let converter = AVAudioConverter(from: hardwareFormat, to: targetFormat) else {
             throw ASRError.converterInit
+        }
+        // 语音留档：录转换后的目标格式（16k 单声道，语音存档体积最小）；
+        // 创建失败只记日志不阻断听写——留档是增强，不是主流程。
+        if let recordingURL {
+            recorder = AudioSessionRecorder(url: recordingURL, sourceFormat: targetFormat)
         }
 
         lock.withLock {
@@ -187,8 +195,12 @@ final class AudioCapture: @unchecked Sendable {
         onInterruption = nil
         let obs = configObserver
         configObserver = nil
+        let activeRecorder = recorder
+        recorder = nil
         lock.unlock()
         if let obs { NotificationCenter.default.removeObserver(obs) }
+        // 关闭留档文件（排空写入队列后 finalize，幂等）
+        activeRecorder?.finish()
 
         // 只有真的装过 tap 才 removeTap：对没装过的 inputNode 调 removeTap 会抛 NSException
         if installed {
@@ -302,6 +314,7 @@ final class AudioCapture: @unchecked Sendable {
             return buffer
         }
         guard convError == nil, outBuffer.frameLength > 0 else { return }
+        recorder?.write(outBuffer)
         onBuffer(outBuffer)
     }
 

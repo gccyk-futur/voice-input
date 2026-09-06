@@ -63,6 +63,11 @@ final class AppCoordinator {
     private var pendingRuntimeFailure: Error?
     /// 防止用户在 resolveASR 尚未完成时取消，旧的异步结果又启动幽灵会话。
     private var recordingFlowGate = RecordingFlowGate()
+    /// 本次会话的语音留档（itemID 即音频文件名，也用作 HistoryItem.id）。
+    /// 非 nil 表示正在留档；finalize 消费它（保留文件），reset/cancel 丢弃它（删除文件）。
+    private var pendingAudio: (itemID: String, url: URL)?
+    /// 词汇纠正前的原始识别文本（纠正改动了文本时非 nil），随历史记录保存供对照。
+    private var pendingASRRaw: String?
     private var resolvingASRTask: Task<Void, Never>?
     private var engineStartTask: Task<Void, Never>?
     /// 权限请求回调可能晚于用户取消返回；用 token 丢弃过期回调。
@@ -311,19 +316,36 @@ final class AppCoordinator {
                 }
                 self.pendingRuntimeFailure = nil
                 self.engineOperationInFlight = false
+                // 飞行中失败（断网、麦克风断开等）：用户可能正在说话，
+                // 录音与已识别出的部分文本不能随会话一起丢弃——先写入历史再展示错误页。
+                if self.preserveInterruptedAudio(partialText: self.asrText) {
+                    ToastController.shared.show(
+                        VoiceKitLocalization.string("本次录音已保留到历史记录，可回放或重新识别"), duration: 4)
+                }
                 self.presentRecoveryFailure(error)
             }
         }
         let startTask = Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.engineStartTask = nil }
+            // 语音留档：开启且历史未停用时，为本次会话准备 AAC 录制文件。
+            // 文件名即随后的 HistoryItem.id，一一对应。
+            let audioEnabled = self.configStore.config.general.historyAudioEnabled
+                && !self.historyStore.historyDisabled
+            if audioEnabled {
+                let itemID = UUID().uuidString
+                self.pendingAudio = (itemID, AudioLibrary.newRecordingURL(itemID: itemID))
+            } else {
+                self.pendingAudio = nil
+            }
             do {
                 try await engine.start(locale: Locale(identifier: languageID),
                     onPartial: { [weak self] partial in
                         Task { @MainActor in self?.asrText = partial }
                     },
                     onAudioLevel: onLevel,
-                    onAutoStop: onSilence
+                    onAutoStop: onSilence,
+                    recordingURL: self.pendingAudio?.url
                 )
 
                 // 若 cancel/stop 已经发生，stopTask 会在这个 start 返回后负责清理；
@@ -354,6 +376,12 @@ final class AppCoordinator {
                 guard self.stopTask == nil else { return }
                 self.recordingFlowGate.invalidate()
                 self.engineOperationInFlight = false
+                // 启动失败前采集可能已经开始（预缓冲期用户已在说话）：
+                // 留档已落盘就保留到历史，让用户能找回这段话。
+                if self.preserveInterruptedAudio(partialText: "") {
+                    ToastController.shared.show(
+                        VoiceKitLocalization.string("本次录音已保留到历史记录，可回放或重新识别"), duration: 4)
+                }
                 self.presentRecoveryFailure(error)
             }
         }
@@ -400,8 +428,14 @@ final class AppCoordinator {
                 await MainActor.run {
                     self.engineOperationInFlight = false
                     self.stopTask = nil
+                    // 停止过程中才暴露的运行时失败：final 已回退为最后拿到的部分文本，
+                    // 连同录音一起保留到历史，而不是静默丢弃。
+                    let preserved = self.preserveInterruptedAudio(partialText: final)
                     self.reset()
-                    self.statusText = VoiceKitLocalization.format("听写中断：%@", runtimeFailure.localizedDescription)
+                    let suffix = preserved
+                        ? VoiceKitLocalization.string("，录音已保留到历史记录")
+                        : ""
+                    self.statusText = VoiceKitLocalization.format("听写中断：%@", runtimeFailure.localizedDescription) + suffix
                 }
                 return
             }
@@ -414,7 +448,16 @@ final class AppCoordinator {
         stopTask = task
     }
 
-    private func handleFinal(asr final: String) async {
+    private func handleFinal(asr rawFinal: String) async {
+        // 本地词汇纠正：在 LLM 润色 / 粘贴 / 历史之前应用，纠正后的文本贯穿下游。
+        let correctionCfg = configStore.config.asr.correction
+        let final = correctionCfg.enabled
+            ? TextCorrectionApplier.apply(rawFinal, rules: correctionCfg.rules)
+            : rawFinal
+        pendingASRRaw = (final != rawFinal) ? rawFinal : nil
+        if pendingASRRaw != nil {
+            Log.info("[Correction] 词汇纠正已生效：\(rawFinal.prefix(40))… → \(final.prefix(40))…")
+        }
         asrText = final
         // 使用统计：在 reset() 清空状态前先把识别段的量取下来。
         let statsEngine = asrEngine?.id ?? "unknown"
@@ -425,13 +468,27 @@ final class AppCoordinator {
         var statsLLM: UsageStatsStore.LLMSegment?
         // 未识别到任何内容：不进入润色/粘贴流程，直接关闭复位。
         // 既避免"空粘贴"打断用户，也避免空字符串写入/覆盖剪贴板。
+        // 例外：有语音留档时仍写一条空文本历史——这正是「ASR 已连接但不出字」的
+        // 诊断现场，用户可在历史里回放语音、离线补识别。
         if final.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             Log.info("[Coordinator] ASR 结果为空，跳过润色/粘贴")
             recordUsage(engine: statsEngine, duration: statsDuration, chars: 0,
                         stopLatency: statsStopLatency, llm: nil)
             await MainActor.run {
-                self.reset()
-                self.statusText = VoiceKitLocalization.string("未识别到内容")
+                if let audio = self.consumePendingAudioIfExists() {
+                    self.historyStore.append(HistoryItem(
+                        asrResult: "", llmResult: nil,
+                        engine: statsEngine, llmEngine: nil,
+                        id: audio.itemID,
+                        audioFile: audio.url.lastPathComponent,
+                        audioDuration: self.audioFileDuration(audio.url)
+                    ))
+                    self.reset()
+                    self.statusText = VoiceKitLocalization.string("未识别到内容，语音已保留，可在历史记录中回放或重新识别")
+                } else {
+                    self.reset()
+                    self.statusText = VoiceKitLocalization.string("未识别到内容")
+                }
             }
             return
         }
@@ -502,6 +559,41 @@ final class AppCoordinator {
                        stopReason: stopReason, stopLatency: stopLatency),
             llm: llm
         )
+    }
+
+    /// 消费本次会话的语音留档：清空 pendingAudio；文件确实存在才返回（录音器创建失败时不返回）。
+    /// 调用方负责把返回的留档挂载到历史记录；未调用的路径由 reset() 删除文件。
+    private func consumePendingAudioIfExists() -> (itemID: String, url: URL)? {
+        guard let audio = pendingAudio else { return nil }
+        pendingAudio = nil
+        guard FileManager.default.fileExists(atPath: audio.url.path) else { return nil }
+        return audio
+    }
+
+    /// 异常中断（引擎飞行中失败、启动失败等）时保留本次录音：
+    /// 把留档连同已识别到的部分文本写入历史，用户可在历史里回放或用同一引擎重新识别。
+    /// 用户主动取消（Esc/关闭按钮）不走这里——明确丢弃的会话不留存。
+    /// 返回是否实际保留（未开启留档或文件未落盘时为 false）。
+    @discardableResult
+    private func preserveInterruptedAudio(partialText: String) -> Bool {
+        guard let audio = consumePendingAudioIfExists() else { return false }
+        historyStore.append(HistoryItem(
+            asrResult: partialText.trimmingCharacters(in: .whitespacesAndNewlines),
+            llmResult: nil,
+            engine: asrEngine?.id ?? "unknown",
+            llmEngine: nil,
+            id: audio.itemID,
+            audioFile: audio.url.lastPathComponent,
+            audioDuration: audioFileDuration(audio.url)
+        ))
+        Log.info("[Coordinator] 会话异常中断，录音已保留并写入历史: \(audio.url.lastPathComponent)")
+        return true
+    }
+
+    /// 读取留档时长（秒）；读不出来（文件损坏等）返回 nil，历史里仅不显示时长。
+    private func audioFileDuration(_ url: URL) -> Double? {
+        let duration = (try? AVAudioPlayer(contentsOf: url))?.duration
+        return (duration ?? 0) > 0 ? duration : nil
     }
 
     func confirmPaste() {
@@ -657,12 +749,19 @@ final class AppCoordinator {
             notice = (notice ?? "") + " " + VoiceKitLocalization.string("授权辅助功能后可自动输入")
         }
 #endif
+        // 语音留档：文件保留，随历史记录挂载（消费 pendingAudio）
+        let audio = consumePendingAudioIfExists()
         historyStore.append(HistoryItem(
             asrResult: asrText,
             llmResult: useLLM ? llmText : nil,
             engine: asrEngine?.id ?? "system",
-            llmEngine: useLLM ? (configStore.config.llm.selectedModel?.engine) : nil
+            llmEngine: useLLM ? (configStore.config.llm.selectedModel?.engine) : nil,
+            id: audio?.itemID ?? UUID().uuidString,
+            audioFile: audio?.url.lastPathComponent,
+            audioDuration: audio.flatMap { audioFileDuration($0.url) },
+            asrRaw: pendingASRRaw
         ))
+        pendingASRRaw = nil
         reset()
         finalizing = false
 
@@ -766,6 +865,12 @@ final class AppCoordinator {
         engineStartTask = nil
         permissionRequestID = nil
         pendingRuntimeFailure = nil
+        // 未被 finalize 消费的留档（取消/失败路径）：删除半成品文件，不留孤儿音频
+        if let audio = pendingAudio {
+            pendingAudio = nil
+            try? FileManager.default.removeItem(at: audio.url)
+        }
+        pendingASRRaw = nil
         stopDisplaySync()
         if asrEngine?.id != "aliyun" {
             invalidateASREngine()

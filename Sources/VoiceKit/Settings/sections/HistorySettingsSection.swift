@@ -43,11 +43,50 @@ struct HistorySettingsSectionView: View {
             }
             .onChange(of: draft.general.maxHistoryCount) { _, v in tooMany = v > 10_000 }
 
+            // 语音留档
+            Section {
+                Toggle("保留语音", isOn: $draft.general.historyAudioEnabled)
+            } header: {
+                Text("语音留档")
+            } footer: {
+                Text(VoiceKitLocalization.string("每条历史同时保存当时的录音（仅存本机），可在历史中回放排查识别问题、或用当时的引擎重新识别。删除或裁剪历史时，对应语音一并删除。"))
+            }
+
+            // 词云（自动快照设置；结果查看在「历史与数据」下辖的「词云」子页）
+            Section {
+                Toggle("自动生成词云快照", isOn: $draft.general.wordCloudSnapshotEnabled)
+                HStack {
+                    Text("触发阈值（新增字数）")
+                    Spacer()
+                    NumericComboBox(value: $draft.general.wordCloudSnapshotCharThreshold,
+                                    presets: [2000, 5000, 10000, 20000])
+                        .frame(width: 200)
+                }
+                HStack {
+                    Text("词云词数上限")
+                    Spacer()
+                    NumericComboBox(value: $draft.general.wordCloudWordLimit,
+                                    presets: [30, 60, 100, 150])
+                        .frame(width: 200)
+                }
+            } header: {
+                Text("词云")
+            } footer: {
+                Text(VoiceKitLocalization.string("每累计识别这么多字就自动切一张快照，方便回看用词随时间的变化。快照只存词频（词 + 次数），不含句子原文，全部留在本机。"))
+            }
+
             // 当前数据
             Section {
                 statRow(VoiceKitLocalization.string("历史记录"), count: currentHistoryCount)
                 statRow(VoiceKitLocalization.string("收藏"), count: currentFavoriteCount)
-                statRow(VoiceKitLocalization.string("快照"), count: currentSnapshotCount)
+                statRow(VoiceKitLocalization.string("速插快照"), count: currentSnapshotCount)
+                HStack {
+                    Text("语音占用")
+                    Spacer()
+                    Text(audioUsageLabel)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
             } header: {
                 Text("当前数据")
             } footer: {
@@ -69,6 +108,12 @@ struct HistorySettingsSectionView: View {
     private var currentHistoryCount: Int { HistoryStore.shared.items.count }
     private var currentFavoriteCount: Int { HistoryStore.shared.items.filter(\.favorite).count }
     private var currentSnapshotCount: Int { SnapshotStore.shared.items.count }
+
+    private var audioUsageLabel: String {
+        let bytes = AudioLibrary.totalBytes()
+        if bytes <= 0 { return VoiceKitLocalization.string("无语音文件") }
+        return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
 }
 
 // 给 SettingsView 提供「历史与数据」tab 内容

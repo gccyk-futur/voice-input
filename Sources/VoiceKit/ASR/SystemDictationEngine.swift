@@ -22,7 +22,8 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws {
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws {
         // 语音识别授权（.notDetermined 由 AppCoordinator.startRecording() 在 MainActor 上先行处理，
         // 正常路径下此处已是 .authorized；此处保留作为后台 Task 中直接调 start() 的兜底）
         let speechOK: Bool
@@ -84,6 +85,7 @@ final class SystemDictationEngine: ASREngine, @unchecked Sendable {
                 onLevel: onAudioLevel,
                 onAutoStop: nil,
                 onInterruption: { [weak self] error in self?.onFailure?(error) },
+                recordingURL: recordingURL,
                 onBuffer: { outBuffer in
                     inputBuilder.yield(AnalyzerInput(buffer: outBuffer))
                 }

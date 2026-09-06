@@ -59,6 +59,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     private var _onPartial: (@Sendable (String) -> Void)?
     private var _onAudioLevel: (@Sendable (Float) -> Void)?
     private var _onAutoStop: (@Sendable () -> Bool)?
+    private var _recordingURL: URL?
     private var _receiveTask: Task<Void, Never>?
     /// 底层连接错误的原始描述（close code / receive 异常），报错时透传给用户，不做转译。
     private var _lastUnderlyingError: String?
@@ -96,7 +97,8 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
     func start(locale: Locale,
                onPartial: @escaping @Sendable (String) -> Void,
                onAudioLevel: (@Sendable (Float) -> Void)?,
-               onAutoStop: (@Sendable () -> Bool)?) async throws {
+               onAutoStop: (@Sendable () -> Bool)?,
+               recordingURL: URL?) async throws {
         try capture.ensureInputAvailable()
 
         let gate = AudioPreRollSendGate(sendQueue: sendQueue) { [weak self] data in
@@ -113,6 +115,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
             _onPartial = onPartial
             _onAudioLevel = onAudioLevel
             _onAutoStop = onAutoStop
+            _recordingURL = recordingURL
         }
         Log.info("[Deepgram] 音频预缓冲已创建")
 
@@ -332,6 +335,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
         let silence: SilenceConfig? = autoStopEnabled
             ? SilenceConfig(timeout: autoStopTimeout, gracePeriod: 1.0)
             : nil
+        let recordingURL = stateLock.withLock { _recordingURL }
         try capture.start(
             targetFormat: targetFormat,
             bufferSize: 1024,
@@ -347,6 +351,7 @@ final class DeepgramASREngine: NSObject, ASREngine, @unchecked Sendable {
                 return cb?() ?? false
             },
             onInterruption: { [weak self] error in self?.failSession(error) },
+            recordingURL: recordingURL,
             onBuffer: { [weak self] out in
                 guard let self else { return }
                 let len = Int(out.frameLength)

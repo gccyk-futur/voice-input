@@ -46,7 +46,7 @@ extension SettingsView {
                 localDataRow(title: "历史记录", file: "history.json",
                              detail: "最近若干条识别原文与润色结果",
                              url: Self.supportFileURL("history.json"), clearable: true)
-                localDataRow(title: "快照", file: "snapshots.json",
+                localDataRow(title: "速插快照", file: "snapshots.json",
                              detail: "你手动保存、可反复速插的文本片段，不会自动清理",
                              url: Self.supportFileURL("snapshots.json"), clearable: true,
                              clear: { SnapshotStore.shared.clear(); refreshLocalDataSizes() })
@@ -54,6 +54,14 @@ extension SettingsView {
                              detail: "含转录原文，仅用于排查问题，超过 2MB 自动覆盖较早内容",
                              url: Log.currentFileURL, clearable: true,
                              clear: { Log.clear(); refreshLocalDataSizes() })
+                localDataRow(title: "语音留档", file: "audio",
+                             detail: "每条历史附带的录音（audio/ 目录），删除或清空历史时一并删除",
+                             url: AudioLibrary.directory(), clearable: true,
+                             clear: { AudioLibrary.deleteAll(); refreshLocalDataSizes() })
+                localDataRow(title: "词云快照", file: "wordcloud",
+                             detail: "用词变化的时间切片（wordcloud/ 目录），只含词和次数，不含原文",
+                             url: WordCloudSnapshotter.directory(), clearable: true,
+                             clear: { WordCloudSnapshotter.deleteAll(); refreshLocalDataSizes() })
 
                 Toggle(isOn: Binding(
                     get: { draft.general.usageStatsEnabled },
@@ -110,6 +118,7 @@ extension SettingsView {
         return String(format: idx == 0 ? "%.0f %@" : "%.1f %@", value, units[idx])
     }
 
+    @MainActor
     func refreshLocalDataSizes() {
         func size(_ url: URL?) -> UInt64 {
             guard let url,
@@ -121,7 +130,9 @@ extension SettingsView {
             "history.json": size(Self.supportFileURL("history.json")),
             "snapshots.json": size(Self.supportFileURL("snapshots.json")),
             "voicekit.log": size(Log.currentFileURL),
-            "stats": UsageStatsStore.shared.fileSize
+            "stats": UsageStatsStore.shared.fileSize,
+            "audio": UInt64(max(0, AudioLibrary.totalBytes())),
+            "wordcloud": UInt64(max(0, WordCloudSnapshotter.totalBytes()))
         ]
     }
 
