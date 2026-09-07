@@ -41,7 +41,7 @@ targets:
         CFBundleName: VoiceKit
         CFBundleDisplayName: VoiceKit
         CFBundleIdentifier: me.ckai.VoiceMate
-        CFBundleVersion: "61"
+        CFBundleVersion: "1059"
         CFBundleShortVersionString: "2.1.0"
         CFBundlePackageType: APPL
         CFBundleExecutable: VoiceKit
