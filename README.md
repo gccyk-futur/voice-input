@@ -19,6 +19,9 @@ VoiceKit is a macOS voice input assistant. Press a global hotkey, speak, and you
 - **Silence auto-stop** — automatically finishes after a configurable pause
 - **AI polish** — send recognized text to an LLM (OpenAI / DeepSeek / Claude / Ollama) to convert spoken language into polished prose; built-in prompt preset library (bullet points, formal documents, etc.), one-click import
 - **History center** — browse past transcriptions grouped by day, with search, favorites, and Markdown/JSON export
+- **Audio archive & re-transcribe** — each history entry can keep its original recording (AAC, local only); re-transcribe archived audio with the engine that originally processed it, in one click
+- **Word correction** — local replacement rules automatically fix words the engine keeps mishearing (e.g. "cloud code" → "Claude Code"); applied before polish/paste/history, works with every engine
+- **Word clouds** — high-frequency word clouds and scheduled snapshots generated from your history (off by default); local-only, stores word frequencies, never raw text
 - **Snapshot library** — keep frequently used snippets permanently, with optional titles and editing
 - **Quick-insert panel** (separate hotkey) — keyboard-first access to history, favorites, and snapshots; press Enter to insert into the current app
 - **Usage stats** — local-only usage statistics, never leaves your device
@@ -55,6 +58,7 @@ VoiceKit is a **pure client-side tool** — no backend servers, no data collecti
 
 - **No telemetry**: no analytics, no tracking, no phoning home
 - **Local storage**: API keys and config stored in `~/Library/Application Support/VoiceMate/`
+- **Full disclosure**: the Data Privacy page in Settings lists every local file (history, snapshots, recordings, word clouds, stats, logs) with its location and size — view, reveal, or clear each one
 - **Privacy manifest**: `PrivacyInfo.xcprivacy` included for App Store compliance
 
 ## Requirements

@@ -70,11 +70,33 @@
         </div>
 
         <div class="card">
+            <h2>Word Correction</h2>
+            <p>Engine keeps mishearing the same word? (e.g. "Claude Code" comes out as "cloud code".) Register a replacement rule in Settings → Word Correction, and future transcripts are corrected automatically — <strong>works with every recognition engine</strong>.</p>
+            <ul>
+                <li>Correction applies <strong>before</strong> polish, paste, and history, so every later step sees the corrected text;</li>
+                <li>When a correction changes the text, history keeps the original transcript with a "Corrected" badge for comparison;</li>
+                <li>Rules live only in your local config — edit or delete them anytime.</li>
+            </ul>
+        </div>
+
+        <div class="card">
             <h2>History, Favorites &amp; Snapshots</h2>
             <ul>
                 <li><strong>History</strong>: every transcript is saved automatically (limit adjustable in Settings → History &amp; Data), with search, copy, re-insert, and export.</li>
                 <li><strong>Favorites</strong>: star frequently used items to keep them together.</li>
                 <li><strong>Snapshots</strong>: save selected history items as long-lived snippets — perfect for templates and canned replies.</li>
+            </ul>
+            <h3>Audio Archive &amp; Re-transcribe</h3>
+            <ul>
+                <li>When enabled (Settings → History &amp; Data), each history entry can also keep its original recording (AAC, stored only on your Mac);</li>
+                <li>Transcript looks off? Click "Re-transcribe" to run the archived audio through the engine that originally processed it — network hiccups no longer lose your words;</li>
+                <li>Recordings are removed together with history when you delete or clear it; their size is visible in Settings → Data Privacy.</li>
+            </ul>
+            <h3>Word Clouds</h3>
+            <ul>
+                <li>Off by default — enable in Settings → Word Cloud. The live cloud is computed on demand; preview it, or export as HTML / JSON;</li>
+                <li>Anchored snapshots: a word-frequency snapshot is captured automatically every N characters, preserving how your wording changes over time;</li>
+                <li>Everything is computed locally — only words and counts are stored, never raw text.</li>
             </ul>
             <h3>Quick Insert Panel</h3>
             <p>A keyboard-first floating panel for fast insertion (hotkey configurable in Settings → General):</p>
@@ -91,6 +113,7 @@
                 <li>Everything stays on your Mac in <code>~/Library/Application Support/VoiceMate/</code> — nothing passes through third-party servers.</li>
                 <li>The config is backed up automatically before every save (<code>config.backup.json</code>). If the config is ever corrupted, VoiceKit restores from the backup; failing that, it isolates the bad file and tells you — no crash.</li>
                 <li>Settings → History &amp; Data supports exporting / importing the config, making migration to a new Mac easy.</li>
+                <li>Settings → Data Privacy discloses every local data file's location and size (history, snapshots, recordings, word clouds, stats, logs) — reveal in Finder or clear each one.</li>
             </ul>
         </div>
 
@@ -104,6 +127,10 @@
             A: Quit and reopen that app. It's a transient state issue in the target app's accessibility interface — your text wasn't recorded twice.</p>
             <p style="margin-top: 12px;"><strong>Q: AI Polish won't connect?</strong><br>
             A: For cloud models, check the Base URL and API Key. For Ollama, make sure the local service is running (<code>ollama serve</code>) and the model is pulled.</p>
+            <p style="margin-top: 12px;"><strong>Q: The engine keeps mishearing the same word?</strong><br>
+            A: Add a replacement rule in Settings → Word Correction — it's fixed automatically from then on, with every engine. History shows a "Corrected" badge so you can compare against the original.</p>
+            <p style="margin-top: 12px;"><strong>Q: It says "connected" but no words come out — how do I troubleshoot?</strong><br>
+            A: Enable Audio Archive and replay the recording: if you hear your voice, recognition dropped it — use "Re-transcribe" to recover; if it's silent, the problem is the microphone or the system layer.</p>
             <p style="margin-top: 12px;"><strong>Q: Can I change the UI language or text size?</strong><br>
             A: Yes. Settings → General lets you pick a language (follow system, or one of 10 languages) and adjust text size.</p>
         </div>

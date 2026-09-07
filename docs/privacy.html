@@ -25,30 +25,40 @@
 <body>
     <div class="container">
         <h1>VoiceKit 隐私政策</h1>
-        <p class="subtitle">最后更新：2026 年 7 月 14 日</p>
+        <p class="subtitle">最后更新：2026 年 9 月 5 日（对应 2.1.0）</p>
 
         <div class="card">
             <h2>我们收集什么</h2>
-            <p><strong>什么都不收集。</strong> VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不统计使用情况。</p>
+            <p><strong>不向任何地方上传。</strong> VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不会把语音、文字或使用数据发送给作者或第三方。下表中的文件全部只存在于你自己的 Mac 上。</p>
         </div>
 
         <div class="card">
             <h2>数据存储在哪</h2>
-            <p>所有数据仅存储在你的 Mac 本地：</p>
+            <p>所有数据仅存储在你的 Mac 本地（App Store 版位于应用沙盒容器内，路径结构相同）：</p>
             <table>
-                <tr><th>数据</th><th>位置</th></tr>
-                <tr><td>配置（含 API Key）</td><td>~/Library/Application Support/VoiceKit/config.json</td></tr>
-                <tr><td>历史记录</td><td>~/Library/Application Support/VoiceKit/history.json</td></tr>
+                <tr><th>数据</th><th>位置</th><th>说明</th></tr>
+                <tr><td>配置（含 API Key、词汇纠正规则）</td><td>~/Library/Application Support/VoiceMate/config.json</td><td>JSON 明文，仅本机用户可读</td></tr>
+                <tr><td>历史记录</td><td>~/Library/Application Support/VoiceMate/history.json</td><td>最近若干条识别原文与润色结果</td></tr>
+                <tr><td>速插快照</td><td>~/Library/Application Support/VoiceMate/snapshots.json</td><td>你手动保存的文本片段，不会自动清理</td></tr>
+                <tr><td>语音留档</td><td>~/Library/Application Support/VoiceMate/audio/</td><td>每条历史可附带当时的录音（AAC），删除或清空历史时一并删除；可在设置中关闭</td></tr>
+                <tr><td>词云快照</td><td>~/Library/Application Support/VoiceMate/wordcloud/</td><td>用词频率的时间切片，只含词和次数，不含原文；功能默认关闭</td></tr>
+                <tr><td>使用统计</td><td>~/Library/Application Support/VoiceMate/stats.jsonl</td><td>仅时长、字数、引擎等元数据，不含任何文字内容；可在设置中关闭</td></tr>
+                <tr><td>运行日志</td><td>~/Library/Logs/VoiceKit/voicekit.log</td><td>用于排查问题，含转录原文；超过 2MB 自动覆盖较早内容</td></tr>
             </table>
+            <p style="margin-top: 8px;">以上每一项的位置与占用大小，都可在应用内「设置 → 数据隐私」页中查看、显示所在目录或清空。</p>
         </div>
 
         <div class="card">
             <h2>语音和文字的去向</h2>
+            <p>取决于你选择的识别引擎：</p>
             <ul>
-                <li><strong>系统听写</strong>：音频送往 Apple 服务器进行识别，受 Apple 隐私政策约束。</li>
-                <li><strong>阿里云 Fun-ASR</strong>：音频通过 WebSocket 发往你自己的阿里云账号，你是数据的控制者。</li>
-                <li><strong>AI 润色</strong>：识别后的文字发往你配置的 AI 服务。如果用本地模型，文字不出电脑。</li>
+                <li><strong>系统听写</strong>：音频送往 Apple 服务器进行识别（macOS 内置服务的正常行为），受 Apple 隐私政策约束。</li>
+                <li><strong>阿里云 Fun-ASR</strong>：音频通过 WebSocket 发往你<strong>自己的</strong>阿里云账号。</li>
+                <li><strong>讯飞听写</strong>：音频通过 WebSocket 发往你<strong>自己的</strong>讯飞开放平台账号。</li>
+                <li><strong>Deepgram</strong>：音频发往你<strong>自己的</strong> Deepgram 账号。</li>
+                <li><strong>AI 润色</strong>：识别后的文字发往你配置的 AI 服务。如果使用 Ollama 本地模型，文字完全不出电脑。</li>
             </ul>
+            <p style="margin-top: 8px;">云端识别引擎与 AI 润色均为<strong>自带密钥（BYOK）</strong>接入——用的是你自己的账号，你是数据的控制者。未配置密钥的引擎不会被使用，会自动回退到系统听写。VoiceKit 仅建立连接和传输数据，不缓存、不记录这些通信内容。</p>
         </div>
 
         <div class="card">
@@ -60,6 +70,11 @@
                 <tr><td>辅助功能（官网版可选）</td><td>识别完成后自动粘贴到输入框</td></tr>
             </table>
             <p style="margin-top: 8px;">所有权限可在「系统设置 → 隐私与安全性」中随时撤销。</p>
+        </div>
+
+        <div class="card">
+            <h2>第三方服务</h2>
+            <p>当你使用阿里云、讯飞、Deepgram 任一云端识别引擎，或第三方 AI 润色服务时，你与这些服务商的交互受其各自的隐私政策约束。VoiceKit 仅作为数据传输管道。</p>
         </div>
 
         <div class="card">

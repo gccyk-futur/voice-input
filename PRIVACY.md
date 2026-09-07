@@ -1,13 +1,13 @@
 # 隐私说明
 
-最后更新：2026 年 8 月 13 日（对应 1.1.0）
+最后更新：2026 年 9 月 5 日（对应 2.1.0）
 
 ## 我们收集什么
 
 **不向任何地方上传。** VoiceKit 没有后台服务器，不使用任何分析或追踪框架，不会把语音、文字或使用数据发送给作者或第三方。
 
-下表中的文件全部只存在于你自己的 Mac 上。其中「使用统计」用于将来在应用内展示你自己的使用情况，
-默认开启、可随时在「设置 → 隐私 → 本地数据」中关闭、导出或清空。
+下表中的文件全部只存在于你自己的 Mac 上。其中「使用统计」用于在应用内向你展示使用情况，
+默认开启、可随时在「设置 → 历史与数据」中关闭，在「设置 → 数据隐私」中查看、导出或清空。
 
 ## 数据存储在哪
 
@@ -15,11 +15,16 @@
 
 | 数据 | 位置 | 说明 |
 |------|------|------|
-| 配置（含 API Key） | `~/Library/Application Support/VoiceMate/config.json` | JSON 明文，仅本机用户有读取权限 |
-| 历史记录 | `~/Library/Application Support/VoiceMate/history.json` | 最近若干条识别结果 |
+| 配置（含 API Key、词汇纠正规则） | `~/Library/Application Support/VoiceMate/config.json` | JSON 明文，仅本机用户有读取权限；词汇纠正规则存于其中 `asr.correction` 字段 |
+| 历史记录 | `~/Library/Application Support/VoiceMate/history.json` | 最近若干条识别原文与润色结果 |
+| 速插快照 | `~/Library/Application Support/VoiceMate/snapshots.json` | 你手动保存、可反复速插的文本片段，不会自动清理 |
+| 语音留档 | `~/Library/Application Support/VoiceMate/audio/` | 每条历史可附带当时的录音（AAC），仅在你开启后保存；删除或清空历史时一并删除，可在「设置 → 历史与数据」关闭 |
+| 词云快照 | `~/Library/Application Support/VoiceMate/wordcloud/` | 用词频率的时间切片，只含词和次数，**不含原文**；功能默认关闭，需在设置中手动开启 |
 | 运行日志 | `~/Library/Logs/VoiceKit/voicekit.log` | 用于排查问题，**含转录原文**；超过 2MB 自动覆盖较早内容 |
 | 使用统计 | `~/Library/Application Support/VoiceMate/stats.jsonl` | 仅时长、字数、引擎、耗时等元数据，**不含任何文字内容**；可在设置中关闭 |
 | Keychain | 未使用 | API Key 直接存于 config.json，不经过 macOS Keychain |
+
+以上每一项的位置与占用大小，都可在「设置 → 数据隐私」页中查看、显示所在目录或清空。
 
 App Store 版运行在沙盒中，上述文件位于应用自己的容器目录内，路径结构相同。
 
