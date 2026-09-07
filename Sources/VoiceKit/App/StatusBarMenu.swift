@@ -1,8 +1,10 @@
 import SwiftUI
 import AppKit
 
-/// 状态栏弹出面板：卡片式分区（引擎+AI 服务 / 历史记录），支持引擎切换、
-/// 润色开关、历史记录行内复制。使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
+/// 状态栏弹出面板：卡片式控制区（引擎 + AI 服务）+ 主操作区（速插/历史/设置）。
+/// 职责边界：本面板只管「配置与入口」。会话状态（聆听/转写/润色）由光标旁的
+/// 浮层面板承担，此处不再重复显示——录音中用户不会、也不需要点开状态栏。
+/// 使用 .menuBarExtraStyle(.window) 获得完整的 SwiftUI 布局自由度。
 struct StatusBarMenuView: View {
     @AppStorage("voicekit.ui.textScale") private var textScaleRawValue = VoiceKitTextScale.system.rawValue
     @State private var config = ConfigStore.shared.config
@@ -10,6 +12,7 @@ struct StatusBarMenuView: View {
     @State private var toastMessage: String?
     @State private var toastWork: DispatchWorkItem?
     @State private var hoveringVersion = false
+    @State private var hoveringQuit = false
 
     private var textScale: VoiceKitTextScale {
         VoiceKitTextScale.restored(from: textScaleRawValue)
@@ -25,17 +28,53 @@ struct StatusBarMenuView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.md) {
-            // ── 标题栏：品牌 + 渠道版本（与浮层面板同一心智）──
+            // ── 标题栏：纯品牌 ──
             HStack(spacing: 6) {
                 Image(systemName: "waveform")
                     .foregroundStyle(.tint)
                 Text("VoiceKit").font(typography.sectionTitle)
                 Spacer()
-                if coordinator.sessionState != .idle {
-                    Circle()
-                        .fill(statusColor)
-                        .frame(width: 6, height: 6)
+            }
+            .padding(.horizontal, 6)
+
+            // ── 控制卡：语音引擎 + AI 服务 ──
+            VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.md) {
+                engineBlock
+                Divider()
+                llmBlock
+            }
+            .voiceKitPopoverCard()
+
+            // ── Toast 提示 ──
+            if let msg = toastMessage {
+                Text(msg)
+                    .font(typography.callout)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            // ── 主操作区：图标+文字纵向三键，语义自解释 ──
+            HStack(spacing: 2) {
+                MainActionButton(title: VoiceKitLocalization.string("速插"),
+                                 systemImage: "square.and.arrow.down.on.square") {
+                    QuickInsertPanelController.shared.show()
+                    dismissMenuBarExtra()
                 }
+                MainActionButton(title: VoiceKitLocalization.string("历史记录"),
+                                 systemImage: "clock") {
+                    HistoryWindowController.shared.show()
+                    dismissMenuBarExtra()
+                }
+                MainActionButton(title: VoiceKitLocalization.string("设置…"),
+                                 systemImage: "gearshape") {
+                    SettingsWindowController.shared.show()
+                    dismissMenuBarExtra()
+                }
+            }
+
+            // ── 底栏：版本号（官网入口）+ 退出。低频信息降级至此 ──
+            HStack(spacing: 6) {
                 // 版本号即官网入口：点击打开独立站产品主页
                 Button {
                     NSWorkspace.shared.open(Self.homepageURL)
@@ -51,49 +90,28 @@ struct StatusBarMenuView: View {
                     hoveringVersion = hovering
                     if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
                 }
-            }
-            .padding(.horizontal, 6)
 
-            // ── 控制卡：语音引擎 + AI 服务 ──
-            VStack(alignment: .leading, spacing: VoiceKitDesign.Spacing.md) {
-                engineBlock
-                Divider()
-                llmBlock
-            }
-            .voiceKitCard()
+                Spacer()
 
-            // ── Toast 提示 ──
-            if let msg = toastMessage {
-                Text(msg)
-                    .font(typography.callout)
-                    .foregroundStyle(.orange)
-                    .padding(.horizontal, 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            // ── 底部操作区：纯图标四键（中文/英文都不折行），文字在 tooltip ──
-            HStack(spacing: 2) {
-                BottomButton(title: VoiceKitLocalization.string("速插"),
-                             systemImage: "square.and.arrow.down.on.square") {
-                    QuickInsertPanelController.shared.show()
-                    dismissMenuBarExtra()
-                }
-                BottomButton(title: VoiceKitLocalization.string("历史记录"),
-                             systemImage: "clock") {
-                    HistoryWindowController.shared.show()
-                    dismissMenuBarExtra()
-                }
-                BottomButton(title: VoiceKitLocalization.string("设置…"),
-                             systemImage: "gearshape") {
-                    SettingsWindowController.shared.show()
-                    dismissMenuBarExtra()
-                }
-                BottomButton(title: VoiceKitLocalization.string("退出"),
-                             systemImage: "power") {
+                // 退出与主操作分离：破坏性操作视觉降级，悬停才显红
+                Button {
                     // 退出按钮直接 terminate，不跑 dismiss 避免潜在的窗口释放冲突
                     NSApp.terminate(nil)
+                } label: {
+                    HStack(spacing: 3) {
+                        Text(VoiceKitLocalization.string("退出"))
+                        Image(systemName: "power")
+                    }
+                    .font(typography.metadata)
+                    .foregroundStyle(hoveringQuit ? Color.red : Color.secondary)
                 }
+                .buttonStyle(.plain)
+                .voiceKitToolTip(VoiceKitLocalization.string("退出"))
+                .accessibilityLabel(VoiceKitLocalization.string("退出"))
+                .onHover { hoveringQuit = $0 }
+                .animation(.easeOut(duration: 0.12), value: hoveringQuit)
             }
+            .padding(.horizontal, 6)
         }
         .padding(10)
         .frame(width: popoverMinWidth, alignment: .topLeading)
@@ -165,6 +183,7 @@ struct StatusBarMenuView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
         }
+        .frame(minHeight: 28)
     }
 
     /// 引擎可选项（与设置页列表口径一致）
@@ -235,9 +254,9 @@ struct StatusBarMenuView: View {
                     }
                 ))
                 .toggleStyle(.switch)
-                .controlSize(.small)
                 .labelsHidden()
             }
+            .frame(minHeight: 28)
 
             // 开关开启后才出现：模型/提示词紧凑下拉
             if config.llm.enabled {
@@ -258,7 +277,6 @@ struct StatusBarMenuView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .controlSize(.small)
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(VoiceKitLocalization.string("选择润色模型"))
                         .voiceKitToolTip(VoiceKitLocalization.string("选择润色模型"))
@@ -281,7 +299,6 @@ struct StatusBarMenuView: View {
                         }
                         .labelsHidden()
                         .pickerStyle(.menu)
-                        .controlSize(.small)
                         .frame(maxWidth: .infinity)
                         .accessibilityLabel(VoiceKitLocalization.string("选择提示词"))
                         .voiceKitToolTip(VoiceKitLocalization.string("选择提示词"))
@@ -329,19 +346,11 @@ struct StatusBarMenuView: View {
             return true
         }
     }
-
-    private var statusColor: Color {
-        switch coordinator.sessionState {
-        case .recording: return VoiceKitSemanticColor.failure
-        case .transcribing, .polishing: return VoiceKitSemanticColor.warning
-        case .ready: return VoiceKitSemanticColor.success
-        default: return .gray
-        }
-    }
 }
 
-/// 底部操作按钮：纯图标（中文/英文都不折行），文字走 tooltip 与无障碍标签。
-private struct BottomButton: View {
+/// 主操作按钮：图标在上、文字在下的纵向布局。
+/// 纯图标无人能懂（尤其「速插」），文字标签让语义自解释，tooltip 降级为补充。
+private struct MainActionButton: View {
     let title: String
     let systemImage: String
     let action: () -> Void
@@ -353,21 +362,38 @@ private struct BottomButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: systemImage)
-                .font(typography.body)
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 5)
-                .background(
-                    RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.control, style: .continuous)
-                        .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
-                )
-                .contentShape(Rectangle())
+            VStack(spacing: 3) {
+                Image(systemName: systemImage)
+                    .font(.system(size: 15 * textScale.multiplier))
+                Text(title)
+                    .font(typography.secondary)
+            }
+            .foregroundStyle(hovering ? .primary : .secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: VoiceKitDesign.Radius.card, style: .continuous)
+                    .fill(hovering ? Color.primary.opacity(0.08) : Color.clear)
+            )
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(title)
         .voiceKitToolTip(title)
         .onHover { hovering = $0 }
         .animation(.easeOut(duration: 0.12), value: hovering)
+    }
+}
+
+private extension View {
+    /// 状态栏面板专用卡片：圆角 10 与面板系统圆角咬合；去掉描边——0.5px 半透明
+    /// 描边在毛玻璃上若隐若现，视觉上显脏，只靠填充差分区即可。
+    /// 共享的 voiceKitCard 仍被历史窗口等使用，不在此改动。
+    func voiceKitPopoverCard() -> some View {
+        padding(10)
+            .background(
+                Color(nsColor: .controlBackgroundColor).opacity(0.6),
+                in: RoundedRectangle(cornerRadius: 10, style: .continuous)
+            )
     }
 }

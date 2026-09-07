@@ -17,9 +17,9 @@ ENTITLEMENTS="Sources/VoiceKit/Resources/VoiceMate.entitlements"
 NOTARY_PROFILE="VoiceMate"
 BUILD_DIR="./build"
 
-# 开发者身份（通过 1Password CLI 读取，不硬编码在仓库中）
-TEAM_ID="$(op read op://My-Keys/apple/TEAM_ID)"
-SIGNING_NAME="$(op read op://My-Keys/apple/SIGNING_NAME)"
+# 开发者身份（优先读 APPLE_DEV_* 环境变量；未设置时回退 1Password CLI。不硬编码在仓库中）
+TEAM_ID="${APPLE_DEV_TEAM_ID:-$(op read op://My-Keys/apple/TEAM_ID)}"
+SIGNING_NAME="${APPLE_DEV_SIGING_NAME:-${APPLE_DEV_SIGNING_NAME:-$(op read op://My-Keys/apple/SIGNING_NAME)}}"
 export VOICEMATE_TEAM_ID="${TEAM_ID}"
 export VOICEMATE_SIGNING_NAME="${SIGNING_NAME}"
 SIGNING_IDENTITY="Developer ID Application: ${SIGNING_NAME} (${TEAM_ID})"
