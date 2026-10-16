@@ -138,20 +138,6 @@ struct StatusBarMenuView: View {
         HStack(spacing: 8) {
             sectionTitle("语音引擎")
 
-            // 连接状态灯只在「有问题」时出现，正常状态一律不显示：
-            // 用户并不区分常驻连接与会话制连接，一个只对某个引擎亮起的绿灯
-            // 只会让人疑惑；而永远亮着的绿灯也不传递任何可行动的信息。
-            // 阿里云是预建连，断开意味着按下热键会失败，值得提前告知 → 显示红点；
-            // 讯飞/Deepgram 录音时才建连，空闲无连接属正常 → 不显示。
-            if coordinator.asrEngineChoice == "aliyun", !coordinator.wsConnected {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 5, height: 5)
-                    .accessibilityLabel(VoiceKitLocalization.string("连接状态"))
-                    .accessibilityValue(coordinator.wsStatusText)
-                    .voiceKitToolTip(coordinator.wsStatusText)
-            }
-
             Spacer(minLength: 4)
 
             Menu {
@@ -201,10 +187,7 @@ struct StatusBarMenuView: View {
         config = cfg
         ConfigStore.shared.update(cfg)
         coordinator.invalidateASREngine()
-        // 切到阿里云后主动预建连，确保状态灯正常
-        if newValue == "aliyun" {
-            Task { await coordinator.prewarmAliyunEngine() }
-        } else if !Self.isEngineConfigured(newValue, asr: cfg.asr) {
+        if !Self.isEngineConfigured(newValue, asr: cfg.asr) {
             showToast("所选引擎未配置凭据，录音时将回退到系统听写")
         }
     }

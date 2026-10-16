@@ -55,13 +55,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startMainThreadWatchdog()
 
         let coordinator = AppCoordinator.shared
+        _ = coordinator
         syncLoginItem()
-
-        Task { @MainActor in
-            if ConfigStore.shared.config.asr.engine == "aliyun" {
-                await coordinator.prewarmAliyunEngine()
-            }
-        }
 
         if ConfigStore.shared.config.general.showSettingsOnLaunch {
             SettingsWindowController.shared.show()

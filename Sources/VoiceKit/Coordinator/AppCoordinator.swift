@@ -127,12 +127,7 @@ final class AppCoordinator {
         asrEngineChoice = cfg.asr.engine
         aliyunConfigured = !cfg.asr.aliyun.apiKey.isEmpty && !cfg.asr.aliyun.workspaceId.isEmpty
         switch asrEngineChoice {
-        case "aliyun":
-            wsConnected = (asrEngine as? AlibabaASREngine)?.wsConnected ?? false
-            if !aliyunConfigured {
-                wsStatusText = VoiceKitLocalization.string("未连接")
-            }
-        case "xunfei", "deepgram":
+        case "aliyun", "xunfei", "deepgram":
             // 会话制引擎：空闲时回到灰色「未连接」（属正常状态，非错误）
             if sessionState == .idle {
                 wsConnected = false
@@ -1003,20 +998,13 @@ final class AppCoordinator {
         }
     }
 
-    /// 阿里云引擎解析：复用常驻连接（复用前做健康检查，连接作废/生命周期
-    /// 未复位的旧引擎直接弃用新建）；未配置时回退系统引擎。
+    /// 阿里云引擎解析：按需创建会话引擎（与讯飞/Deepgram 一致）。
     private func resolveAliyun() async -> any ASREngine {
-        if let existing = asrEngine as? AlibabaASREngine {
-            if existing.canStartNewSession {
-                wireAliyunCallbacks(existing)
-                return existing
-            }
-            Log.info("[Coordinator] 阿里云引擎连接已作废或任务未复位，弃用并新建")
-            asrEngine = nil
-        }
         let cfg = configStore.config.asr.aliyun
         if !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty {
-            return makeAliyunEngine(cfg: cfg)
+            let engine = makeAliyunEngine(cfg: cfg)
+            wireSessionConnectionStatus(engine)
+            return engine
         }
         Log.info("[Coordinator] Aliyun ASR 未配置 apiKey/workspaceId，自动切回 system")
         // 自动回退：把配置写回 system，下次就不用再判断了
@@ -1046,9 +1034,9 @@ final class AppCoordinator {
         return LegacyDictationEngine()
     }
 
-    /// 创建阿里云引擎并挂接连接状态/失败回调。
+    /// 创建阿里云引擎。
     private func makeAliyunEngine(cfg: ASRAliyunConfig) -> AlibabaASREngine {
-        let engine = AlibabaASREngine(
+        AlibabaASREngine(
             apiKey: cfg.apiKey, workspaceId: cfg.workspaceId, region: cfg.region, model: cfg.model,
             semanticPunctuation: cfg.semanticPunctuation,
             speechNoiseThreshold: cfg.speechNoiseThreshold,
@@ -1056,37 +1044,18 @@ final class AppCoordinator {
             autoStopEnabled: cfg.autoStopEnabled,
             autoStopTimeout: cfg.autoStopTimeout
         )
-        wireAliyunCallbacks(engine)
-        return engine
     }
 
-    /// 给阿里云引擎挂接连接状态变化 / 运行时失败回调（幂等）。
-    private func wireAliyunCallbacks(_ engine: AlibabaASREngine) {
+    /// 会话制云端引擎（阿里云/讯飞/Deepgram）的连接状态挂接：指示灯只在录音会话期间变化，
+    /// 空闲时显示「未连接」灰色属正常。
+    private func wireSessionConnectionStatus(_ engine: AlibabaASREngine) {
         engine.onConnectionChange = { [weak self] connected, status in
             Task { @MainActor in
                 self?.wsConnected = connected
                 self?.wsStatusText = status
             }
         }
-        // 初始同步一次当前状态
-        wsConnected = engine.wsConnected
-        wsStatusText = engine.wsConnected
-            ? VoiceKitLocalization.string("已连接")
-            : VoiceKitLocalization.string("未连接")
     }
-
-    /// 预建连阿里云引擎：切到阿里云时主动创建，让状态灯能正确显示连接状态。
-    func prewarmAliyunEngine() async {
-        if asrEngine is AlibabaASREngine { return } // 已有引擎，无需重建
-        let cfg = configStore.config.asr.aliyun
-        guard !cfg.apiKey.isEmpty, !cfg.workspaceId.isEmpty else { return }
-        let engine = makeAliyunEngine(cfg: cfg)
-        self.asrEngine = engine
-        Log.info("[Coordinator] 阿里云引擎预建连完成")
-    }
-
-    /// 会话制云端引擎（讯飞/Deepgram）的连接状态挂接：指示灯只在录音会话期间变化，
-    /// 空闲时显示「未连接」灰色属正常（不同于阿里云的常驻连接）。
     private func wireSessionConnectionStatus(_ engine: XunfeiASREngine) {
         engine.onConnectionChange = { [weak self] connected, status in
             Task { @MainActor in
